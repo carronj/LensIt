@@ -15,6 +15,6 @@ This is a set of python tools dedicated to CMB lensing and CMB delensing.
 Several parts were directly adapted from or inspired by qcinv (https://github.com/dhanson/qcinv) and quicklens (https://github.com/dhanson/quicklens) by Duncan Hanson, many thanks to him.
 
 Many parts use the flat-sky approximation, with likely extension to curved-sky in a near future.  
-To use the GPU implementation of certain routines, you will need pyCUDA. (https://mathema.tician.de/software/pycuda)
+To use the GPU implementation of some of the routines, you will need pyCUDA. (https://mathema.tician.de/software/pycuda)
 
 Example and tests scripts might follow, or (much simpler) just write to me.
