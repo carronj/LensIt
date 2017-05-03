@@ -1,4 +1,4 @@
-# LensIt
+# Lensit
 
 This is a set of python tools dedicated to CMB lensing and CMB delensing. 
 
