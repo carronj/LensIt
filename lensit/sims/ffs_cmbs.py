@@ -46,7 +46,7 @@ class sim_cmb_unl():
             self._cl_hash[_k] = hashlib.sha1(cl[lib_alm.ellmin:lib_alm.ellmax + 1]).hexdigest()
         self.rmat = rmat
         self.lib_pha = lib_pha
-        self.lib_alm = self.lib_pha.lib_alm
+        self.lib_skyalm = self.lib_pha.lib_alm
         self.fields = fields
 
     def hashdict(self):
@@ -57,10 +57,14 @@ class sim_cmb_unl():
 
     def _get_sim_alm(self, idx, idf):
         # FIXME : triangularise this
-        ret = np.zeros(self.lib_alm.alm_size, dtype=complex)
+        ret = np.zeros(self.lib_skyalm.alm_size, dtype=complex)
         for _i in range(len(self.fields)):
-            ret += self.lib_alm.almxfl(self.lib_pha.get_sim(idx, idf=_i), self.rmat[:, idf, _i])
+            ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(idx, idf=_i), self.rmat[:, idf, _i])
         return ret
+
+    def get_sim_alm(self, idx, field):
+        assert field in self.fields, self.fields
+        return self._get_sim_alm(idx, self.fields.index(field))
 
     def get_sim_plm(self, idx):
         assert 'p' in self.fields, self.fields
@@ -88,7 +92,7 @@ class sim_cmb_unl():
         Nf = len(self.fields)
         for _i in range(Nf):
             for _j in range(Nf):
-                ret[_i] += self.lib_alm.almxfl(phases[_j], self.rmat[:, _i, _j])
+                ret[_i] += self.lib_skyalm.almxfl(phases[_j], self.rmat[:, _i, _j])
 
 
 class sims_cmb_len():
@@ -139,6 +143,24 @@ class sims_cmb_len():
             return fs.ffs_deflect.ffs_deflect.displacement_fromolm(self.lib_skyalm, olm)
         else:
             assert 0
+
+    def get_sim_alm(self, idx, field):
+        if field == 't':
+            return self.get_sim_tlm(idx)
+        elif field == 'p':
+            return self.get_sim_plm(idx)
+        elif field == 'o':
+            return self.get_sim_olm(idx)
+        elif field == 'q':
+            return self.get_sim_qulm(idx)[0]
+        elif field == 'u':
+            return self.get_sim_qulm(idx)[1]
+        elif field == 'e':
+            return self.lib_skyalm.QUlms2EBalms(self.get_sim_qulm(idx))[0]
+        elif field == 'b':
+            return self.lib_skyalm.QUlms2EBalms(self.get_sim_qulm(idx))[1]
+        else:
+            assert 0, (field, self.fields)
 
     def get_sim_tlm(self, idx):
         fname = self.lib_dir + '/sim_%04d_tlm.npy' % idx

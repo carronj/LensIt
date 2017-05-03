@@ -51,23 +51,24 @@ class ell_mat():
 
         hash_check(pk.load(open(lib_dir + "/ellmat_hash.pk", 'r')), self.hash_dict())
 
-        if pbs.rank == 0:
-            if not os.path.exists(self.lib_dir + '/ellmat.npy'):
+        if pbs.rank == 0 and not os.path.exists(self.lib_dir + '/ellmat.npy'):
                 print 'ell_mat:caching ells in ', self.lib_dir + '/ellmat.npy'
-                kmin = 2. * np.pi / np.array(self.lsides)
-                ky2 = Freq(np.arange(self.shape[0]), self.shape[0]) ** 2 * kmin[0] ** 2
-                kx2 = Freq(np.arange(self.rshape[1]), self.shape[1]) ** 2 * kmin[1] ** 2
-                ones = np.ones(np.max(self.shape))
-                freq_map = self.k2ell(
-                    np.sqrt(np.outer(ky2, ones[0:self.rshape[1]]) + np.outer(ones[0:self.rshape[0]], kx2)))
-
-                # map of integer ell. in int16 format. k is mapped to ell according to k = ell + 1/2
-                np.save(self.lib_dir + '/ellmat.npy', freq_map)
+                np.save(self.lib_dir + '/ellmat.npy', self._build_ellmat())
         pbs.barrier()
         # FIXME
         self.ellmax = int(self._get_ellmax())
         self._ell_counts = self._build_ell_counts()
         self._nz_counts = self._ell_counts.nonzero()
+
+    def _build_ellmat(self):
+        kmin = 2. * np.pi / np.array(self.lsides)
+        ky2 = Freq(np.arange(self.shape[0]), self.shape[0]) ** 2 * kmin[0] ** 2
+        kx2 = Freq(np.arange(self.rshape[1]), self.shape[1]) ** 2 * kmin[1] ** 2
+        ones = np.ones(np.max(self.shape))
+        return self.k2ell(np.sqrt(np.outer(ky2, ones[0:self.rshape[1]]) + np.outer(ones[0:self.rshape[0]], kx2)))
+
+    def hash_dict(self):
+        return {'shape': self.shape, 'lsides': self.lsides}
 
     def Nyq(self, axis):
         assert axis in [0, 1], axis
@@ -86,8 +87,6 @@ class ell_mat():
     def check_compatible(self, ellmat):
         hash_check(self.hash_dict(), ellmat.hash_dict())
 
-    def hash_dict(self):
-        return {'shape': self.shape, 'lsides': self.lsides}
 
     def __call__(self, *args, **kwargs):
         return self.get_ellmat(*args, **kwargs)
@@ -441,6 +440,9 @@ class ffs_alm(object):
 
     def get_ellcounts(self):
         return self.ell_mat.get_ellcounts() * self.cond
+
+    def get_Nell(self):
+        return self.ell_mat.get_Nell() * self.cond
 
     def alm2Pk_minimal(self, alm):
         """

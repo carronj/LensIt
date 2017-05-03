@@ -258,6 +258,7 @@ class ffs_displacement(object):
         if > 0 'use_Pool' ** 2 is the number of threads. On laptop and Darwin use_Pool = 16 has the best performances.
         It use_Pool is set, then 'map' must be the path to the map to lens or map will be saved to disk.
         """
+        # TODO : could evaluate the splines at low res.
         assert self.load_map(map).shape == self.shape, (self.load_map(map).shape, self.shape)
         if crude > 0:
             return self.lens_map_crude(map, crude)
@@ -609,7 +610,7 @@ class ffs_displacement(object):
         elif use_Pool == 0:
             spliter_lib = map_spliter.periodicmap_spliter()  # library to split periodic maps.
             dx_inv, dy_inv = np.empty(self.shape), np.empty(self.shape)
-            label = 'ffs_displacement::calculating inverse displ. field'
+            label = 'ffs_deflect::calculating inverse displ. field'
             for i, N in utils.enumerate_progress(xrange(self.N_chks), label=label):
                 # Doing chunk N
                 dx_inv_N, dy_inv_N = self.get_inverse_chk_N(N, NR_iter=NR_iter)

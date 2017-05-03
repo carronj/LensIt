@@ -90,7 +90,7 @@ def get_ellmat(LD_res, HD_res=14):
     return ffs_covs.ell_mat.ell_mat('./temp/ellmats/ellmat_%s_%s' % (HD_res, LD_res), shape, lsides)
 
 
-def get_120lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
+def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
     """
     Default simulation library of 120 lensed CMB sims.
     Lensing is always performed at lcell 0.745 amin or so, and lensed CMB are generated on a square with sides lcell 2 ** res
@@ -112,7 +112,7 @@ def get_120lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
                                       lib_pha=skypha, cache_lens=cache_sims)
 
 
-def get_120maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4):
+def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4):
     """
     Default simulation library of 120 full flat sky sims for exp 'exp' at resolution LDres.
     Different exp at same resolution share the same random phases both in CMB and noise
@@ -122,7 +122,7 @@ def get_120maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, 
     :return: sim library instance
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    len_cmbs = get_120lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
+    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = hp.gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
     lib_datalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,

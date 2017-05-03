@@ -17,4 +17,5 @@ Several parts were directly adapted from or inspired by qcinv (https://github.co
 Many parts use the flat-sky approximation, with likely extension to curved-sky in a near future.  
 To use the GPU implementation of some of the routines, you will need pyCUDA. (https://mathema.tician.de/software/pycuda)
 
-Example and tests scripts might follow, or (much simpler) just write to me.
+An ipython notebook 'demo_basics.ipynb' covers the simple aspects of building simulation librairies etc.  
+Other example and tests scripts might follow, or you may just write to me.  
