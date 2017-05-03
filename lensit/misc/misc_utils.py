@@ -267,7 +267,7 @@ def mk_session_seed(verbose=False):
     from decimal import Decimal
     import socket
     import time
-    import pbs
+    from lensit import pbs
     from hashlib import sha1
     rank = pbs.rank
     hostname = socket.gethostname()
@@ -307,9 +307,9 @@ def PartialDerivativePeriodic(arr, axis, h=1., rule='4pts'):
         idc = [-1, 1]  # np.rolling by one means g(x) =  f(x -1)
         weights = np.array((1., -1)) / (2. * h)
     else:
-        assert (0), "Input not understood"
-        idc = 0;
+        idc = 0
         weights = 0
+        assert 0, rule + " not implemented"
 
     grad = np.roll(arr, idc[0], axis=axis) * weights[0]
     for i, w in zip(idc[1:], weights[1:]): grad += np.roll(arr, i, axis=axis) * w
@@ -550,32 +550,6 @@ def check_attributes(par, required_attrs):
                 print "  ", attr
         assert 0
     return np.all(attr_ok)
-
-
-def get_lenCls(libalm, cls_unl):
-    # x^len =  1/ V sum_k P^unl(k) e^ik x e^-k^a(xi_0delta_ab - xi_ab )k_b
-    # FIXME
-    kx = lambda: libalm.get_kx()
-    ky = lambda: libalm.get_ky()
-
-    def get_xiab(a, b):
-        assert a in [0, 1] and b in [0, 1], (a, b)
-        ka = libalm.get_ikx if a == 1 else libalm.get_iky
-        kb = libalm.get_ikx if b == 1 else libalm.get_iky
-        return libalm.alm2map(libalm.almxfl(- ka() * kb(), cls_unl['pp']))
-
-    def get_s2p():
-        assert 0
-
-    def Pexpw():
-        return libalm.almxfl((1. + 0j) * np.exp(-get_s2p() * (kx() ** 2 + ky() ** 2)), cls_unl['tt'])
-
-    xiunl = libalm.alm2map(libalm.almxfl(np.ones(libalm.alm_size, dtype=complex), cls_unl['tt']))
-    zeroth = libalm.alm2map(Pexpw())
-    first = zeroth.copy()
-
-    assert 0
-
 
 # --------------------------
 # Some simple-minded utils for verbose mode on :

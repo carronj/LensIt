@@ -46,7 +46,7 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None, use_Pool
     ( B^t Ni (data - B D Xmap))(z)    (D ika Xmap)(z)
     """
     assert len(TQU_Mlik) == len(_type) and len(ResTQU_Mlik) == len(_type)
-    t = fs.misc.lens_utils.timer(verbose, prefix=__name__)
+    t = fs.misc.misc_utils.timer(verbose, prefix=__name__)
     if f is None: f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
 
     def left(id):

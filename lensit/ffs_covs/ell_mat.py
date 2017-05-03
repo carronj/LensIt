@@ -640,8 +640,8 @@ class ffs_alm_pyFFTW(ffs_alm):
         if not os.path.exists(wisdom_fname):
             print "++ ffs_alm_pyFFTW :: building and caching FFTW wisdom, this might take a little while..."
             if pbs.rank == 0:
-                inpt = np.empty(self.ell_mat.shape, dtype=float)
-                oupt = np.empty(self.ell_mat.rshape, dtype=complex)
+                inpt = pyfftw.empty_aligned(self.ell_mat.shape, dtype='float64')
+                oupt = pyfftw.empty_aligned(self.ell_mat.rshape, dtype='complex128')
                 fft = pyfftw.FFTW(inpt, oupt, axes=(0, 1), direction='FFTW_FORWARD', flags=flags_init,
                                   threads=num_threads)
                 ifft = pyfftw.FFTW(oupt, inpt, axes=(0, 1), direction='FFTW_BACKWARD', flags=flags_init,
@@ -650,15 +650,22 @@ class ffs_alm_pyFFTW(ffs_alm):
                 np.save(wisdom_fname, wisdom)
                 del inpt, oupt, fft, ifft
             pbs.barrier()
-            pyfftw.import_wisdom(np.load(wisdom_fname))
-            print "++ ffs_alm_pyFFTW :: loaded widsom ", wisdom_fname
-        # self.flags = ('FFTW_WISDOM_ONLY',)
-        self.flags = ()
+        pyfftw.import_wisdom(np.load(wisdom_fname))
+        # print "++ ffs_alm_pyFFTW :: loaded widsom ", wisdom_fname
+        self.flags = ('FFTW_WISDOM_ONLY',)  # This will make the code crash if arrays are not properly aligned.
+        # self.flags = ('FFTW_MEASURE',)
         self.threads = num_threads
 
+    def alm2rfft(self, alm):
+        assert alm.size == self.alm_size, alm.size
+        ret = pyfftw.zeros_aligned(self.ell_mat.rshape, dtype='complex128')
+        ret[self.cond[self.ell_mat()]] = alm * self.fac_alm2rfft
+        return ret
+
     def map2rfft(self, _map):
-        oupt = np.empty(self.ell_mat.rshape, dtype=complex)
-        fft = pyfftw.FFTW(_map, oupt, axes=(0, 1), direction='FFTW_FORWARD', flags=self.flags, threads=self.threads)
+        oupt = pyfftw.empty_aligned(self.ell_mat.rshape, dtype='complex128')
+        fft = pyfftw.FFTW(pyfftw.byte_align(_map, dtype='float64'), oupt,
+                          axes=(0, 1), direction='FFTW_FORWARD', flags=self.flags, threads=self.threads)
         fft()
         return oupt
 
@@ -666,7 +673,7 @@ class ffs_alm_pyFFTW(ffs_alm):
         assert alm.size == self.alm_size, (alm.size, self.alm_size)
         if lib_almout is None:
             rfftalm = self.alm2rfft(alm)
-            oupt = np.empty(self.ell_mat.shape, dtype=float)
+            oupt = pyfftw.empty_aligned(self.ell_mat.shape, dtype='float64')
             ifft = pyfftw.FFTW(rfftalm, oupt, axes=(0, 1), direction='FFTW_BACKWARD', flags=self.flags,
                                threads=self.threads)
             ifft()

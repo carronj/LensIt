@@ -7,6 +7,7 @@ import numpy as np
 import lensit as fs
 from lensit import pbs
 
+verbose = True
 
 def get_fields(cls):
     fields = ['p', 't', 'e', 'b', 'o']
@@ -23,7 +24,9 @@ class sim_cmb_unl():
         lib_alm = lib_pha.lib_alm
         fields = get_fields(cls_unl)
         Nf = len(fields)
+        if verbose: print "I see %s fields: " % Nf + " ".join(fields)
         rmat = np.zeros((lib_alm.ellmax + 1, Nf, Nf), dtype=float)
+        str = ''
         for _i, _t1 in enumerate(fields):
             for _j, _t2 in enumerate(fields):
                 if _j >= _i:
@@ -31,7 +34,8 @@ class sim_cmb_unl():
                         rmat[:, _i, _j] = cls_unl[_t1 + _t2][:lib_alm.ellmax + 1]
                         rmat[:, _j, _i] = rmat[:, _i, _j]
                     else:
-                        print "Cl%s%s set to 0" % (_t1, _t2)
+                        str += " " + _t1 + _t2
+        if verbose and str != '': print str + ' set to zero'
         for ell in range(lib_alm.ellmin, lib_alm.ellmax + 1):
             t, v = np.linalg.eigh(rmat[ell, :, :])
             assert np.all(t >= 0.), (ell, t, rmat[ell, :, :])  # Matrix not positive semidefinite

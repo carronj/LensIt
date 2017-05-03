@@ -4,8 +4,8 @@ import numpy as np
 import pycuda.gpuarray as gpuarray
 from skcuda.fft import fft, ifft
 
-from lensit.misc.lens_utils import IsPowerOfTwo, Freq
-from old.ffs_covmatrices_tests import get_Pmat
+from lensit.misc.misc_utils import IsPowerOfTwo, Freq
+from lensit.ffs_covs.ffs_specmat import get_Pmat
 from . import CUDA_module, setup_texture_nparr, GPU_block, get_rfft_plans, setup_texture_gpuarr
 
 

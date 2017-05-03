@@ -5,7 +5,7 @@ GPU_HDres_max = (11, 11)
 
 import time
 import numpy as np
-from lensit.misc.lens_utils import IsPowerOfTwo
+from lensit.misc.misc_utils import IsPowerOfTwo
 import pycuda.autoinit
 import pycuda.gpuarray as gpuarray
 from skcuda.fft import fft, ifft

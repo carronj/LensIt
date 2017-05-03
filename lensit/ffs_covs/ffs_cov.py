@@ -12,7 +12,7 @@ import lensit.qcinv
 from lensit.ffs_covs import ffs_specmat as SM
 from lensit.ffs_covs.ffs_specmat import get_unlPmat_ij, get_Pmat, get_datPmat_ij, \
     TQUPmats2TEBcls, get_rootunlPmat_ij, get_unlrotPmat_ij
-from lensit.misc.lens_utils import timer
+from lensit.misc.misc_utils import timer
 from lensit.sims.sims_generic import hash_check
 
 _timed = True
@@ -1476,7 +1476,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         """
         assert lib_qlm.ell_mat.lsides == self.lsides, (self.lsides, lib_qlm.ell_mat.lsides)
         assert _type in _types, (_type, _types)
-        timer = fs.misc.lens_utils.timer(_timed)
+        timer = fs.misc.misc_utils.timer(_timed)
         ikx = lambda: self.lib_skyalm.get_ikx()
         iky = lambda: self.lib_skyalm.get_iky()
         timer.checkpoint('Just started eval MF %s %s' % (_type, MFkey))

@@ -2,9 +2,8 @@ import time
 
 import healpy as hp
 import numpy as np
-import pylab as pl
 from scipy import interpolate
-import lens_utils as utils
+import misc_utils as utils
 
 
 def legendreP(N, x):
@@ -85,6 +84,7 @@ class Cl_lminlmax():
 
     def plot_Dl(self, **kwargs):  # quick plot on linear scales
         l = self.ell()
+        import pylab as pl
         pl.figure('Power spectrum')
         pl.xlabel('$\ell$')
         pl.ylabel('$D_\ell$')
@@ -92,6 +92,7 @@ class Cl_lminlmax():
 
     def plot_Cl(self, **kwargs):  # quick plot on linear scales
         l = self.ell()
+        import pylab as pl
         pl.figure('Power spectrum')
         pl.xlabel('$\ell$')
         pl.ylabel('$C_\ell$')

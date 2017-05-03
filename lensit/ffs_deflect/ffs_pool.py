@@ -4,7 +4,7 @@ from scipy import interpolate
 from multiprocessing import Pool
 
 from lensit.misc.map_spliter import periodicmap_spliter
-from lensit.misc.lens_utils import IsPowerOfTwo, Log2ofPowerof2, PartialDerivativePeriodic, enumerate_progress, Freq
+from lensit.misc.misc_utils import IsPowerOfTwo, Log2ofPowerof2, PartialDerivativePeriodic, enumerate_progress, Freq
 from scipy import weave
 
 verbose = True

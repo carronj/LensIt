@@ -9,7 +9,7 @@ import lensit as fs
 from lensit import pbs
 from lensit.ffs_deflect import ffs_deflect
 from lensit.ffs_qlms import qlms as ql
-from lensit.misc.lens_utils import PartialDerivativePeriodic as PDP
+from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP
 
 _types = ['T', 'QU', 'TQU']
 

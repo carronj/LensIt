@@ -104,7 +104,7 @@ def get_120lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
     skypha = sims.ffs_phas.ffs_lib_phas('./temp/%s_sims/fsky%04d/len_alms/skypha' % (nsims, fsky), 4, lib_skyalm,
                                         nsims_max=nsims)
     if not skypha.is_full() and pbs.rank == 0:
-        for _i, idx in misc.lens_utils.enumerate_progress(np.arange(nsims), label='Generating CMB phases'):
+        for _i, idx in misc.misc_utils.enumerate_progress(np.arange(nsims), label='Generating CMB phases'):
             skypha.get_sim(idx)
     pbs.barrier()
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
@@ -135,7 +135,7 @@ def get_120maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, 
     pixpha = sims.ffs_phas.pix_lib_phas('./temp/%s_sims/fsky%04d/res%s/pixpha' % (nsims, fsky, LDres), 3,
                                         lib_datalm.ell_mat.shape, nsims_max=nsims)
     if not pixpha.is_full() and pbs.rank == 0:
-        for _i, idx in misc.lens_utils.enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
+        for _i, idx in misc.misc_utils.enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
             pixpha.get_sim(idx)
     pbs.barrier()
     lib_dir = './temp/%s_sims/fsky%04d/res%s/%s/maps' % (nsims, fsky, LDres, exp)

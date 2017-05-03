@@ -17,7 +17,7 @@ import pycuda.gpuarray as gpuarray
 import time
 from skcuda.fft import fft, ifft
 from . import load_map, get_rfft_plans, CUDA_module, GPU_block
-from lensit.misc.lens_utils import Freq, IsPowerOfTwo
+from lensit.misc.misc_utils import Freq, IsPowerOfTwo
 import numpy as np
 
 

@@ -8,7 +8,7 @@ from ffs_specmat import get_unlPmat_ij
 import ffs_specmat_noBB as SMnoBB
 import ffs_specmat as SM
 import lensit.pbs
-from lensit.misc.lens_utils import timer
+from lensit.misc.misc_utils import timer
 from lensit.qcinv import multigrid
 
 _types = ['T', 'QU', 'TQU']

@@ -235,7 +235,7 @@ class MFMCnoise_lib():
         :return:
         """
         assert _type in types, (_type, types)
-        timer = fs.misc.lens_utils.timer(_timed)
+        timer = fs.misc.misc_utils.timer(_timed)
         W1, W2, ijsymmetry = self._buildPmats(MFkey)
         W1a, W1b = W1
         W2a, W2b = W2
@@ -278,7 +278,7 @@ class MFMCnoise_lib():
         MFkey2 = MFkey1
         fname = self.lib_dir + '/%s_%04d_%04d.dat' % (_type, MFkey1, MFkey2)
         if not os.path.exists(fname) or recache or MCnoise_floor:
-            timer = fs.misc.lens_utils.timer(_timed)
+            timer = fs.misc.misc_utils.timer(_timed)
             lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_alm.ell_mat, filt_func=lambda ell: ell >= 0)
 
             assert MFkey1 == MFkey2, 'Fix the rotation to phi-Omega space at the end'

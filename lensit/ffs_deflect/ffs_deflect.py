@@ -7,9 +7,9 @@ from scipy import weave
 
 import lensit.misc.map_spliter as map_spliter
 from lensit.ffs_deflect import ffs_pool
-from lensit.misc import lens_utils as utils
+from lensit.misc import misc_utils as utils
 from lensit.misc import rfft2_utils
-from lensit.misc.lens_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq
+from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq
 
 try:
     from lensit.gpu import lens_GPU
@@ -85,7 +85,7 @@ class ffs_displacement(object):
         # Checking inputs :
         self.shape = self.get_dx().shape
         self.lsides = tuple(lsides)
-        self.rmin = np.array(self.lsides) / np.array(self.shape).astype(np.float64)
+        self.rmin = (1. * np.array(self.lsides)) / np.array(self.shape)
 
         HD_res = Log2ofPowerof2(self.shape)
         LD_res = LD_res or HD_res
@@ -101,13 +101,12 @@ class ffs_displacement(object):
         buffer0 = np.int16(np.max([10, (6 * np.max(np.abs(self.get_dy())) / self.rmin[0])]))
         buffer1 = np.int16(np.max([10, (6 * np.max(np.abs(self.get_dx())) / self.rmin[1])]))
 
-        self.buffers = (
-            max(buffer0, buffer1) * (self.LD_res[0] < self.HD_res[0]),
-            max(buffer0, buffer1) * (self.LD_res[1] < self.HD_res[1]))
+        self.buffers = (max(buffer0, buffer1) * (self.LD_res[0] < self.HD_res[0]),
+                        max(buffer0, buffer1) * (self.LD_res[1] < self.HD_res[1]))
         self.chk_shape = 2 ** np.array(self.LD_res) + 2 * np.array(self.buffers)  # shape of the chunks
         self.N_chks = np.prod(2 ** (np.array(self.HD_res) - np.array(self.LD_res)))  # Number of chunks on each side.
         if verbose:
-            print 'rank %s, ffs_displacement::buffers size, chk_shape' % pbs.rank, (buffer0, buffer1), self.chk_shape
+            print 'rank %s, ffs_deflect::buffers size, chk_shape' % pbs.rank, (buffer0, buffer1), self.chk_shape
 
         self.k = spline_order  # order of the spline for displacement interpolation
 
