@@ -22,10 +22,21 @@ _prefix = 'cinv'
 def TEBlen(_type):
     return len(_type)
 
+def TEBfields(_type):
+    if _type == 'T': return 't'
+    if _type == 'QU': return ['e','b']
+    if _type == 'TQU': return ['t','e', 'b']
+    assert 0,_type
+
 
 def TQUlen(_type):
     return len(_type)
 
+def filtTEBlms(TEBlms,cov):
+    # The inverse matrix acts on the non-zero modes space
+    for i,e in enumerate(TEBfields(_type)):
+        cov.lib_skyalm.almxfl(TEBlms[i],cov.cls[e + e] > 0,inplace=True)
+    return TEBlms
 
 # =====================
 def calc_prep(maps, cov, *args, **kwargs):
@@ -38,8 +49,7 @@ def calc_prep(maps, cov, *args, **kwargs):
     for i, f in enumerate(_type):
         _map = cov.apply_map(f, maps[i], inplace=False)
         TQUalms[i] = cov.apply_Rt(f, _map)
-    return SM.TQU2TEBlms(_type, cov.lib_skyalm, TQUalms)
-
+    return filtTEBlms(SM.TQU2TEBlms(_type, cov.lib_skyalm, TQUalms),cov)
 
 def apply_fini_BINV(soltn, cov, maps, **kwargs):
     """
@@ -103,12 +113,10 @@ class fwd_op():  # (P^-1 + R^t Ni R)^{-1} (skyalms)
         self.lib_alm = self.cov.lib_skyalm
 
     def __call__(self, TEBlms):
-        # print "This is fwd_op w. no_lensing %s _type %s"%(self.no_lensing,_type)
         TQUlms = SM.TEB2TQUlms(_type, self.cov.lib_skyalm, TEBlms)
         for i, f in enumerate(_type): self.cov.apply_alm(f, TQUlms[i], inplace=True)
-        return SM.apply_pinvTEBmat(_type, self.lib_alm, self.cov.cls, TEBlms) + SM.TQU2TEBlms(_type, self.lib_alm,
-                                                                                              TQUlms)
-
+        ret = SM.apply_pinvTEBmat(_type, self.lib_alm, self.cov.cls, TEBlms) + SM.TQU2TEBlms(_type, self.lib_alm,TQUlms)
+        return filtTEBlms(ret,self.cov)
 
 # =====================
 class pre_op_diag():
@@ -117,17 +125,17 @@ class pre_op_diag():
         inv_cls = SM.get_pinvTEBcls(_type, cov.cls)
         if _type == 'T':
             NTi = cov.iNoiseCl(_type[0])
-            inv_cls['tt'] += cov.cl_transf ** 2 * NTi
+            inv_cls['tt'] += cov.cl_transf ** 2 * NTi * (inv_cls['tt'] > 0)
         elif _type == 'QU':
             NPi = 0.5 * (cov.iNoiseCl(_type[0]) + cov.iNoiseCl(_type[1]))
-            inv_cls['ee'] += cov.cl_transf ** 2 * NPi
-            inv_cls['bb'] += cov.cl_transf ** 2 * NPi
+            inv_cls['ee'] += cov.cl_transf ** 2 * NPi * (inv_cls['ee'] > 0)
+            inv_cls['bb'] += cov.cl_transf ** 2 * NPi * (inv_cls['bb'] > 0)
         elif _type == 'TQU':
             NPi = 0.5 * (cov.iNoiseCl(_type[1]) + cov.iNoiseCl(_type[2]))
             NTi = cov.iNoiseCl(_type[0])
-            inv_cls['tt'] += cov.cl_transf ** 2 * NTi
-            inv_cls['ee'] += cov.cl_transf ** 2 * NPi
-            inv_cls['bb'] += cov.cl_transf ** 2 * NPi
+            inv_cls['tt'] += cov.cl_transf ** 2 * NTi * (inv_cls['tt'] > 0)
+            inv_cls['ee'] += cov.cl_transf ** 2 * NPi * (inv_cls['ee'] > 0)
+            inv_cls['bb'] += cov.cl_transf ** 2 * NPi * (inv_cls['bb'] > 0)
         else:
             assert 0, (_type)
         self.inv_cls = inv_cls
