@@ -859,7 +859,7 @@ class _iterator(object):
         # Zeroth order inverse Hessian :
         apply_H0k = lambda rlm, k: \
             self.lib_qlm.alm2rlm(self.lib_qlm.almxfl(self.lib_qlm.rlm2alm(rlm), self.get_norm(key)))
-        BFGS_H = fslens.iterators.bfgs.BFGS_Hessian(self.lib_dir + '/Hessian', apply_H0k, {}, {}, L=self.NR_method,
+        BFGS_H = fs.ffs_iterators.bfgs.BFGS_Hessian(self.lib_dir + '/Hessian', apply_H0k, {}, {}, L=self.NR_method,
                                                     verbose=verbose)
         # Adding the required y and s vectors :
         for k in xrange(np.max([0, iter - self.NR_method]), iter):
@@ -1138,9 +1138,9 @@ class iterator_simMF(_iterator):
                 # Sign of this is pot-like, not gradient-like
                 grad = -grad[{'p': 0, 'o': 1}[key.lower()]]
                 if self.subtract_phi0:
-                    _f = fslens.displacements.displacements.ffs_id_displacement(self.lencov.sky_shape,
+                    _f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(self.lencov.sky_shape,
                                                                                 self.lencov.lsides)
-                    _fi = fslens.displacements.displacements.ffs_id_displacement(self.lencov.sky_shape,
+                    _fi = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(self.lencov.sky_shape,
                                                                                  self.lencov.lsides)
                     self.lencov.set_ffinv(_f, _fi)
                     grad0, _cgit_done = self.lencov.evalMF(self.type, self.MFkey, None, phas_dat.get_sim(idx),

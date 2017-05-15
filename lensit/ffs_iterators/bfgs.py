@@ -2,13 +2,25 @@ import numpy as np
 import os
 
 
-class BFGS_Hessian():
+class BFGS_Hessian(object):
     """
     Class to evaluate the update to inverse Hessian matrix in the L-BFGS scheme.
-    (see wikipedia article if nothing else)
+    (see wikipedia article if nothing else).
+    H is B^-1 form that article.
+    B_k+1 = B  + yy^t / (y^ts) - B s s^t B / (s^t Bk s))   (all k on the RHS)
+    H_k+1 = (1 - sy^t / (y^t s) ) H (1 - ys^t / (y^ts))) + ss^t / (y^t s).
+
+    Determinant of B:
+    ln det Bk+1 = ln det Bk + ln( s^ty / s^t B s).
+
+    For quasi Newton, s_k = x_k1 - x_k = - alpha_k Hk grad_k with alphak newton step-length.
+        --> s^t B s at k is - alpha_k s^t_k grad_k
+    and grad_k = sum_j=0^k-1 y_j + grad_0, grad_0 = -1/alpha_0 B_0 s0.
+    
+    It is also ln det Bk+1 = ln det Bk + ln(1 - gk Hk g_k+1 / (gk Hk gk)
     """
 
-    def __init__(self, lib_dir, apply_H0k, paths2ys, paths2ss, L=100000, verbose=True):
+    def __init__(self, lib_dir, apply_H0k, paths2ys, paths2ss, L=100000, apply_B0k=None, verbose=True):
         """
         :param apply_H0k: user supplied function(x,k), applying a zeroth order estimate of the inverse Hessian to x at
          iter k.
@@ -22,6 +34,7 @@ class BFGS_Hessian():
         self.paths2ss = paths2ss
         self.L = L
         self.applyH0k = apply_H0k
+        self.applyB0k = apply_B0k
         self.verbose = verbose
 
     def y(self, n):
@@ -71,6 +84,28 @@ class BFGS_Hessian():
         rho = 1. / np.sum(s * y)
         Hv = self.applyH(x - rho * y * np.sum(x * s), k - 1, _depth=_depth + 1)
         return Hv - s * (rho * np.sum(y * Hv)) + rho * s * np.sum(s * x)
+
+    def get_gk(self, k, alpha_k0):
+        """
+        Reconstruct gradient at xk, given the first newton step length at step max(0,k-L)
+        """
+        assert self.applyB0k is not None
+        ret = -self.applyB0k(self.s(max(0, k - self.L)),max(0,k-self.L)) / alpha_k0
+        for j in range(max(0, k - self.L), k):
+            ret += self.y(j)
+        return ret
+
+    def get_sBs(self, k, alpha_k, alpha_k0):
+        """
+        Reconstruct s^Bs at x_k, given the first newton step length at step max(0,k-L) and current step alpha_k.
+        """
+        return - alpha_k * np.sum(self.s(k) * self.get_gk(k, alpha_k0))
+
+    def get_lndet_update(self, k, alpha_k, alpha_k0):
+        """
+        Return update to B log determinant, lndet B_k+1 = lndet B_k + output.
+        """
+        return np.log(np.sum(self.y(k) * self.s(k)) / self.get_sBs(k, alpha_k, alpha_k0))
 
     def get_mHkgk(self, gk, k, output_fname=None):
         """

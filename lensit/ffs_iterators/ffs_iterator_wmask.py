@@ -52,8 +52,9 @@ class ffs_iterator(object):
         self.dat_maps = dat_maps
 
         self.chain_descr = chain_descr
-        assert self.chain_descr is not None
         self.opfilt = opfilt
+        assert self.chain_descr is not None
+        assert opfilt is not None
         # lib_noise = getattr(par, 'lib_noise_%s' % type)
         # lib_cmb_unl = getattr(par, 'lib_cmb_unl_%s' % type)
 
@@ -80,9 +81,9 @@ class ffs_iterator(object):
         def newton_step_length(iter, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
             if cov.Nlev_uKamin('t') > 2.1: return 1.
-            if cov.Nlev_uKamin('t') <= 2.1 and iter >= 1 and norm_incr < 0.4:
+            if cov.Nlev_uKamin('t') <= 2.1 :
                 return 0.5
-            return 0.4 / norm_incr
+            return 0.5
 
         self.newton_step_length = newton_step_length
         self.soltn0 = soltn0
@@ -96,7 +97,8 @@ class ffs_iterator(object):
         if not hasattr(cov, 'f') or not hasattr(cov, 'fi'):
             self.cov = cov.turn2wlfilt(f_id, f_id)
         else:
-            self.cov = cov.set_ffi(f_id, f_id)
+            cov.set_ffi(f_id, f_id)
+            self.cov = cov
         if self.PBSRANK == 0:
             if not os.path.exists(self.lib_dir): os.makedirs(self.lib_dir)
         pbs.barrier()
@@ -424,6 +426,9 @@ class ffs_iterator(object):
         """
         return self.load_gradpri(k, key) + self.load_gradquad(k, key) + self.load_graddet(k, key)
 
+    def calc_norm(self,qlm):
+        return np.sqrt(np.sum(self.lib_qlm.alm2rlm(qlm) ** 2))
+
     def get_Hessian(self, k, key):
         """
         We need the inverse Hessian that will produce phi_iter. If iter == 1 this is simply the first guess.
@@ -431,10 +436,12 @@ class ffs_iterator(object):
         # Zeroth order inverse Hessian :
         apply_H0k = lambda rlm, k: \
             self.lib_qlm.alm2rlm(self.lib_qlm.almxfl(self.lib_qlm.rlm2alm(rlm), self.get_H0(key)))
+        apply_B0k = lambda rlm,k: \
+            self.lib_qlm.alm2rlm(self.lib_qlm.almxfl(self.lib_qlm.rlm2alm(rlm), cl_inverse(self.get_H0(key))))
         BFGS_H = fs.ffs_iterators.bfgs.BFGS_Hessian(self.lib_dir + '/Hessian', apply_H0k, {}, {}, L=self.NR_method,
-                                                    verbose=self.verbose)
+                                             verbose=self.verbose,apply_B0k=apply_B0k)
         # Adding the required y and s vectors :
-        for _k in xrange(np.max([0, k - self.NR_method]), k):
+        for _k in xrange(np.max([0, k - BFGS_H.L]), k):
             BFGS_H.add_ys(self.lib_dir + '/Hessian/rlm_yn_%s_%s.npy' % (_k, key),
                           self.lib_dir + '/Hessian/rlm_sn_%s_%s.npy' % (_k, key), _k)
         return BFGS_H
@@ -463,13 +470,17 @@ class ffs_iterator(object):
         BFGS = self.get_Hessian(k, key)  # Constructing L-BFGS Hessian
         # get descent direction sk = - H_k gk : (rlm array). Will be cached directly
         sk_fname = self.lib_dir + '/Hessian/rlm_sn_%s_%s.npy' % (k, key)
+        step = 0.
         if not os.path.exists(sk_fname):
             print "rank %s calculating descent direction" % self.PBSRANK
             t0 = time.time()
-            BFGS.get_mHkgk(self.lib_qlm.alm2rlm(gradn), k, output_fname=sk_fname)
+            incr = BFGS.get_mHkgk(self.lib_qlm.alm2rlm(gradn), k)
+            norm_inc = self.calc_norm(self.lib_qlm.rlm2alm(incr)) / self.calc_norm(self.get_Plm(0, key))
+            step = self.newton_step_length(iter, norm_inc)
+            self.cache_rlm(sk_fname,incr * step)
             prt_time(time.time() - t0, label=' Exec. time for descent direction calculation')
         assert os.path.exists(sk_fname), sk_fname
-        return self.lib_qlm.rlm2alm(self.load_rlm(sk_fname))
+        return self.lib_qlm.rlm2alm(self.load_rlm(sk_fname)),step
 
     def iterate(self, iter, key, cache_only=False, callback='default_callback'):
         """
@@ -491,28 +502,22 @@ class ffs_iterator(object):
         irrelevant = self.calc_gradPlikPdet(iter, key)
         pbs.barrier()  # Everything should be on disk now.
         if self.PBSRANK == 0:
-            def calc_norm(qlm):
-                return np.sqrt(np.sum(self.lib_qlm.alm2rlm(qlm) ** 2))
-
-            incr = self.build_incr(iter, key, self.load_total_grad(iter - 1, key))
-            norm_inc = calc_norm(incr) / calc_norm(self.get_Plm(0, key))
-            step_length = self.newton_step_length(iter, norm_inc)
-            self.cache_qlm(plm_fname, self.get_Plm(iter - 1, key) + self.newton_step_length(iter, norm_inc) * incr,
-                           pbs_rank=0)
+            incr,steplength = self.build_incr(iter, key, self.load_total_grad(iter - 1, key))
+            self.cache_qlm(plm_fname, self.get_Plm(iter - 1, key) + incr, pbs_rank=0)
 
             # Saves some info about increment norm and exec. time :
-
-            norms = [calc_norm(self.load_gradquad(iter - 1, key))]
-            norms.append(calc_norm(self.load_graddet(iter - 1, key)))
-            norms.append(calc_norm(self.load_gradpri(iter - 1, key)))
-            norm_grad = calc_norm(self.load_total_grad(iter - 1, key))
-            norm_grad_0 = calc_norm(self.load_total_grad(0, key))
+            norm_inc = self.calc_norm(incr) / self.calc_norm(self.get_Plm(0, key))
+            norms = [self.calc_norm(self.load_gradquad(iter - 1, key))]
+            norms.append(self.calc_norm(self.load_graddet(iter - 1, key)))
+            norms.append(self.calc_norm(self.load_gradpri(iter - 1, key)))
+            norm_grad = self.calc_norm(self.load_total_grad(iter - 1, key))
+            norm_grad_0 = self.calc_norm(self.load_total_grad(0, key))
             for i in [0, 1, 2]: norms[i] = norms[i] / norm_grad_0
 
             with open(self.lib_dir + '/history_increment.txt', 'a') as file:
-                file.write('%03d %.1f %.6f %.6f %.6f %.6f %.6f %.2f \n'
+                file.write('%03d %.1f %.6f %.6f %.6f %.6f %.6f %.12f \n'
                            % (iter, time.time() - ti, norm_inc, norm_grad / norm_grad_0, norms[0], norms[1], norms[2],
-                              self.newton_step_length(iter, norm_inc)))
+                              steplength))
                 file.close()
 
             if self.tidy > 2:  # Erasing dx,dy and det magn (12GB for full sky at 0.74 amin per iteration)
@@ -595,7 +600,7 @@ class ffs_iterator_pertMF(ffs_iterator):
                      'q': (cov.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
                      'u': (cov.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
 
-        self.isocov = fslens.covs.ffs_cov.ffs_diagcov_alm(lib_dir + '/isocov',
+        self.isocov = fs.ffs_covs.ffs_cov.ffs_diagcov_alm(lib_dir + '/isocov',
                                                           cov.lib_skyalm, cov.cls, cov.cls, cov.cl_transf, cls_noise,
                                                           lib_skyalm=cov.lib_skyalm)
         # FIXME : could simply cache the response...
@@ -668,7 +673,7 @@ class ffs_iterator_simMF(ffs_iterator):
         :return:
         """
         if self.nsims == 0: return None
-        phas_pix = fslens.sims.ffs_phas.pix_lib_phas(
+        phas_pix = fs.sims.ffs_phas.pix_lib_phas(
             self.lib_dir + '/%s_sky_noise_iter%s' % (self.type, iter * (not self.same_seeds)),
             len(self.type), self.cov.lib_datalm.shape, nsims_max=self.nsims)
         phas_cmb = None  # dont need it so far
