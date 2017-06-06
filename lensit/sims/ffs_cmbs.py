@@ -10,13 +10,15 @@ from lensit import pbs
 verbose = True
 
 def get_fields(cls):
+    print cls.keys()
     fields = ['p', 't', 'e', 'b', 'o']
+    ret = ['p', 't', 'e', 'b', 'o']
     for _f in fields:
-        if (_f + _f) not in cls.keys(): fields.remove(_f)
+        if not ((_f + _f) in cls.keys()): ret.remove(_f)
     for _k in cls.keys():
         for _f in _k:
-            if _f not in fields: fields.append(_f)
-    return fields
+            if _f not in ret: ret.append(_f)
+    return ret
 
 
 class sim_cmb_unl():
@@ -43,7 +45,7 @@ class sim_cmb_unl():
 
         self._cl_hash = {}
         for _k, cl in cls_unl.iteritems():
-            self._cl_hash[_k] = hashlib.sha1(cl[lib_alm.ellmin:lib_alm.ellmax + 1]).hexdigest()
+            self._cl_hash[_k] = hashlib.sha1(cl[lib_alm.ellmin:lib_alm.ellmax + 1].copy(order = 'C')).hexdigest()
         self.rmat = rmat
         self.lib_pha = lib_pha
         self.lib_skyalm = self.lib_pha.lib_alm
@@ -94,6 +96,8 @@ class sim_cmb_unl():
             for _j in range(Nf):
                 ret[_i] += self.lib_skyalm.almxfl(phases[_j], self.rmat[:, _i, _j])
 
+    def get_sim_qulm(self,idx):
+        return self.lib_skyalm.EBlms2QUalms(np.array([self.get_sim_elm(idx), self.get_sim_blm(idx)]))
 
 class sims_cmb_len():
     def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False):
@@ -181,3 +185,4 @@ class sims_cmb_len():
             if not self.cache_lens: return np.array([Qlm, Ulm])
             np.save(fname, np.array([Qlm, Ulm]))
         return np.load(fname)
+

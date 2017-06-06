@@ -109,7 +109,7 @@ class lib_noisemap():
         self.lib_skyalm.almxfl(umap, self.cl_transf, inplace=True)
         qmap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, qmap))
         umap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, umap))
-        return qmap + self.get_noise_sim_qmap(idx), umap + self.get_noise_sim_umap(idx)
+        return np.array([qmap + self.get_noise_sim_qmap(idx), umap + self.get_noise_sim_umap(idx)])
 
     def get_noise_sim_tmap(self, idx):
         return self._loadTnoise() * self.pix_pha.get_sim(idx, 0)
@@ -139,3 +139,82 @@ class lib_noisemap():
             return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx, mmap_mode='r')
         else:
             return self._build_sim_qumap(idx)
+
+class lib_noisefree():
+    def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, cache_sims=False):
+
+        self.lencmbs = lib_lencmb
+        self.lib_datalm = lib_datalm
+        self.lib_skyalm = lib_lencmb.lib_skyalm
+        self.cl_transf = np.zeros(self.lib_skyalm.ellmax + 1, dtype=float)
+        self.cl_transf[:min(len(self.cl_transf), len(cl_transf))] = cl_transf[:min(len(self.cl_transf), len(cl_transf))]
+        self.lib_dir = lib_dir
+        self.cache_sims = cache_sims
+        if not os.path.exists(lib_dir) and pbs.rank == 0:
+            os.makedirs(lib_dir)
+        pbs.barrier()
+
+        if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
+            pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+        pbs.barrier()
+        hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
+
+    def hashdict(self):
+        hash = {'len_cmb': self.lencmbs.hashdict()}
+        hash['transf'] = hashlib.sha1(self.cl_transf.copy(order='C')).hexdigest()
+        return hash
+
+    def _build_sim_tmap(self, idx):
+        tmap = self.lib_skyalm.almxfl(self.lencmbs.get_sim_tlm(idx), self.cl_transf)
+        tmap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, tmap))
+        return tmap
+
+    def _build_sim_qumap(self, idx):
+        qmap, umap = self.lencmbs.get_sim_qulm(idx)
+        self.lib_skyalm.almxfl(qmap, self.cl_transf, inplace=True)
+        self.lib_skyalm.almxfl(umap, self.cl_transf, inplace=True)
+        qmap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, qmap))
+        umap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, umap))
+        return np.array([qmap, umap])
+
+    def get_sim_tmap(self, idx):
+        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_tmap_%05d.npy' % idx):
+            if pbs.rank == 0:
+                np.save(self.lib_dir + '/sim_tmap_%05d.npy' % idx, self._build_sim_tmap(idx))
+            pbs.barrier()
+        if self.cache_sims:
+            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx, mmap_mode='r')
+        else:
+            return self._build_sim_tmap(idx)
+
+    def get_sim_qumap(self, idx):
+        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_qumap_%05d.npy' % idx):
+            if pbs.rank == 0:
+                np.save(self.lib_dir + '/sim_qumap_%05d.npy' % idx, np.array(self._build_sim_qumap(idx)))
+            pbs.barrier()
+        if self.cache_sims:
+            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx, mmap_mode='r')
+        else:
+            return self._build_sim_qumap(idx)
+
+class library_sum():
+    def __init__(self,sims_list,weights = None):
+        weights = np.ones(len(sims_list),dtype = float) if weights is None else weights
+        assert len(weights) == len(sims_list),(len(weights),len(sims_list))
+        shape = sims_list[0].lib_datalm.shape
+        assert np.all([sims.lib_datalm.shape == shape for sims in sims_list])
+        self.nlib = len(sims_list)
+        self.sims_list = sims_list
+        self.weights = weights
+
+    def get_sim_tmap(self,idx):
+        ret = self.weights[0] * self.sims_list[0].get_sim_tmap(idx)
+        for w,sim in zip(self.weights,self.sims_list):
+            ret += w * sim.get_sim_tmap(idx)
+        return ret
+
+    def get_sim_qumap(self, idx):
+        ret = self.weights[0] * self.sims_list[0].get_sim_qumap(idx)
+        for w, sim in zip(self.weights[1:], self.sims_list[1:]):
+            ret += w * sim.get_sim_qumap(idx)
+        return ret
