@@ -3,8 +3,10 @@ import os
 
 import numpy as np
 from scipy import interpolate
-from scipy import weave
-
+try :
+    from scipy import weave
+except:
+    import weave
 import lensit.misc.map_spliter as map_spliter
 from lensit.ffs_deflect import ffs_pool
 from lensit.misc import misc_utils as utils
@@ -355,7 +357,7 @@ class ffs_displacement(object):
                                   lenmap[j * width + i] = bicubiclensKernel(filtmap,i + dx_gu[j * width + i],j + dy_gu[j * width + i],width);\
                                   }\
                               }"
-            header = r' "%s/fslens/mllens_GPU/bicubicspline.h" ' % os.path.abspath(os.curdir)
+            header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
             if do_not_prefilter:
                 filtmap = self.load_map(map).astype(np.float64)
             else:
@@ -725,7 +727,7 @@ class ffs_displacement(object):
         Minv_xx = bic_filter(Minv_xx)
         Minv_yy = bic_filter(Minv_yy)
 
-        header = r' "%s/fslens/mllens_GPU/bicubicspline.h" ' % os.path.abspath(os.curdir)
+        header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
         iterate = r"\
             double fx,fy;\
             double ex_len_dx,ey_len_dy,len_Mxx,len_Mxy,len_Myx,len_Myy;\

@@ -5,10 +5,12 @@ from multiprocessing import Pool
 
 from lensit.misc.map_spliter import periodicmap_spliter
 from lensit.misc.misc_utils import IsPowerOfTwo, Log2ofPowerof2, PartialDerivativePeriodic, enumerate_progress, Freq
-from scipy import weave
-
+try:
+    from scipy import weave
+except:
+    import weave
 verbose = True
-bicubicspline_header = r' "%s/fslens/mllens_GPU/bicubicspline.h" ' % os.path.abspath(os.curdir)
+bicubicspline_header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
 
 
 def setup_Pool():
@@ -240,7 +242,7 @@ def _get_inverse_chk_N(args):
     Minv_xx = bic_filter(Minv_xx)
     Minv_yy = bic_filter(Minv_yy)
 
-    header = r' "%s/fslens/mllens_GPU/bicubicspline.h" ' % os.path.abspath(os.curdir)
+    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
     iterate = r"\
         double fx,fy;\
         double ex_len_dx,ey_len_dy,len_Mxx,len_Mxy,len_Myx,len_Myy;\
