@@ -3,19 +3,22 @@ Contains some pure convenience functions for quick startup.
 """
 import numpy as np
 import healpy as hp
-
+import os,sys
 try:
     import gpu
 except:
     print "NB : import of GPU module unsuccessful"
+
 import ffs_covs
 import ffs_iterators
 import ffs_deflect
+import curvedskylensing
 import ffs_qlms
 import misc
 import pbs
 import qcinv
 import sims
+import shts
 
 ellmax_sky = 6000
 
@@ -52,6 +55,21 @@ def get_config(exp):
         Beam_FWHM_amin = 3.
         ellmin = 10
         ellmax = 3000
+    elif exp == 'SOb1':
+        sN_uKamin = 3.
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'PB85':
+        sN_uKamin = 8.5 /np.sqrt(2.)
+        Beam_FWHM_amin = 3.5
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'PB5':
+        sN_uKamin = 5. / np.sqrt(2.)
+        Beam_FWHM_amin = 3.5
+        ellmin = 10
+        ellmax = 3000
     else:
         sN_uKamin = 0
         Beam_FWHM_amin = 0
@@ -64,14 +82,35 @@ def get_config(exp):
 
 def get_fidcls(ellmax_sky=ellmax_sky):
     cls_unl = {}
-    for key, cl in misc.jc_camb.spectra_fromcambfile('./inputs/cls/fiducial_lenspotentialCls.dat').iteritems():
+    for key, cl in misc.jc_camb.spectra_fromcambfile('./inputs/cls/fiducial_flatsky_lenspotentialCls.dat').iteritems():
         cls_unl[key] = cl[0:ellmax_sky + 1]
         if key == 'pp': cls_unl[key] = cl[:]  # might need this one
     cls_len = {}
-    for key, cl in misc.jc_camb.spectra_fromcambfile('./inputs/cls/fiducial_lensedCls.dat').iteritems():
+    for key, cl in misc.jc_camb.spectra_fromcambfile('./inputs/cls/fiducial_flatsky_lensedCls.dat').iteritems():
         cls_len[key] = cl[0:ellmax_sky + 1]
     return cls_unl, cls_len
 
+def get_partiallylenfidcls(w,ellmax_sky=ellmax_sky):
+    # Produces spectra lensed with w_L * cpp_L
+    params = misc.jc_camb.read_params('./inputs/cls/fiducial_flatsky_params.ini')
+    params['lensing_method'] = 4
+    #FIXME : this would anyway not work in MPI mode beacause lensing method 4 does not.
+    params['output_root'] = os.path.abspath('./temp/camb_rank%s'%pbs.rank)
+    ell = np.arange(len(w),dtype = int)
+    np.savetxt(misc.jc_camb.PathToCamb + '/cpp_weights.txt', np.array([ell, w]).transpose(), fmt=['%i', '%10.5f'])
+    misc.jc_camb.run_camb_fromparams(params)
+    cllen = misc.jc_camb.spectra_fromcambfile(params['output_root'] + '_' + params['lensed_output_file'])
+    ret = {}
+    for key, cl in cllen.iteritems():
+        ret[key] = cl[0:ellmax_sky + 1]
+    return ret
+
+
+def get_fidtenscls(ellmax_sky=ellmax_sky):
+    cls = {}
+    for key, cl in misc.jc_camb.spectra_fromcambfile('./inputs/cls/fiducial_tensCls.dat').iteritems():
+        cls[key] = cl[0:ellmax_sky + 1]
+    return cls
 
 def get_ellmat(LD_res, HD_res=14):
     """
