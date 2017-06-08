@@ -14,7 +14,7 @@ try:
     import fsht
 except ImportError, exc:
     sys.stderr.write("IMPORT ERROR: " + __file__ + " ({})".format(
-        exc) + ". Try running 'python setup.py install' or 'python setup.py build_ext --inplace' from the quicklens directory.\n")
+        exc) + ". Try running 'python setup.py install' or 'python setup.py build_ext --inplace' from the shts directory.\n")
 
 
 def vlm2map(s, tht, phi, vlm):
