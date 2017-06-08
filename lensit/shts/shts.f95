@@ -520,7 +520,7 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
   double complex, intent(in)  :: glm(0:((lmax+1)*(lmax+2)/2-1))
   double complex, intent(out) :: vtm(ntht,0:lmax) 
 
-  integer l, m, tl, tm, j,id
+  integer l, m, tl, tm, j,id,s
   double precision costht(ntht), sintht(ntht)
   double precision scal(ntht), spow(ntht), spow_i(ntht)
 
@@ -538,6 +538,7 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
   l = 0
   m = 0
   id = 0
+  s = 0
 
   ! do m=0
   llm_arr_p_lm0(:) = llm_arr_p(:)
@@ -634,7 +635,7 @@ subroutine glm2vtm_s0sym(ntht, lmax, tht, glm, vtm)
   double complex, intent(in)  :: glm(0:((lmax+1)*(lmax+2)/2-1))
   double complex, intent(out) :: vtm(0:2 * ntht-1,0:lmax)
 
-  integer l, m, tl, tm, j,id
+  integer l, m, tl, tm, j,id,s
   double precision costht(ntht), sintht(ntht)
   double precision scal(ntht), spow(ntht), spow_i(ntht)
 
@@ -650,6 +651,7 @@ subroutine glm2vtm_s0sym(ntht, lmax, tht, glm, vtm)
   llm_arr_p(:) = 1.d0/dsqrt(8.d0 * acos(0.d0))
   llm_arr_m(:) = llm_arr_p(:)
 
+  s = 0
   m = 0
   l = 0
   id = 0
