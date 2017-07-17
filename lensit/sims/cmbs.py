@@ -124,7 +124,7 @@ class sims_cmb_len():
         self.nside_lens = nside_lens
         self.unlcmbs = sims_cmb_unl(cls_unl, lib_pha)
         self.lib_dir = lib_dir
-        self.fields = get_fields(cls_unl,wzro = True)
+        self.fields = get_fields(cls_unl)
         if pbs.rank == 0 and not os.path.exists(lib_dir + '/sim_hash.pk') :
             pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
         pbs.barrier()
