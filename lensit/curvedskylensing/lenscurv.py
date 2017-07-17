@@ -90,7 +90,11 @@ excl. defl. angle calc.: 140 sec.
 from lensit import shts
 import healpy as hp,numpy as np
 from lensit.misc.misc_utils import timer
-import weave
+
+try:
+    import weave
+except:
+    from scipy import weave
 import os,time
 import pyfftw
 
