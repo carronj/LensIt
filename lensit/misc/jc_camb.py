@@ -11,7 +11,7 @@ import readcol as rc
 
 PathToCamb = '/Users/jcarron/camb'
 PathToCambParamFile = '/Users/jcarron/PyCharmProjects/jc_camb'
-typedict = ['matterpower', 'scalCls', 'lenspotentialCls', 'lensedCls']
+typedict = ['matterpower', 'scalCls', 'lenspotentialCls', 'lensedCls', 'tensCls']
 
 
 # def getPk_fromparams(**kwargs):
@@ -69,7 +69,7 @@ def spectra_fromcambfile(file, type=None, lmax=None):
         Clpt = cosmo.Cl_lminlmax(ell[idc], cols[6][idc] / w[idc])
         Clpe = cosmo.Cl_lminlmax(ell[idc], cols[7][idc] / w[idc])
         return {'tt': Cltt, 'ee': Clee, 'te': Clte, 'bb': Clbb, 'pp': Clpp, 'pt': Clpt, 'pe': Clpe}
-    elif type == 'lensedCls':  # 4 jc_cosmo Cl instances
+    elif type == 'lensedCls' or type == 'tensCls':  # 4 jc_cosmo Cl instances
         assert (len(cols) >= 5), len(cols)
         ell = cols[0]
         w = ell * (ell + 1) / (2. * np.pi)  # weights in output file
@@ -188,6 +188,20 @@ def set_cambparams(**kwargs):
             print "Key not found : adding to param. file :", key, str(value)
             params[key] = value
     return params
+
+
+def get_lensedcls(params):
+    run_camb_fromparams(params)
+    return spectra_fromcambfile(params['output_root'] + '_' + params['lensed_output_file'])
+
+
+def get_partiallylensedcls(params, w):
+    # Produces spectra lensed with w_L * cpp_L
+    params['lensing_method'] = 4
+    ell = np.arange(len(w), dtype=int)
+    np.savetxt('/Users/jcarron/camb/cpp_weights.txt', np.array([ell, w]).transpose(), fmt=['%i', '%10.5f'])
+    run_camb_fromparams(params)
+    return spectra_fromcambfile(params['output_root'] + '_' + params['lensed_output_file'])
 
 
 def run_camb_fromparams(params):

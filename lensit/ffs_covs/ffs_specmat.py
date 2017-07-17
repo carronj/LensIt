@@ -318,6 +318,30 @@ def TQUPmats2TEBcls(lib_alm, TQUpmat):
     return ret
 
 
+def QUPmats2EBcls(lib_alm, QUpmat):
+    """
+    Turns a 3x3x ellmax matrix with T,Q,U ell,m spectra to T,E,B ell only spectra
+    """
+    assert QUpmat.shape == ((2, 2, lib_alm.alm_size)), ((2, 2, lib_alm.alm_size), QUpmat.shape)
+    ret = np.zeros((2, 2, lib_alm.ellmax + 1), dtype=float)
+    # E = cos Q + sin U
+    # B = -sin Q + cos U
+    bin2cl = lambda _alm: lib_alm.bin_realpart_inell(_alm)[0:lib_alm.ellmax + 1]
+    # TE : -> cos TQ + sin TU
+    cos, sin = lib_alm.get_cossin_2iphi()
+    # EE : cos2 QQ + sin2 UU + sin cos QU
+    ret[0, 0, :] = bin2cl(
+        QUpmat[0, 0, :] * cos ** 2 + QUpmat[1, 1, :] * sin ** 2 + 2 * cos * sin * QUpmat[0, 1, :])
+    # BB : sin2 QQ + cos2 UU - 2 sin cos QU
+    ret[1, 1, :] = bin2cl(
+        QUpmat[1, 1, :] * cos ** 2 + QUpmat[0, 0, :] * sin ** 2 - 2 * cos * sin * QUpmat[0, 1, :])
+
+    # EB :  (UU-QQ)*cos*sin + QU * (cos2 -sin2)
+    ret[0, 1, :] = bin2cl(
+        (QUpmat[1, 1, :] - QUpmat[0, 0, :]) * cos * sin + QUpmat[0, 1, :] * (cos ** 2 - sin ** 2))
+    ret[1, 0, :] = ret[0, 1, :]
+    return ret
+
 def TEBPmat2TQUPmatij(_type, lib_alm, TEBclmat, i, j):
     """
     Rotates TEB TQU anisotrpoic spec matrix.

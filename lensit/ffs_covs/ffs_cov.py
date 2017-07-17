@@ -12,7 +12,7 @@ import lensit.qcinv
 from lensit.ffs_covs import ffs_specmat as SM
 from lensit.ffs_covs.ffs_specmat import get_unlPmat_ij, get_Pmat, get_datPmat_ij, \
     TQUPmats2TEBcls, get_rootunlPmat_ij, get_unlrotPmat_ij
-from lensit.misc.misc_utils import timer
+from lensit.misc.misc_utils import timer, cls_hash
 from lensit.sims.sims_generic import hash_check
 
 _timed = True
@@ -30,12 +30,18 @@ def xylms_to_phiOmegalm(lib_alm, Fxx, Fyy, Fxy, Fyx=None):
 
     lx = lib_alm.get_kx
     ly = lib_alm.get_ky
-    if Fyx is not None: assert 0, "FIXME"
-    # Fyx = Fxy
-    Fpp = Fxx * lx() ** 2 + Fyy * ly() ** 2 + 2. * Fxy * lx() * ly()
-    FOO = Fxx * ly() ** 2 + Fyy * lx() ** 2 - 2. * Fxy * lx() * ly()
+    if Fyx is None:
+        Fpp = Fxx * lx() ** 2 + Fyy * ly() ** 2 + 2. * Fxy * lx() * ly()
+        FOO = Fxx * ly() ** 2 + Fyy * lx() ** 2 - 2. * Fxy * lx() * ly()
+        # FIXME:
+        FpO = lx() * ly() * (Fxx - Fyy) + Fxy * (ly() ** 2 - lx() ** 2)
+    else:
+        Fpp = Fxx * lx() ** 2 + Fyy * ly() ** 2 + (Fxy + Fyx) * lx() * ly()
+        FOO = Fxx * ly() ** 2 + Fyy * lx() ** 2 - (Fxy + Fyx) * lx() * ly()
+        FpO = lx() * ly() * (Fxx - Fyy) + Fxy * (ly() ** 2 - lx() ** 2)
+        print 'Fxy Fyx equal, allclose', np.all(Fxy == Fyx), np.allclose(Fxy, Fyx)
+
     # FIXME: is the sign of the following line correct ? (anyway result should be close to zero)
-    FpO = lx() * ly() * (Fxx - Fyy) + Fxy * (ly() ** 2 - lx() ** 2)
     return np.array([Fpp, FOO, FpO])
 
 
@@ -245,7 +251,7 @@ class ffs_diagcov_alm(object):
         ret[2, 2] = cls[5]
         return ret
 
-    def get_RDdelensinguncorrbias(self, lib_qlm, clpp_rec, clsobs_deconv, recache=False):
+    def get_RDdelensinguncorrbias(self, lib_qlm, clpp_rec, clsobs_deconv, clsobs_deconv2=None, recache=False):
         """
         Calculate delensing bias given a reconstructed potential map with spectum clpp_rec (includes N0, etc),
         (** clpp_rec should not contain clpp if what you really want is the bias ** Put clpp + N0 if what you want is the
@@ -272,13 +278,19 @@ class ffs_diagcov_alm(object):
             for _i in range(3):
                 for _j in range(_i, 3):
                     _map = np.zeros(self.dat_shape, dtype=float)
-                    Pmat = get_unlPmat_ij('TQU', self.lib_datalm, clsobs_deconv, _i, _j)
+                    Pmat1 = get_unlPmat_ij('TQU', self.lib_datalm, clsobs_deconv, _i, _j)
+                    Pmat2 = Pmat1 if clsobs_deconv2 is None else  get_unlPmat_ij('TQU', self.lib_datalm, clsobs_deconv2,
+                                                                                 _i, _j)
                     for a in [0, 1]:
                         for b in [0, 1][a:]:
                             facab = (2. - (a == b))
                             _phiab = lib_qlm.alm2map(clpp_rec[lib_qlm.reduced_ellmat()] * ik_q(a) * ik_q(b) * facab)
-                            _map += (_phiab - _phiab[0, 0]) \
-                                    * self.lib_datalm.alm2map(Pmat * ik_d(a) * ik_d(b))
+                            if clsobs_deconv2 is None:
+                                _map += (_phiab - _phiab[0, 0]) * self.lib_datalm.alm2map(Pmat1 * ik_d(a) * ik_d(b))
+                            else:
+                                _map += (_phiab) * self.lib_datalm.alm2map(Pmat1 * ik_d(a) * ik_d(b))
+                                _map -= (_phiab[0, 0]) * self.lib_datalm.alm2map(Pmat2 * ik_d(a) * ik_d(b))
+
                     retalms[_i, _j, :] = (self.lib_datalm.map2alm(_map))
             return TQUPmats2TEBcls(self.lib_datalm, retalms) * (- 1. / np.sqrt(np.prod(self.lsides)))
 
@@ -290,7 +302,17 @@ class ffs_diagcov_alm(object):
            B^{a, lm} = [ik_a b^2 C_len  Cov^{-1}]_{m l}
         WFcl is the filter applied to the qest prior delensing the maps. (e.g. Cpp / (Cpp + N0) for WF filtering)
 
-        The sign of the output is such that is a positive contr. to C^len - C^unl
+        See Eq. A19 in 1701.01712.
+
+        The sign of the output is such that is a positive contr. to C^len - C^unl.
+        
+        For template subtraction this is slightly different, since the template is built with (E = E_dat^WF, B = 0) 
+        template. In this case, the leg, with a {,b} on the spectra should be the cross-spectra
+        between (T = T^dat,E^dat,B^dat) and (0,E^WF,0). The other leg is identical, since it pairs a data map and
+        the quadratic estiamtor legs built with the data.
+        can get dat with RDdelensingcorrbias below with custom cl 2
+
+        !NB : norm is N0/2-like, -> AL ~ N0/2
         """
 
         assert _type in _types, (_type, _types)
@@ -400,6 +422,12 @@ class ffs_diagcov_alm(object):
 
         If two clsobs are put in, AC is calculate with the first one and BC with the second one.
         Useful for dcl-leading order deviations of the bias.
+        
+                
+        For template subtraction this is slightly different, since the template is built with (E = E_dat^WF, B = 0) 
+        template. In this case, the leg, with a {,b} on the spectra should be the cross-spectra
+        between (T = T^dat,E^dat,B^dat) and (0,E^WF,0). The other leg is identical, since it pairs a data map and
+        the quadratic estiamtor legs built with the data.
         """
 
         assert _type in _types, (_type, _types)
@@ -542,14 +570,11 @@ class ffs_diagcov_alm(object):
             return self.get_iblms(_type, _datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
         assert datalms.shape == self._datalms_shape(_type), (datalms.shape, self._datalms_shape(_type))
         ilms = self.apply_conddiagcl(_type, datalms, use_Pool=use_Pool, use_cls_len=use_cls_len)
-        ret = np.zeros(self._skyalms_shape(_type), dtype=complex)
+        ret = np.empty(self._skyalms_shape(_type), dtype=complex)
         for _i in range(len(_type)):
             ret[_i] = self.lib_skyalm.udgrade(self.lib_datalm, self.lib_datalm.almxfl(ilms[_i], self.cl_transf))
         return ret, 0
 
-    def get_Reslms(self, _type, datalms, use_cls_len=True, use_Pool=0, **kwargs):
-        TQUiblms, iter = self.get_iblms(_type, datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
-        return SM.TQU2TEBlms(_type, self.lib_skyalm, TQUiblms)
 
     def cd_solve(self, _type, alms, cond='3', maxiter=50, ulm0=None,
                  use_Pool=0, tol=1e-5, tr_cd=lensit.qcinv.cd_solve.tr_cg, cd_roundoff=25, d0=None):
@@ -588,13 +613,14 @@ class ffs_diagcov_alm(object):
 
         dot_op = dot_op()
 
+        if d0 is None:
+            d0 = dot_op(alms, alms)
         if ulm0 is None: ulm0 = np.zeros_like(alms)
-
         criterion = lensit.qcinv.cd_monitors.monitor_basic(dot_op, iter_max=maxiter, eps_min=tol, d0=d0)
-        print "++ cd_solve: starting, cond %s " % cond
+        print "++ ffs_cov cd_solve: starting, cond %s " % cond
 
-        iter = lensit.qcinv.cd_solve.cd_solve(ulm0, alms, fwd_op, [pre_ops], dot_op, criterion,
-                                              tr_cd, roundoff=cd_roundoff)
+        iter = lensit.qcinv.cd_solve.cd_solve(ulm0, alms, fwd_op, [pre_ops], dot_op, criterion, tr_cd,
+                                              roundoff=cd_roundoff)
         return ulm0, iter
 
     def apply_cond3(self, _type, alms, use_Pool=0):
@@ -850,8 +876,8 @@ class ffs_diagcov_alm(object):
         To get the response (and not N0) : put cls_obs to None, cls_filt to your filtering and cls_weights to the true
         len Cls.
 
-        (db xi B Cov^{-1} B^t )_{ab}(z) (daxi B Cov^{-1} B^t)^{ba}(z)
-        +  (B Cov^-1 B^t)(z) (daxi B Cov^-1 B^t dbxi)(z)
+        -(db xi B Cov^{-1} B^t )_{ab}(z) (daxi B Cov^{-1} B^t)^{ba}(z)
+         - (B Cov^-1 B^t)(z) (daxi B Cov^-1 B^t dbxi)(z)
 
         To include curl polarisation rotation :
         d0 xi -> d0 xi + d1 R xi
@@ -1005,12 +1031,12 @@ class ffs_diagcov_alm(object):
         return [lib_qlm.bin_realpart_inell(_r) for _r in self.get_MFresplms(_type, lib_qlm, use_cls_len=use_cls_len)]
 
     def get_MFresplms(self, _type, lib_qlm, use_cls_len=False, recache=False):
-        # (xiK) (xiK) + K (xi K xi - xi) - l ==0
+        # (xiK) (xiK) + K (xi K xi - xi) - (l == 0 term)
         """
         Get linear response mean field matrix : In harmonic space, the mean field
         is given by phi_MF = <\hat phi >_phi = RMF_L phi_{lm}
 
-        *** This is the N0/2-like unnormalised mean field ! ***
+        *** This is the N0-like unnormalised mean field ! ***
 
         Let lnp_phi = -S_phi  - ln Z.
         The deflection is the negative gradient of the negative lnp hence -dS dphi
@@ -1033,6 +1059,11 @@ class ffs_diagcov_alm(object):
         # FIXME : adapt this for custom cls_filt and cls_weights etc
          
         # (xia K)_ij(xib K)_ji  +(K) (xi K xi - xi)
+        #=====
+        NB sign:
+        This returns the second variation of 1/2 ln det Cov
+        #=====
+        
         """
         assert self.lib_skyalm.shape == self.lib_datalm.shape
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
@@ -1094,118 +1125,628 @@ class ffs_diagcov_alm(object):
             facunits = 1. / np.sqrt(np.prod(self.lsides))
             ret = xylms_to_phiOmegalm(_lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)
             np.save(fname, ret)
+            print "Cached ", fname
         return np.array([lib_qlm.udgrade(_lib_qlm, _a) for _a in np.load(fname)])
 
-    def get_MFresplms_old(self, _type, lib_qlm, use_cls_len=True, recache=True):
+    def get_dMFrespcls(self, _type, cmb_dcls, lib_qlm, use_cls_len=False):
+        return [lib_qlm.bin_realpart_inell(_r) for _r in
+                self.get_dMFresplms(_type, cmb_dcls, lib_qlm, use_cls_len=use_cls_len)]
+
+    def get_dMFresplms(self, _type, cmb_dcls, lib_qlm, use_cls_len=False, recache=False):
         """
-        Get linear response mean field matrix : In harmonic space, the mean field
-        is given by phi_MF = <\hat phi >_phi = RMF_L phi_{lm}
-
-        *** This is the N0/2-like unnormalised mean field ! ***
-
-        Let lnp_phi = -S_phi  - ln Z.
-        The deflection is the negative gradient of the negative lnp hence -dS dphi
-        --> The mean field is <-dS/phi> = <dlnZ/dphi> (<dlnp> always vanishes)
-
-        The mean field response is thus
-
-          dphi_MF / dphi = d^2 ln Z / dphi^2 = 0.5 d ln det Cov / dphi^2
-
-        A short calc. gives
-
-        - 1/2 Tr Cov^{-1} dCov/dpa(x) Cov^{-1} dCov/dpb(y)    ( 1 / N0, Fisher curvature)
-        + Dirac(x - y) Tr (B^t Cov^{-1} B d^2xi/dadab)(x-y) # this just take out the l == 0 term
-        - Tr (B^t Cov^{-1} B)(x -y) (d^2xi/dadab)(x - y)
-
-        The expected normalised MF spectrum is then Rl ** 2 * (qlm_norm) ** 2 * C_hatphi_hatphi.
-
-        The normalisation of the output is for the qlm_norm ~ N0
-        ! The xi_ab and Dirac matrices depends on lib_sky but the other on lib_dat
-        # FIXME : adapt this for custom cls_filt and cls_weights etc
+        derivative of MF resp (xiK) (xiK) + K (xi K xi - xi) - (l == 0 term) w.r.t. some parameters.
+        Uses dxi and dK = -K dxi K, where dxi is built from the CMB spectra variations
+        
+        Dumbest possible implementation.
+        Finite difference test check OK for 'r', inclusive sign and O(h**2) behavior, but strangely the cls derivative
+        in both cases look slightly randomly scattered.
         """
-        # FIXME :  strong cancellation between N0 and the other terms
-        fname = self.lib_dir + '/%s_MFresplm_%sCls.npy' % (_type, {True: 'len', False: 'unl'}[use_cls_len])
+        assert self.lib_skyalm.shape == self.lib_datalm.shape
+        cls_cmb = self.cls_len if use_cls_len else self.cls_unl
         _lib_qlm = lensit.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat,
                                                           filt_func=lambda ell: (ell <= 2 * self.lib_skyalm.ellmax))
-        if os.path.exists(fname) and not recache:
-            return 0.5 * (np.array([lib_qlm.udgrade(_lib_qlm, _a) for _a in np.load(fname)]) \
-                          - self.get_qlm_curvature(_type, lib_qlm, use_cls_len=use_cls_len).real)
+        fname = self.lib_dir + '/%s_dMFresplm_%s.npy' % (_type, {True: 'len', False: 'unl'}[use_cls_len])
+        if not os.path.exists(fname) or recache:
 
+            def mu(a, b, i, j):
+                ret = a(i, 0) * b(0, j)
+                for _k in range(1, len(_type)):
+                    ret += a(i, _k) * b(_k, j)
+                return ret
+
+            def dxi(i, j):
+                return get_unlPmat_ij(_type, self.lib_skyalm, cmb_dcls, i, j)
+
+            def xi(i, j):
+                return get_unlPmat_ij(_type, self.lib_skyalm, cls_cmb, i, j)
+
+            def K(i, j):
+                return self._upg(
+                    self.lib_datalm.almxfl(self.get_Pmatinv(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+
+            xiK = lambda i, j: mu(xi, K, i, j)
+            Kxi = lambda i, j: mu(K, xi, i, j)
+            dxiK = lambda i, j: mu(dxi, K, i, j)
+            dK = lambda i, j: (-mu(K, dxiK, i, j))
+            Kdxi = lambda i, j: mu(K, dxi, i, j)
+            xidK = lambda i, j: mu(xi, dK, i, j)
+            dKxi = lambda i, j: mu(dK, xi, i, j)
+            xiKdxi = lambda i, j: mu(xi, Kdxi, i, j)
+            dxiKxi = lambda i, j: mu(dxi, Kxi, i, j)
+            xiKxi_xi = lambda i, j: (mu(xiK, xi, i, j) - xi(i, j))
+            xidKxi = lambda i, j: mu(xi, dKxi, i, j)
+            d_xiK = lambda i, j: (dxiK(i, j) + xidK(i, j))
+            d_xiKxi_xi = lambda i, j: (xidKxi(i, j) + dxiKxi(i, j) + xiKdxi(i, j) - dxi(i, j))
+
+            _2map = lambda alm: self.lib_skyalm.alm2map(alm)
+            _2qlm = lambda _map: _lib_qlm.map2alm(_map)
+
+            ik = lambda ax: self.lib_skyalm.get_ikx() if ax == 1 else self.lib_skyalm.get_iky()
+            Fxx = np.zeros(_lib_qlm.alm_size, dtype=complex)
+            Fyy = np.zeros(_lib_qlm.alm_size, dtype=complex)
+            Fxy = np.zeros(_lib_qlm.alm_size, dtype=complex)
+            for i in range(len(_type)):  # d[(xia K)_ij(xib K)_ji]
+                for j in range(len(_type)):
+                    xiK1 = d_xiK(i, j)
+                    xiK2 = xiK(j, i)
+                    Fxx += _2qlm(_2map(xiK1 * ik(1)) * (_2map(xiK2 * ik(1))))
+                    Fyy += _2qlm(_2map(xiK1 * ik(0)) * (_2map(xiK2 * ik(0))))
+                    Fxy += _2qlm(_2map(xiK1 * ik(1)) * (_2map(xiK2 * ik(0))))
+                    xiK1 = xiK(i, j)
+                    xiK2 = d_xiK(j, i)
+                    Fxx += _2qlm(_2map(xiK1 * ik(1)) * (_2map(xiK2 * ik(1))))
+                    Fyy += _2qlm(_2map(xiK1 * ik(0)) * (_2map(xiK2 * ik(0))))
+                    Fxy += _2qlm(_2map(xiK1 * ik(1)) * (_2map(xiK2 * ik(0))))
+
+            # adding to that (K) (xi K xi - xi) =
+            for i in range(len(_type)):  # d [(K) (xi K xi - xi)]
+                for j in range(len(_type)):
+                    A = _2map(dK(i, j))
+                    B = xiKxi_xi(j, i)
+                    Fxx += _2qlm(A * _2map(B * ik(1) * ik(1)))
+                    Fyy += _2qlm(A * _2map(B * ik(0) * ik(0)))
+                    Fxy += _2qlm(A * _2map(B * ik(1) * ik(0)))
+                    A = _2map(K(i, j))
+                    B = d_xiKxi_xi(j, i)
+                    Fxx += _2qlm(A * _2map(B * ik(1) * ik(1)))
+                    Fyy += _2qlm(A * _2map(B * ik(0) * ik(0)))
+                    Fxy += _2qlm(A * _2map(B * ik(1) * ik(0)))
+
+            assert _lib_qlm.reduced_ellmat()[0] == 0
+            Fxx -= Fxx[0]
+            Fyy -= Fyy[0]
+            Fxy -= Fxy[0]
+
+            facunits = 1. / np.sqrt(np.prod(self.lsides))
+            ret = xylms_to_phiOmegalm(_lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)
+            np.save(fname, ret)
+            print "Cached ", fname
+        return np.array([lib_qlm.udgrade(_lib_qlm, _a) for _a in np.load(fname)])
+
+    def get_lndetcurv(self, _type, lib_qlm, get_A=None, use_cls_len=False, recache=False):
+        """
+        This returns 
+        1/2 Tr A \frac{\delta^2}{\delta dx_a \delta dx_b} Cov at phi == 0.
+        This is - xi_ab(r)(B^t A B) - (ell = 0) term  (for A (x-y) symmetric. Not necessarily symmetric w.r.t. TQU indices)
+        if A is not set, A is cov^-1 and the output reduces to second term of the 2nd variation of 1/2 ln det Cov
+        = -1/2 Tr dCov Covi dCov Covi + 1/2 Tr Covi d^2Cov 
+        
+        N0-like normalisation.
+        -(xi,ab)(K)
+        """
+        _lib_qlm = lib_qlm
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
-        _2qlm = lambda _map: _lib_qlm.map2alm(_map)
+        if get_A is None:
+            get_A = self.get_Pmatinv
 
-        def get_bCib(i, j, fac=1.):  # B^t Cov^{-1} B
-            return self.lib_datalm.almxfl(self.get_Pmatinv(_type, i, j, use_cls_len=use_cls_len),
-                                          fac * self.cl_transf ** 2)
+        def get_K(i, j):
+            # B^t A B
+            return self._upg(self.lib_datalm.almxfl(get_A(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
 
-        def get_ikaikbP(lib_alm, i, j, a, b):  # P ika ikb
-            assert a in [0, 1] and b in [0, 1], (a, b)
-            ka = lib_alm.get_kx if a == 1 else lib_alm.get_ky
-            kb = lib_alm.get_kx if b == 1 else lib_alm.get_ky
-            return -get_unlPmat_ij(_type, lib_alm, cls_cmb, i, j) * ka() * kb()
+        _2qlm = lambda _map: _lib_qlm.map2alm(_map).real
+        _2map = lambda alm: self.lib_skyalm.alm2map(alm)
+        ik = lambda ax: self.lib_skyalm.get_ikx() if ax == 1 else self.lib_skyalm.get_iky()
 
-        Fxx = np.zeros(_lib_qlm.alm_size, dtype=complex)
-        Fyy = np.zeros(_lib_qlm.alm_size, dtype=complex)
-        Fxy = np.zeros(_lib_qlm.alm_size, dtype=complex)
+        Fxx = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fyy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fxy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        for i in range(len(_type)):  # (K) (xi_ab)
+            for j in range(i, len(_type)):  # This is i-j symmetric
+                fac = 2 - (i == j)
+                K = _2map(get_K(i, j))
+                xi = get_unlPmat_ij(_type, self.lib_skyalm, cls_cmb, j, i)
+                Fxx -= fac * _2qlm(K * _2map(xi * ik(1) * ik(1)))
+                Fyy -= fac * _2qlm(K * _2map(xi * ik(0) * ik(0)))
+                Fxy -= fac * _2qlm(K * _2map(xi * ik(1) * ik(0)))
 
-        for _i in range(len(_type)):  # Tr (B^t Cov^{-1} B)(z -z') (xi_ab)(z -z')
-            for _j in range(len(_type)):
-                _BciB = self.lib_skyalm.alm2map(self._upg(get_bCib(_i, _j, fac=1.)))  # 2 - (_i == _j))))
-                Fxx += _2qlm(_BciB * self.lib_skyalm.alm2map(get_ikaikbP(self.lib_skyalm, _i, _j, 1, 1)))
-                Fyy += _2qlm(_BciB * self.lib_skyalm.alm2map(get_ikaikbP(self.lib_skyalm, _i, _j, 0, 0)))
-                Fxy += _2qlm(_BciB * self.lib_skyalm.alm2map(get_ikaikbP(self.lib_skyalm, _i, _j, 1, 0)))
-        del _BciB
-
-        # def get_cst():  # delta^D(z -z') Tr (B^t Cov^{-1} B xi_ab)_(z - z')
-        # retxx = 0.
-        # retyy = 0.
-        # retyx = 0.
-        # Pmatxx = np.zeros(self.lib_datalm.alm_size, dtype=complex)
-        # Pmatyy = np.zeros(self.lib_datalm.alm_size, dtype=complex)
-        # Pmatxy = np.zeros(self.lib_datalm.alm_size, dtype=complex)
-
-        # for _i in range(len(_type)):
-        # for _j in range(len(_type)):
-        # fac = 2 - (_i == _j)
-        # fac = 1.
-        # Pmatxx += get_bCib(_i, _j, fac=fac) * get_ikaikbP(self.lib_datalm, _j, _i, 1, 1)
-        # Pmatyy += get_bCib(_i, _j, fac=fac) * get_ikaikbP(self.lib_datalm, _j, _i, 0, 0)
-        # Pmatxy += get_bCib(_i, _j, fac=fac) * get_ikaikbP(self.lib_datalm, _j, _i, 0, 1)
-
-
-        # fac = (2 - (_i == _j)) * (2 / np.sqrt(np.prod(self.lsides)))
-        # retyy += np.sum(get_bCib(_i, _j,fac = fac) * get_ikaikbP(_j, _i, 0, 0))
-        # retxx += np.sum(get_bCib(_i, _j,fac = fac) * get_ikaikbP(_j, _i, 1, 1))
-        # retyx += fac * np.sum(get_bCib(_i, _j) * get_ikaikbP(_j, _i, 0, 1))
-        # lib_full = fs.ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat,filt_func=lambda ell : ell >= 0)
-        # Dirac = lib_full.alm2map(np.ones(lib_full.alm_size, dtype=complex))
-        # retxx = _2qlm(Dirac * self.lib_skyalm.alm2map(self._upg(Pmatxx)))
-        # retyy = _2qlm(Dirac * self.lib_skyalm.alm2map(self._upg(Pmatyy)))
-        # retxy = _2qlm(Dirac * self.lib_skyalm.alm2map(self._upg(Pmatxy)))
-
-        # return (retyy, retxx, retxy)
-        # Factor of two because of redundancy. The pure real freq should not matter here, and the double counting redudancy of kx ==0, ky <>0 neither
-
-        # retyy, retxx, retxy = get_cst()
-        # print retxx[0], retyy[0],retxy[0]
-        # print Fxx[0],Fyy[0],Fxy[0]
-        # FIXME : this should be the k == 0 term. OK !
-        # Fxx -= retxx[0]
-        # Fyy -= retyy[0]
-        # Fxy -= retxy[0]
         assert _lib_qlm.reduced_ellmat()[0] == 0
         Fxx -= Fxx[0]
         Fyy -= Fyy[0]
         Fxy -= Fxy[0]
+        facunits = 1. / np.sqrt(np.prod(self.lsides))
+        return xylms_to_phiOmegalm(_lib_qlm, Fxx * facunits, Fyy * facunits, Fxy * facunits)
 
-        facunits = -2. / np.sqrt(np.prod(self.lsides))
+    def get_dlndetcurv(self, _type, cmb_dcls, lib_qlm, K=None, dK=None, use_cls_len=False, recache=False):
+        """
+        This returns 
+        1/2 Tr A \frac{\delta^2}{\delta dx_a \delta dx_b} Cov at phi == 0.
+        This is - xi_ab(r)(B^t A B) - (ell = 0) term  (for A (x-y) symmetric. Not necessarily symmetric w.r.t. TQU indices)
+        if A is not set, A is cov^-1 and the output reduces to second term of the 2nd variation of 1/2 ln det Cov
+        = -1/2 Tr dCov Covi dCov Covi + 1/2 Tr Covi d^2Cov 
 
-        ret = xylms_to_phiOmegalm(_lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)
-        np.save(fname, ret)
-        del ret
-        return 0.5 * (np.array([lib_qlm.udgrade(_lib_qlm, _a) for _a in np.load(fname)]) \
-                      - self.get_qlm_curvature(_type, lib_qlm, use_cls_len=use_cls_len).real)
+        N0-like normalisation.
+        -(xi,ab)(K) --> -(dxi,ab)(K) - (xi,ab)(dK)
+        
+        Finite difference test ok.
+        """
+        _lib_qlm = lib_qlm
+        if K is None: assert dK is None
+        if K is not None: assert dK is not None
 
+        cls_cmb = self.cls_len if use_cls_len else self.cls_unl
+
+        def mu(a, b, i, j):
+            ret = a(i, 0) * b(0, j)
+            for _k in range(1, len(_type)):
+                ret += a(i, _k) * b(_k, j)
+            return ret
+
+        def dxi(i, j):
+            return get_unlPmat_ij(_type, self.lib_skyalm, cmb_dcls, i, j)
+
+        def xi(i, j):
+            return get_unlPmat_ij(_type, self.lib_skyalm, cls_cmb, i, j)
+
+        if K is None:
+            K = lambda i, j: (self._upg(
+                self.lib_datalm.almxfl(self.get_Pmatinv(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2)))
+        if dK is None:
+            dxiK = lambda i, j: mu(dxi, K, i, j)
+            dK = lambda i, j: (-mu(K, dxiK, i, j))
+
+        _2qlm = lambda _map: _lib_qlm.map2alm(_map).real
+        _2map = lambda alm: self.lib_skyalm.alm2map(alm)
+        ik = lambda ax: self.lib_skyalm.get_ikx() if ax == 1 else self.lib_skyalm.get_iky()
+
+        Fxx = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fyy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fxy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        for i in range(len(_type)):  # -(dK) (xi_ab) - (K)(dxi_ab)
+            for j in range(len(_type)):
+                A = _2map(dK(i, j))
+                B = xi(j, i)
+                Fxx -= _2qlm(A * _2map(B * ik(1) * ik(1)))
+                Fyy -= _2qlm(A * _2map(B * ik(0) * ik(0)))
+                Fxy -= _2qlm(A * _2map(B * ik(1) * ik(0)))
+                A = _2map(K(i, j))
+                B = dxi(j, i)
+                Fxx -= _2qlm(A * _2map(B * ik(1) * ik(1)))
+                Fyy -= _2qlm(A * _2map(B * ik(0) * ik(0)))
+                Fxy -= _2qlm(A * _2map(B * ik(1) * ik(0)))
+
+        assert _lib_qlm.reduced_ellmat()[0] == 0
+        Fxx -= Fxx[0]
+        Fyy -= Fyy[0]
+        Fxy -= Fxy[0]
+        facunits = 1. / np.sqrt(np.prod(self.lsides))
+        return xylms_to_phiOmegalm(_lib_qlm, Fxx, Fyy, Fxy) * facunits
+
+    def get_fishertrace(self, _type, lib_qlm, get_A1=None, get_A2=None, use_cls_len=True, recache=False):
+        """
+        This returns 
+        1/2 Tr A1 dCov A2 dCov at phi == 0.
+        if A or B not set, they reduce to Covi, and the result is the F info at phi = 0.
+        N0-like normalisation.
+        #-1/2 (xi,a K1)(xi,b K2)  -1/2(xi,b K1)(xi_a K2)
+        #-1/2 (K1)(xi,a K2 xib)  -1/2(xi,a K1 xib)(K2)
+        K1 = Bt A1 B,  K2 = Bt A2 B, with A1,A2 defaulting to Cov^{-1} 
+        """
+        # FIXME : The rel . agreement with 1/N0 is only 1e-6 not double prec., not sure what is going on.
+
+        t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
+        _lib_qlm = lib_qlm
+        cls_cmb = self.cls_len if use_cls_len else self.cls_unl
+        if get_A1 is None:
+            get_A1 = self.get_Pmatinv
+        if get_A2 is None:
+            get_A2 = self.get_Pmatinv
+
+        def get_K1(i, j):
+            return self.lib_datalm.almxfl(get_A1(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2)
+
+        def get_K2(i, j):
+            return self.lib_datalm.almxfl(get_A2(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2)
+
+        def get_xiK(mat, i, j):
+            assert mat in [1, 2], mat
+            K = get_K1 if mat == 1 else get_K2
+            ret = get_unlPmat_ij(_type, self.lib_datalm, cls_cmb, i, 0) * K(0, j)
+            for _k in range(1, len(_type)):
+                ret += get_unlPmat_ij(_type, self.lib_datalm, cls_cmb, i, _k) * K(_k, j)
+            return ret
+
+        def get_xiKxi(mat, i, j):
+            assert mat in [1, 2], mat
+            ret = get_xiK(mat, i, 0) * get_unlPmat_ij(_type, self.lib_datalm, cls_cmb, 0, j)
+            for _k in range(1, len(_type)):
+                ret += get_xiK(mat, i, _k) * get_unlPmat_ij(_type, self.lib_datalm, cls_cmb, _k, j)
+            return ret
+
+        _2qlm = lambda _map: _lib_qlm.map2alm(_map).real
+        _2map = lambda alm: self.lib_datalm.alm2map(alm)
+        k = lambda ax: self.lib_datalm.get_ikx() if ax == 1 else self.lib_datalm.get_iky()
+
+        Fxx = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fyy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fxy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fyx = np.zeros(_lib_qlm.alm_size, dtype=float)
+        # -1/2 (xia B^t A1 B)(xib B^t A2 B)  -1/2(xi_b B^t A1 B)(xi_a B^t A2 B)
+        # -1/2 (B^t A1 B)(xia B^t A2 B xib)  -1/2(xia B^t A1 B xib)(B^t A2 B)
+        for i in range(len(_type)):  # (K) (xi_ab)
+            for j in range(len(_type)):
+                _K1 = _2map(get_K1(i, j))
+                xiK2xi = get_xiKxi(2, j, i)  # (B^t A1 B)(xia B^t A2 B xib)
+                Fxx += _2qlm(_K1 * _2map(xiK2xi * k(1) * k(1)))
+                Fyy += _2qlm(_K1 * _2map(xiK2xi * k(0) * k(0)))
+                Fxy += _2qlm(_K1 * _2map(xiK2xi * k(1) * k(0)))
+                Fyx += _2qlm(_K1 * _2map(xiK2xi * k(0) * k(1)))
+
+                del _K1, xiK2xi
+                _K2 = _2map(get_K2(i, j))
+                xiK1xi = get_xiKxi(1, j, i)  # (xia B^t A B xib)(B^t A2 B)
+                Fxx += _2qlm(_K2 * _2map(xiK1xi * k(1) * k(1)))
+                Fyy += _2qlm(_K2 * _2map(xiK1xi * k(0) * k(0)))
+                Fxy += _2qlm(_K2 * _2map(xiK1xi * k(1) * k(0)))
+                Fyx += _2qlm(_K2 * _2map(xiK1xi * k(0) * k(1)))
+
+                del _K2, xiK1xi
+                xiK1 = get_xiK(1, i, j)
+                xiK2 = get_xiK(2, j, i)  # (xia B^t A1 B)(xib B^t A2 B)
+                Fxx += _2qlm(_2map(xiK1 * k(1)) * _2map(xiK2 * k(1)))
+                Fyy += _2qlm(_2map(xiK1 * k(0)) * _2map(xiK2 * k(0)))
+                Fxy += _2qlm(_2map(xiK1 * k(1)) * _2map(xiK2 * k(0)))
+                Fyx += _2qlm(_2map(xiK1 * k(0)) * _2map(xiK2 * k(1)))
+                #                K1xi = get_xiK(1, i, j)
+                #                K2xi = get_xiK(2, j, i)#(xi_a B^t A2 B)(xi_b B^t A1 B)
+                Fxx += _2qlm(_2map(xiK2 * k(1)) * _2map(xiK1 * k(1)))
+                Fyy += _2qlm(_2map(xiK2 * k(0)) * _2map(xiK1 * k(0)))
+                Fxy += _2qlm(_2map(xiK2 * k(1)) * _2map(xiK1 * k(0)))
+                Fyx += _2qlm(_2map(xiK2 * k(0)) * _2map(xiK1 * k(1)))
+                # del K1xi,K2xi
+
+                t.checkpoint('%s %s done' % (i, j))
+        facunits = -0.5 * (1. / np.sqrt(np.prod(self.lsides)))  # N0-like norm
+        return xylms_to_phiOmegalm(_lib_qlm, Fxx * facunits, Fyy * facunits, Fxy * facunits, Fyx=Fyx * facunits)
+
+    def get_dfishertrace(self, _type, cmb_dcls, lib_qlm, K1=None, K2=None, dK1=None, dK2=None,
+                         use_cls_len=True, recache=False):
+        """
+        Variation of fisher trace
+           #-1/2 (xi,a K1)(xi,b K2)  -1/2(xi,b K1)(xi_a K2)
+           #-1/2 (K1)(xi,a K2 xib)   -1/2(xi,a K1 xib)(K2)
+        with respect to dcls_cmb
+        Finite difference test OK
+        """
+        if K1 is not None: assert dK1 is not None
+        if K2 is not None: assert dK2 is not None
+        t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
+        _lib_qlm = lib_qlm
+        cls_cmb = self.cls_len if use_cls_len else self.cls_unl
+
+        def mu(a, b, i, j):
+            ret = a(i, 0) * b(0, j)
+            for _k in range(1, len(_type)):
+                ret += a(i, _k) * b(_k, j)
+            return ret
+
+        def dxi(i, j):
+            return get_unlPmat_ij(_type, self.lib_skyalm, cmb_dcls, i, j)
+
+        def xi(i, j):
+            return get_unlPmat_ij(_type, self.lib_skyalm, cls_cmb, i, j)
+
+        if K1 is None:
+            assert dK1 is None
+            K1 = lambda i, j: self._upg(
+                self.lib_datalm.almxfl(self.get_Pmatinv(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+        if K2 is None:
+            assert dK2 is None
+            K2 = lambda i, j: self._upg(
+                self.lib_datalm.almxfl(self.get_Pmatinv(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+
+        xiK1 = lambda i, j: mu(xi, K1, i, j)
+        xiK2 = lambda i, j: mu(xi, K2, i, j)
+        dxiK1 = lambda i, j: mu(dxi, K1, i, j)
+        dxiK2 = lambda i, j: mu(dxi, K2, i, j)
+        if dK1 is None: dK1 = lambda i, j: (-mu(K1, dxiK1, i, j))
+        if dK2 is None: dK2 = lambda i, j: (-mu(K2, dxiK2, i, j))
+        xiK1xi = lambda i, j: mu(xiK1, xi, i, j)
+        xiK2xi = lambda i, j: mu(xiK2, xi, i, j)
+        xidK1 = lambda i, j: mu(xi, dK1, i, j)
+        xidK2 = lambda i, j: mu(xi, dK2, i, j)
+        d_xiK1 = lambda i, j: (dxiK1(i, j) + xidK1(i, j))
+        d_xiK2 = lambda i, j: (dxiK2(i, j) + xidK2(i, j))
+        d_xiK1xi = lambda i, j: (mu(d_xiK1, xi, i, j) + mu(xiK1, dxi, i, j))
+        d_xiK2xi = lambda i, j: (mu(d_xiK2, xi, i, j) + mu(xiK2, dxi, i, j))
+
+        _2qlm = lambda _map: _lib_qlm.map2alm(_map).real
+        _2map = lambda alm: self.lib_skyalm.alm2map(alm)
+        ik = lambda ax: self.lib_skyalm.get_ikx() if ax == 1 else self.lib_skyalm.get_iky()
+
+        Fxx = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fyy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fxy = np.zeros(_lib_qlm.alm_size, dtype=float)
+        Fyx = np.zeros(_lib_qlm.alm_size, dtype=float)
+        # -1/2 (xi,a K1)(xi,b K2)  -1/2(xi,b K1)(xi_a K2)
+        # -1/2 (K1)(xi,a K2 xib)   -1/2(xi,a K1 xib)(K2)
+        for i in range(len(_type)):
+            for j in range(len(_type)):
+                # -1/2 d[ (xi,a K1)(xi,b K2)]
+                A = d_xiK1(i, j)
+                B = xiK2(j, i)
+                Fxx += _2qlm(_2map(A * ik(1)) * _2map(B * ik(1)))
+                Fyy += _2qlm(_2map(A * ik(0)) * _2map(B * ik(0)))
+                Fxy += _2qlm(_2map(A * ik(1)) * _2map(B * ik(0)))
+                Fyx += _2qlm(_2map(A * ik(0)) * _2map(B * ik(1)))
+                A = xiK1(i, j)
+                B = d_xiK2(j, i)
+                Fxx += _2qlm(_2map(A * ik(1)) * _2map(B * ik(1)))
+                Fyy += _2qlm(_2map(A * ik(0)) * _2map(B * ik(0)))
+                Fxy += _2qlm(_2map(A * ik(1)) * _2map(B * ik(0)))
+                Fyx += _2qlm(_2map(A * ik(0)) * _2map(B * ik(1)))
+                # -1/2 d[(xi_a K2)(xi,b K1)]
+                A = d_xiK2(i, j)
+                B = xiK1(j, i)
+                Fxx += _2qlm(_2map(A * ik(1)) * _2map(B * ik(1)))
+                Fyy += _2qlm(_2map(A * ik(0)) * _2map(B * ik(0)))
+                Fxy += _2qlm(_2map(A * ik(1)) * _2map(B * ik(0)))
+                Fyx += _2qlm(_2map(A * ik(0)) * _2map(B * ik(1)))
+                A = xiK2(i, j)
+                B = d_xiK1(j, i)
+                Fxx += _2qlm(_2map(A * ik(1)) * _2map(B * ik(1)))
+                Fyy += _2qlm(_2map(A * ik(0)) * _2map(B * ik(0)))
+                Fxy += _2qlm(_2map(A * ik(1)) * _2map(B * ik(0)))
+                Fyx += _2qlm(_2map(A * ik(0)) * _2map(B * ik(1)))
+                # -1/2 (K1)(xi,a K2 xib)
+                A = _2map(dK1(i, j))
+                B = xiK2xi(j, i)
+                Fxx += _2qlm(A * _2map(B * ik(1) * ik(1)))
+                Fyy += _2qlm(A * _2map(B * ik(0) * ik(0)))
+                Fxy += _2qlm(A * _2map(B * ik(1) * ik(0)))
+                Fyx += _2qlm(A * _2map(B * ik(0) * ik(1)))
+                A = _2map(K1(i, j))
+                B = d_xiK2xi(j, i)
+                Fxx += _2qlm(A * _2map(B * ik(1) * ik(1)))
+                Fyy += _2qlm(A * _2map(B * ik(0) * ik(0)))
+                Fxy += _2qlm(A * _2map(B * ik(1) * ik(0)))
+                Fyx += _2qlm(A * _2map(B * ik(0) * ik(1)))
+                # -1/2(xi,a K1 xib)(K2)
+                A = _2map(dK2(i, j))
+                B = xiK1xi(j, i)
+                Fxx += _2qlm(A * _2map(B * ik(1) * ik(1)))
+                Fyy += _2qlm(A * _2map(B * ik(0) * ik(0)))
+                Fxy += _2qlm(A * _2map(B * ik(1) * ik(0)))
+                Fyx += _2qlm(A * _2map(B * ik(0) * ik(1)))
+                A = _2map(K2(i, j))
+                B = d_xiK1xi(j, i)
+                Fxx += _2qlm(A * _2map(B * ik(1) * ik(1)))
+                Fyy += _2qlm(A * _2map(B * ik(0) * ik(0)))
+                Fxy += _2qlm(A * _2map(B * ik(1) * ik(0)))
+                Fyx += _2qlm(A * _2map(B * ik(0) * ik(1)))
+                t.checkpoint('%s %s done' % (i, j))
+        facunits = -0.5 * (1. / np.sqrt(np.prod(self.lsides)))  # N0-like norm
+        return xylms_to_phiOmegalm(_lib_qlm, Fxx * facunits, Fyy * facunits, Fxy * facunits, Fyx=Fyx * facunits)
+
+    def get_plmlikcurvcls(self, _type, datcmb_cls, lib_qlm, use_cls_len=True, recache=False, dat_only=False):
+        """
+        returns second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat,
+        where dat Cls does not match the fiducial Cls of this instance.
+        If they do match, the result should be 1/N_0.
+        
+        datcls includes only cmb cls
+        
+        This can be written as (see rPDF notes)
+        1/2 Tr (2Covi Covdat - 1) Covi dCov Covi dCov  (Fisher trace)
+        -1/2 Tr (Covi Covdat -1) Covi d2Cov  (lndet curv)
+        N0-like normalisation 
+        """
+        # FIXME : The rel . agreement with 1/N0 is only 1e-6 not double prec., not sure what is going on.
+        fname = self.lib_dir + '/%splmlikcurv_cls%s_cldat' % (_type, {True: 'len', False: 'unl'}[use_cls_len]) \
+                + cls_hash(datcmb_cls, lmax=self.lib_datalm.ellmax) + '.dat'
+        if not os.path.exists(fname) or recache:
+            def get_dcov(_type, i, j, use_cls_len=True):
+                # Covi (datCov - Cov) = Covi datCov - 1
+                ret = self.get_Pmatinv(_type, i, 0, use_cls_len=use_cls_len) \
+                      * get_datPmat_ij(_type, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, 0, j)
+                for _k in range(1, len(_type)):
+                    ret += self.get_Pmatinv(_type, i, _k, use_cls_len=use_cls_len) \
+                           * get_datPmat_ij(_type, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, _k, j)
+                if i == j and not dat_only:
+                    ret -= 1.
+                return ret
+
+            def get_dcovd(_type, i, j, use_cls_len=True):
+                # Covi(datCov - Cov)Covi
+                ret = get_dcov(_type, i, 0, use_cls_len=use_cls_len) \
+                      * self.get_Pmatinv(_type, 0, j, use_cls_len=use_cls_len)
+                for _k in range(1, len(_type)):
+                    ret += get_dcov(_type, i, _k, use_cls_len=use_cls_len) \
+                           * self.get_Pmatinv(_type, _k, j, use_cls_len=use_cls_len)
+                return ret
+
+            def get_d2cov(_type, i, j, use_cls_len=True):
+                # Cov^-1 (2 datCov - Cov)  = 2 Covi datCov - 1
+                ret = self.get_Pmatinv(_type, i, 0, use_cls_len=use_cls_len) \
+                      * get_datPmat_ij(_type, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, 0, j)
+                for _k in range(1, len(_type)):
+                    ret += self.get_Pmatinv(_type, i, _k, use_cls_len=use_cls_len) \
+                           * get_datPmat_ij(_type, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, _k, j)
+                if i == j and not dat_only:
+                    return 2 * ret - 1.
+                return 2 * ret
+
+            def get_idCi(_type, i, j, use_cls_len=True):
+                # Cov^-1 (2 datCov - Cov) Cov^-1
+                ret = get_d2cov(_type, i, 0, use_cls_len=use_cls_len) * self.get_Pmatinv(_type, 0, j,
+                                                                                         use_cls_len=use_cls_len)
+                for _k in range(1, len(_type)):
+                    ret += get_d2cov(_type, i, _k, use_cls_len=use_cls_len) * self.get_Pmatinv(_type, _k, j,
+                                                                                               use_cls_len=use_cls_len)
+                return ret
+
+            # First term :
+            _lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
+            curv = -self.get_lndetcurv(_type, _lib_qlm, get_A=get_dcovd, use_cls_len=use_cls_len)
+            Fish = self.get_fishertrace(_type, _lib_qlm, get_A1=get_idCi, use_cls_len=use_cls_len)
+            ret = np.array([_lib_qlm.bin_realpart_inell(_r) for _r in (curv + Fish)[:2]])
+            np.savetxt(fname, ret.transpose(),
+                       header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
+            print "Cached ", fname
+        print "loading ", fname
+        ret = np.array([(_r * lib_qlm.cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
+        return ret
+
+    def get_plmRDlikcurvcls(self, _type, datcls_obs, lib_qlm, use_cls_len=True, use_cls_len_D=None, recache=False,
+                            dat_only=False):
+        """
+        returns second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat,
+        where dat Cls does not match the fiducial Cls of this instance.
+        If they do match, the result should be 1/N_0.
+
+        datcls includes transfer fct and noise (bl**2 Cl + noise)
+
+        This can be written as (see rPDF notes)
+        1/2 Tr (2Covi Covdat - 1) Covi dCov Covi dCov  (Fisher trace)
+        -1/2 Tr (Covi Covdat -1) Covi d2Cov  (lndet curv)
+        N0-like normalisation 
+        The data-independent part must be the var. of 1/2 ln det Cov i.e. the MF response.
+        """
+        # FIXME : The rel . agreement with 1/N0 is only 1e-6 not double prec., not sure what is going on.
+        fname = self.lib_dir + '/%splmRDlikcurv_cls%s_cldat' % (_type, {True: 'len', False: 'unl'}[use_cls_len]) \
+                + cls_hash(datcls_obs, lmax=self.lib_datalm.ellmax) + '.dat'
+        if dat_only:
+            fname = fname.replace(self.lib_dir + '/', self.lib_dir + '/datonly')
+            assert 'datonly' in fname
+        if use_cls_len_D is not None and use_cls_len_D != use_cls_len:
+            fname = fname.replace('.dat', '_clsD%s.dat' % {True: 'len', False: 'unl'}[use_cls_len_D])
+        else:
+            use_cls_len_D = use_cls_len
+        if not os.path.exists(fname) or recache:
+            def get_dcov(_type, i, j, use_cls_len=use_cls_len):
+                # Covi (datCov - Cov) = Covi datCov - 1
+                ret = self.get_Pmatinv(_type, i, 0, use_cls_len=use_cls_len) \
+                      * get_unlPmat_ij(_type, self.lib_datalm, datcls_obs, 0, j)
+                for _k in range(1, len(_type)):
+                    ret += self.get_Pmatinv(_type, i, _k, use_cls_len=use_cls_len) \
+                           * get_unlPmat_ij(_type, self.lib_datalm, datcls_obs, _k, j)
+                if i == j and not dat_only:
+                    ret -= 1.
+                return ret
+
+            def get_dcovd(_type, i, j, use_cls_len=use_cls_len):
+                # Covi(datCov - Cov)Covi
+                ret = get_dcov(_type, i, 0, use_cls_len=use_cls_len) \
+                      * self.get_Pmatinv(_type, 0, j, use_cls_len=use_cls_len)
+                for _k in range(1, len(_type)):
+                    ret += get_dcov(_type, i, _k, use_cls_len=use_cls_len) \
+                           * self.get_Pmatinv(_type, _k, j, use_cls_len=use_cls_len)
+                return ret
+
+            def get_d2cov(_type, i, j, use_cls_len=use_cls_len):
+                # Cov^-1 (2 datCov - Cov)  = 2 Covi datCov - 1
+                ret = self.get_Pmatinv(_type, i, 0, use_cls_len=use_cls_len) \
+                      * get_unlPmat_ij(_type, self.lib_datalm, datcls_obs, 0, j)
+                for _k in range(1, len(_type)):
+                    ret += self.get_Pmatinv(_type, i, _k, use_cls_len=use_cls_len) \
+                           * get_unlPmat_ij(_type, self.lib_datalm, datcls_obs, _k, j)
+                if i == j and not dat_only:
+                    return 2 * ret - 1.
+                return 2 * ret
+
+            def get_idCi(_type, i, j, use_cls_len=use_cls_len):
+                # Cov^-1 (2 datCov - Cov) Cov^-1
+                ret = get_d2cov(_type, i, 0, use_cls_len=use_cls_len) * self.get_Pmatinv(_type, 0, j,
+                                                                                         use_cls_len=use_cls_len)
+                for _k in range(1, len(_type)):
+                    ret += get_d2cov(_type, i, _k, use_cls_len=use_cls_len) * self.get_Pmatinv(_type, _k, j,
+                                                                                               use_cls_len=use_cls_len)
+                return ret
+
+            # First term :
+            _lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
+            curv = -self.get_lndetcurv(_type, _lib_qlm, get_A=get_dcovd, use_cls_len=use_cls_len_D)
+            Fish = self.get_fishertrace(_type, _lib_qlm, get_A1=get_idCi, use_cls_len=use_cls_len)
+            ret = np.array([_lib_qlm.bin_realpart_inell(_r) for _r in (curv + Fish)[:2]])
+            np.savetxt(fname, ret.transpose(),
+                       header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
+            # retc = _lib_qlm.bin_realpart_inell(curv[0])
+            # retF = _lib_qlm.bin_realpart_inell(Fish[0])
+            # np.savetxt(fname, np.array([retc, retF]).transpose(),
+            #           header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
+            # print "FIXE THIS get_plm"
+            # ret = withD * np.array([_lib_qlm.bin_realpart_inell(_r) for _r in curv[:2]])
+            # if withF: ret += np.array([_lib_qlm.bin_realpart_inell(_r) for _r in Fish[:2]])
+            # return ret
+        print "loading ", fname
+        ret = np.array([(_r * lib_qlm.cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
+        return ret
+
+    def get_dplmRDlikcurvcls(self, _type, cmb_dcls, datcls_obs, lib_qlm, use_cls_len=True, recache=False,
+                             dat_only=False):
+        """
+        derivative of plmRDlikcurvcls (data held fixed)
+        Finite difference test OK (+ much faster)
+        """
+        # FIXME : this is like really, really, really inefficient.
+        fname = self.lib_dir + '/%sdplmRDlikcurv_cls%s_cldat' % (_type, {True: 'len', False: 'unl'}[use_cls_len]) \
+                + cls_hash(datcls_obs, lmax=self.lib_datalm.ellmax) + cls_hash(cmb_dcls) + '.dat'
+        if dat_only:
+            fname = fname.replace(self.lib_dir + '/', self.lib_dir + '/datonly')
+            assert 'datonly' in fname
+        if not os.path.exists(fname) or recache:
+            # K going into trace should be 2 K datcls K - K
+            # K going into lndet should be K datcls K
+            # dK is -K dxi K
+            def mu(a, b, i, j):
+                ret = a(i, 0) * b(0, j)
+                for _k in range(1, len(_type)):
+                    ret += a(i, _k) * b(_k, j)
+                return ret
+
+            dxi = lambda i, j: get_unlPmat_ij(_type, self.lib_skyalm, cmb_dcls, i, j)
+            K = lambda i, j: self._upg(
+                self.lib_datalm.almxfl(self.get_Pmatinv(_type, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+            dxiK = lambda i, j: mu(dxi, K, i, j)
+            datKi = lambda i, j: self._upg(
+                self.lib_datalm.almxfl(get_unlPmat_ij(_type, self.lib_datalm, datcls_obs, i, j),
+                                       cl_inverse(self.cl_transf ** 2)))
+            KdatKi = lambda i, j: mu(K, datKi, i, j)
+            datKiK = lambda i, j: mu(datKi, K, i, j)
+
+            dK = lambda i, j: (-mu(K, dxiK, i, j))
+            KdatKiK = lambda i, j: mu(KdatKi, K, i, j)
+            if not dat_only:
+                Kdet = lambda i, j: (KdatKiK(i, j) - K(i, j))
+                dKdet = lambda i, j: (mu(dK, datKiK, i, j) + mu(KdatKi, dK, i, j) - dK(i, j))
+                Ktrace = lambda i, j: (2 * KdatKiK(i, j) - K(i, j))
+                dKtrace = lambda i, j: (2 * (mu(dK, datKiK, i, j) + mu(KdatKi, dK, i, j)) - dK(i, j))
+            else:
+                Kdet = lambda i, j: KdatKiK(i, j)
+                dKdet = lambda i, j: (mu(dK, datKiK, i, j) + mu(KdatKi, dK, i, j))
+                Ktrace = lambda i, j: 2 * Kdet(i, j)
+                dKtrace = lambda i, j: 2 * dKdet(i, j)
+
+            # First term :
+            _lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
+            curv = -self.get_dlndetcurv(_type, cmb_dcls, _lib_qlm, K=Kdet, dK=dKdet, use_cls_len=use_cls_len)
+            Fish = self.get_dfishertrace(_type, cmb_dcls, _lib_qlm, K1=Ktrace, dK1=dKtrace, use_cls_len=use_cls_len)
+            ret = np.array([_lib_qlm.bin_realpart_inell(_r) for _r in (curv + Fish)[:2]])
+            np.savetxt(fname, ret.transpose(),
+                       header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
+            print "cached ", fname
+        print "loading ", fname
+        return np.array([(_r * lib_qlm.cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
+        # return np.loadtxt(fname).transpose()
 
 class ffs_lencov_alm(ffs_diagcov_alm):
     """
@@ -1268,7 +1809,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         ret = np.empty_like(alms)
 
         if use_Pool <= -100:
-            import mllens_GPU.apply_GPU as apply_GPU
+            from lensit.gpu import apply_GPU
             ablms = np.array([self.lib_datalm.almxfl(_a, self.cl_transf) for _a in alms])
             apply_GPU.apply_FDxiDtFt_GPU_inplace(_type, self.lib_datalm, self.lib_skyalm, ablms,
                                                  self.f, self.f_inv, self.cls_unl)
@@ -1316,7 +1857,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         if use_Pool <= -100:
             # Try entire evaluation on GPU :
             # FIXME !! lib_sky vs lib_dat
-            from mllens_GPU.apply_cond3_GPU import apply_cond3_GPU_inplace as c3GPU
+            from lensit.gpu.apply_cond3_GPU import apply_cond3_GPU_inplace as c3GPU
             ret = alms.copy()
             c3GPU(_type, self.lib_datalm, ret, self.f, self.f_inv, self.cls_unl, self.cl_transf, self.cls_noise)
             return ret
@@ -1347,34 +1888,83 @@ class ffs_lencov_alm(ffs_diagcov_alm):
          Ouput of lib_skalm shape
          All **kwargs to cd_solve
         """
-        # FIXME : inputs
+        assert use_cls_len == False, 'not implemented'
+        if _type == 'QU':
+            return self.get_iblms_new(_type, datalms, use_cls_len=use_cls_len, use_Pool=use_cls_len, **kwargs)
         if datalms.shape == ((len(_type), self.dat_shape[0], self.dat_shape[1])):
             _datalms = np.array([self.lib_datalm.map2alm(_m) for _m in datalms])
             return self.get_iblms(_type, _datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
 
         assert datalms.shape == self._datalms_shape(_type), (datalms.shape, self._datalms_shape(_type))
         ilms, iter = self.cd_solve(_type, datalms, use_Pool=use_Pool, **kwargs)
-        ret = np.zeros(self._skyalms_shape(_type), dtype=complex)
+        ret = np.empty(self._skyalms_shape(_type), dtype=complex)
         for _i in range(len(_type)):
-            ret[_i] = self.lib_skyalm.udgrade(self.lib_datalm, self.lib_datalm.almxfl(ilms[_i], self.cl_transf))
+            ret[_i] = self._upg(self.lib_datalm.almxfl(ilms[_i], self.cl_transf))
         return ret, iter
 
-    def get_MLlms(self, _type, datmaps, use_Pool=0, **kwargs):
+    def get_iblms_new(self, _type, datalms, use_cls_len=False, use_Pool=0, **kwargs):
+        """
+         Returns B^t F^t Cov^{-1} alms
+          = B^t N^-1(datmaps - B D X^WF)
+         (inputs to quadratc estimator routines)
+         Ouput of lib_skalm shape
+         All **kwargs to cd_solve
+         output TQU sky-shaped alms
+        """
+        # FIXME : some weird things happening with very low noise T ?
+        # if datmaps.shape ==  self._datalms_shape(_type):
+        #    _datmaps = np.array([self.lib_datalm.alm2map(_m) for _m in datmaps])
+        #    return self.get_iblms(_type, _datmaps, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
+        # assert datmaps.shape == (len(_type), self.dat_shape[0], self.dat_shape[1]),(datmaps.shape,self.dat_shape)
+        assert use_cls_len == False, 'not implemented'
+        MLik = SM.TEB2TQUlms(_type, self.lib_skyalm,
+                             self.get_MLlms_new(_type, datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
+        ret = np.zeros(self._skyalms_shape(_type), dtype=complex)
+        for i in range(len(_type)):
+            temp = datalms[i] - self.lib_datalm.almxfl(self.f.lens_alm(self.lib_skyalm, MLik[i],
+                                                                       lib_alm_out=self.lib_datalm, use_Pool=use_Pool),
+                                                       self.cl_transf)
+            self.lib_datalm.almxfl(temp, self.cl_transf[:self.lib_datalm.ellmax + 1]
+                                   * cl_inverse(self.cls_noise[_type[i].lower()][:self.lib_datalm.ellmax + 1]),
+                                   inplace=True)
+            ret[i] = self._upg(temp)
+        return ret, -1  # No iterations info implemented
+
+    def iblm2MLlms(self, _type, iblms, use_Pool=0, use_cls_len=False):
+        # C_unl D^t B^t F^t Cov^{-1}
+        cmb_cls = self.cls_len if use_cls_len else self.cls_unl
+        ret = np.empty(self._skyalms_shape(_type), dtype=complex)
+        for _i in range(len(_type)):
+            ret[_i] = self.f_inv.lens_alm(self.lib_skyalm, iblms[_i], use_Pool=use_Pool, mult_magn=True)
+        return SM.apply_TEBmat(_type, self.lib_skyalm, cmb_cls, SM.TQU2TEBlms(_type, self.lib_skyalm, ret))
+
+    def get_MLlms(self, _type, datmaps, use_Pool=0, use_cls_len=False, **kwargs):
         """
         Returns maximum likelihood sky CMB modes. (P D^t B^t F^t Cov^-1 = (P^-1 + B^F^t N^{-1} F B)^{-1} F B N^{-1} d)
+        Outpu TEB shape sky alms
         """
-        # FIXME : does not need this for isotropic cov.
-        ilms, iter = self.cd_solve(_type, np.array([self.lib_datalm.map2alm(_m) for _m in datmaps]),
-                                   use_Pool=use_Pool, **kwargs)
-        ret = np.zeros(self._skyalms_shape(_type), dtype=complex)
-        assert 0, "FIX THIS :"
-        for _i in range(len(_type)):
-            bilm = self.lib_datalm.almxfl(ilms[_i], self.cl_transf)
-            bilm = self.f_inv.lens_alm(self.lib_skyalm, self._upg(bilm), lib_alm_out=self.lib_skyalm, use_Pool=use_Pool,
-                                       mult_magn=True)
-            for _j in range(len(_type)):
-                ret[_j] += get_unlPmat_ij(_type, self.lib_skyalm, self.cls_unl, _j, _i) * bilm
-        return ret
+        iblms, iter = self.get_iblms(_type, datmaps, use_cls_len=use_cls_len)
+        return self.iblm2MLlms(_type, iblms, use_Pool=use_Pool, use_cls_len=use_cls_len)
+
+    def get_MLlms_new(self, _type, datalms, use_Pool=0, use_cls_len=False, **kwargs):
+        assert np.all(self.cls_noise['t'] == self.cls_noise['t'][0]), 'adapt ninv filt ideal for coloured cls(easy)'
+        assert np.all(self.cls_noise['q'] == self.cls_noise['q'][0]), 'adapt ninv filt ideal for coloured cls(easy'
+        assert np.all(self.cls_noise['u'] == self.cls_noise['q'][0]), 'adapt ninv filt ideal for coloured cls(easy'
+        # FIXME could use opfilt_cinvBB
+        nlev_t = np.sqrt(self.cls_noise['t'][0] * (180. * 60 / np.pi) ** 2)
+        nlev_p = np.sqrt(self.cls_noise['q'][0] * (180. * 60 / np.pi) ** 2)
+
+        cmb_cls = self.cls_len if use_cls_len else self.cls_unl
+        filt = lensit.qcinv.ffs_ninv_filt_ideal.ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm,
+                                                                 cmb_cls, self.cl_transf, nlev_t, nlev_p, self.f,
+                                                                 self.f_inv, lens_pool=use_Pool)
+        opfilt = lensit.qcinv.opfilt_cinv
+        opfilt._type = _type
+        chain = lensit.qcinv.chain_samples.get_isomgchain(self.lib_skyalm.ellmax, self.lib_datalm.shape, **kwargs)
+        mchain = fs.qcinv.multigrid.multigrid_chain(opfilt, _type, chain, filt)
+        soltn = np.zeros((opfilt.TEBlen(_type), self.lib_skyalm.alm_size), dtype=complex)
+        mchain.solve(soltn, datalms, finiop='MLIK')
+        return soltn
 
     def get_qlms(self, _type, iblms, lib_qlm, use_Pool=0, use_cls_len=False, **kwargs):
         """
@@ -1429,7 +2019,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         """
         Degrades covariance matrix to some lower resolution.
         """
-        assert 0, 'FIXME'
+        # assert 0, 'FIXME'
 
         if lib_dir is None: lib_dir = self.lib_dir + '/%sdegraded%sx%s_%s_%s' % (
             {True: 'unl', False: 'len'}[no_lensing], LD_shape[0], LD_shape[1], ellmin, ellmax)

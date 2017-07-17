@@ -109,7 +109,7 @@ class multigrid_chain():
             # pass #Uncomment this to print the details of the multigrid convergence
             return
 
-        log_str = ('   ') * stage.depth + '(%4d, %04d) [%s] (%d, %f)' % (
+        log_str = ('   ') * stage.depth + '(%4d, %04d) [%s] (%d, %.10f)' % (
             stage.nside, stage.lmax, str(elapsed), iter, eps) + '\n'
         sys.stdout.write(log_str)
 

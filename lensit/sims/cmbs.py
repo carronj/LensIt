@@ -19,17 +19,16 @@ from lensit.curvedskylensing import lenscurv as lens
 
 verbose = True
 
-def get_fields(cls,wzro = False):
+
+def get_fields(cls):
+    print cls.keys()
     fields = ['p', 't', 'e', 'b', 'o']
-    ret =  ['p', 't', 'e', 'b', 'o']
+    ret = ['p', 't', 'e', 'b', 'o']
     for _f in fields:
-        if (_f + _f) not in cls.keys(): ret.remove(_f)
+        if not ((_f + _f) in cls.keys()): ret.remove(_f)
     for _k in cls.keys():
         for _f in _k:
             if _f not in ret: ret.append(_f)
-    if not wzro:
-        for _f in fields :
-            if np.all(cls[_f + _f] == 0):ret.remove(_f)
     return ret
 
 class sims_cmb_unl():

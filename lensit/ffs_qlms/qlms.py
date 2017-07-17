@@ -227,3 +227,64 @@ def get_MFqlms(_type, MFkey, lib_dat, lib_sky, pix_phas, TQUMlik_pha, cl_transf,
     retdy = lib_qlm.map2alm(retdy)
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
                      retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is unnormalized qest
+
+
+def get_qlms(_type, lib_sky, Res_TEBlms, cls_unl, lib_qlm, Res_TEBlms2=None, f=None, use_Pool=0, **kwargs):
+    # FIXME : Seems to work but D_f to Reslm is a super small scale map in close to in configuration with little noise.
+    # FIXME : The map B^t Covi d has spec 1 / (P + N/B^2) which can peak at a farily small scale.
+    # FIXME there is probably a better way.
+    """
+    Stand alone qlm estimator starting from lib_sky and unlensed Cls
+    Likelihood gradient (from the quadratic part).
+    (B^t F^t Cov^-1 d)^a(z) (D dxi_unl/da D^t B^t F^t Cov^-1 d)_a(z)
+    Only lib_skys enter this.
+    Sign is correct for pot. estimate, not gradient.
+
+    This can written as (D_f (Res lms))(z) (D_f P_a Res lms)(z) * |M_f|(z)
+    Only forward displacement is needed.
+
+    Res lms is here D^t B^t Cov^-1 data. This can be written in general
+    as  D^t B^t Ni (data - B D MLIK(data)) in T E B space. For non-singular modes
+    this may be written as P_TEB^{-1} MLIK. (but we can't use pseudo inverse
+    for singular modes.)
+    P_a Res lms are always the max. likelihood modes however.
+    N0  * output is normalized qest for MV estimates
+
+    1/2 (VX WY  +  VY WX)
+    1/2 VX WY  +  VY WX
+
+    1/4 (VVt WW^t + VVt WWt + WV^t VW^t + V W^t WV^t)
+
+    We can get something without having to lens any weird maps through
+    ( B^t Ni (data - B D Xmap))(z)    (D Xmap)(z)
+    """
+    _Res_TEBlms2 = Res_TEBlms if Res_TEBlms2 is None else Res_TEBlms2
+    assert len(Res_TEBlms) == len(_type) and len(_Res_TEBlms2) == len(_type)
+    t = fs.misc.misc_utils.timer(verbose, prefix=__name__)
+    if f is not None: print " qlms.py :: consider using get_qlms_wl for qlms with lensing, to avoid lensing noisy maps"
+    if f is None: f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
+
+    TQUmlik = SM.TEB2TQUlms(_type, lib_sky, SM.apply_TEBmat(_type, lib_sky, cls_unl, _Res_TEBlms2))
+
+    def left(S_id):
+        assert S_id in range(len(_type)), (S_id, _type)
+        return f.alm2lenmap(lib_sky, SM.get_SlmfromTEBlms(_type, lib_sky, Res_TEBlms, _type[S_id]), use_Pool=use_Pool)
+
+    def Right(S_id, axis):
+        assert S_id in range(len(_type)), (S_id, _type)
+        assert axis in [0, 1]
+        kfunc = lib_sky.get_ikx if axis == 1 else lib_sky.get_iky
+        return f.alm2lenmap(lib_sky, TQUmlik[S_id] * kfunc(), use_Pool=use_Pool)
+
+    retdx = left(0) * Right(0, 1)
+    for _i in range(1, len(_type)): retdx += left(_i) * Right(_i, 1)
+    retdx = lib_qlm.map2alm(f.mult_wmagn(retdx))
+    t.checkpoint("get_likgrad::Cart. gr. x done. (%s map(s) lensed, %s fft(s)) " % (2 * len(_type), 2 * len(_type) + 1))
+
+    retdy = left(0) * Right(0, 0)
+    for _i in range(1, len(_type)): retdy += left(_i) * Right(_i, 0)
+    retdy = lib_qlm.map2alm(f.mult_wmagn(retdy))
+    t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (2 * len(_type), 2 * len(_type) + 1))
+
+    return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
+                     retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest

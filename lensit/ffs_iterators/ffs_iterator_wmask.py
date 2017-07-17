@@ -30,7 +30,7 @@ def prt_time(dt, label=''):
 
 class ffs_iterator(object):
     def __init__(self, lib_dir, type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
-                 use_Pool_lens=0, use_Pool_inverse=0, chain_descr=None, opfilt=None, soltn0=None,
+                 use_Pool_lens=0, use_Pool_inverse=0, chain_descr=None, opfilt=None, soltn0=None, cache_magn=True,
                  no_deglensing=False, NR_method=100, tidy=10, verbose=True, maxcgiter=150, PBSSIZE=None, PBSRANK=None,
                  **kwargs):
         """
@@ -61,6 +61,8 @@ class ffs_iterator(object):
         self.cl_pp = cpp_prior
         self.lib_qlm = lib_qlm
 
+        self.cache_magn = cache_magn
+
         self.lsides = cov.lib_skyalm.lsides
         assert cov.lib_skyalm.lsides == lib_qlm.lsides
         self.lmax_qlm = self.lib_qlm.ellmax
@@ -80,7 +82,7 @@ class ffs_iterator(object):
 
         def newton_step_length(iter, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
-            if cov.Nlev_uKamin('t') > 2.1: return 1.
+            if cov.Nlev_uKamin('t') > 2.1: return 1.0
             if cov.Nlev_uKamin('t') <= 2.1 :
                 return 0.5
             return 0.5
@@ -102,6 +104,7 @@ class ffs_iterator(object):
         if self.PBSRANK == 0:
             if not os.path.exists(self.lib_dir): os.makedirs(self.lib_dir)
         pbs.barrier()
+        self.soltn_cond = np.all([np.all(self.cov.get_mask(_t) == 1.) for _t in self.type])
 
         print 'ffs iterator : This is %s trying to setup %s' % (self.PBSRANK, lib_dir)
         # Lensed covariance matrix library :
@@ -327,7 +330,7 @@ class ffs_iterator(object):
         assert os.path.exists(fname_dx), fname_dy
         assert os.path.exists(lib_dir), lib_dir
         return ffs_deflect.ffs_displacement(fname_dx, fname_dy, self.lsides,
-                                            verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=True)
+                                            verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
 
     def load_finv(self, iter, key):
         """
@@ -339,7 +342,7 @@ class ffs_iterator(object):
         assert os.path.exists(fname_invdx), fname_invdy
         assert os.path.exists(lib_dir), lib_dir
         return ffs_deflect.ffs_displacement(fname_invdx, fname_invdy, self.lsides,
-                                            verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=True)
+                                            verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
 
     def load_soltn(self, iter, key):
         """
@@ -428,6 +431,20 @@ class ffs_iterator(object):
 
     def calc_norm(self,qlm):
         return np.sqrt(np.sum(self.lib_qlm.alm2rlm(qlm) ** 2))
+
+    def get_lndetcurv_update(self, k, key, alphak):
+        """
+        Let B be the curvature matrix, B0 ~ 1/Cpp + 1/N0. and H its inverse
+        With BFGS holds ln|B_k + 1| = ln |B_k| + ln(1 - 1/alpha_k g_k+1 H g_k / (gk H gk))
+        where alpha_k is the newton step length at this step.
+        """
+        H = self.get_Hessian(k, key)
+        Hgk = H.get_mHkgk(self.lib_qlm.alm2rlm(self.load_total_grad(k, key)), k)
+        denom = np.sum(self.lib_qlm.alm2rlm(self.load_total_grad(k, key)) * Hgk)
+        num = np.sum(self.lib_qlm.alm2rlm(self.load_total_grad(k + 1, key)) * Hgk)
+        assert 1. - num / denom / alphak > 0.
+        return np.log(1. - num / denom / alphak)
+
 
     def get_Hessian(self, k, key):
         """
@@ -569,7 +586,7 @@ class ffs_iterator_cstMF(ffs_iterator):
                                                     no_deglensing=self.nodeglensing)
         # FIXME : The solution input is not working properly sometimes. We give it up for now.
         # FIXME  don't manage to find the right d0 to input for a given sol ?!!
-        soltn = self.load_soltn(iter, key).copy() * 0.
+        soltn = self.load_soltn(iter, key).copy() * self.soltn_cond
         self.opfilt._type = self.type
         mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
         self.cache_TEBmap(soltn, iter - 1, key)
@@ -628,7 +645,7 @@ class ffs_iterator_pertMF(ffs_iterator):
                                                     no_deglensing=self.nodeglensing)
         # FIXME : The solution input is not working properly sometimes. We give it up for now.
         # FIXME  don't manage to find the right d0 to input for a given sol ?!!
-        soltn = self.load_soltn(iter, key).copy() * 0.
+        soltn = self.load_soltn(iter, key).copy() * self.soltn_cond
         self.opfilt._type = self.type
         mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
         self.cache_TEBmap(soltn, iter - 1, key)
@@ -749,7 +766,7 @@ class ffs_iterator_simMF(ffs_iterator):
                 # FIXME : The solution input is not working properly sometimes. We give it up for now.
                 # FIXME  don't manage to find the right d0 to input for a given sol ?!!
                 self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
-                soltn = self.load_soltn(iter, key).copy() * 0.
+                soltn = self.load_soltn(iter, key).copy() * self.soltn_cond
                 mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
                 self.cache_TEBmap(soltn, iter - 1, key)
                 TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)

@@ -4,8 +4,16 @@ import time
 
 import numpy as np
 import os
+import hashlib
 from .. import pbs
 
+
+def cls_hash(cls, lmax=None):
+    if lmax is None:
+        arr = np.concatenate([cls[k] for k in sorted(cls.keys())])
+    else:
+        arr = np.concatenate([(cls[k])[:lmax + 1] for k in sorted(cls.keys())])
+    return hashlib.sha1(arr.copy(order='C')).hexdigest()
 
 class timer():
     def __init__(self, verbose, prefix='', suffix=''):
@@ -161,11 +169,16 @@ class stats():
         return self.sum / self.N
 
     def cov(self):
+        """
+        1/(N-1) sum_i = 1^N (X_i - bX)(X_i - bX)
+        = Mom / (N-1) + N/(N-1) bX bX^t - 2 N / (N-1) bX bX^t
+        = Mom / (N-1) - N/(N-1) bX bX^t
+        """
         assert (self.N > 0)
         assert self.do_cov
         if self.N == 1: return np.zeros((self.size, self.size))
         mean = self.mean()
-        return self.mom / (self.N - 1.) - self.N / (self.N - 1.) * np.outer(mean, mean)
+        return self.mom / (self.N - 1.) - np.outer(mean, mean * (self.N / (self.N - 1.)))
 
     def sigmas(self):
         return np.sqrt(np.diagonal(self.cov()))

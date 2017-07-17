@@ -10,7 +10,6 @@ def cl_inv(cl):
     ret[np.where(cl > 0)] = 1. / cl[np.where(cl > 0)]
     return ret
 
-
 class ffs_ninv_filt(object):
     def __init__(self, lib_datalm, lib_skyalm, len_cls, cl_transf, ninv_rad,
                  marge_maps={}, marge_uptolmin={}, cls_noise={}, verbose=False):

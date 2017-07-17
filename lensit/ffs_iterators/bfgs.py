@@ -13,11 +13,10 @@ class BFGS_Hessian(object):
     Determinant of B:
     ln det Bk+1 = ln det Bk + ln( s^ty / s^t B s).
 
-    For quasi Newton, s_k = x_k1 - x_k = - alpha_k Hk grad_k with alphak newton step-length.
-        --> s^t B s at k is - alpha_k s^t_k grad_k
-    and grad_k = sum_j=0^k-1 y_j + grad_0, grad_0 = -1/alpha_0 B_0 s0.
-    
-    It is also ln det Bk+1 = ln det Bk + ln(1 - gk Hk g_k+1 / (gk Hk gk)
+    For quasi Newton, s_k = x_k1 - x_k = - alpha_k Hk grad_k with alpha_k newton step-length.
+        --> s^t B s at k is alpha_k^2 g_k H g_k
+            s^t y is  - alpha_k (g_k+1 - g_k) H g_k
+    This leads to ln|B_k + 1| = ln |B_k| + ln(1 - 1/alpha_k g_k+1 H g_k / (gk H gk))    
     """
 
     def __init__(self, lib_dir, apply_H0k, paths2ys, paths2ss, L=100000, apply_B0k=None, verbose=True):
@@ -88,6 +87,7 @@ class BFGS_Hessian(object):
     def get_gk(self, k, alpha_k0):
         """
         Reconstruct gradient at xk, given the first newton step length at step max(0,k-L)
+        ! this is very badly behaved numerically.
         """
         assert self.applyB0k is not None
         ret = -self.applyB0k(self.s(max(0, k - self.L)),max(0,k-self.L)) / alpha_k0

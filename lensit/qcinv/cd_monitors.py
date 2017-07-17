@@ -65,7 +65,7 @@ class monitor_basic():
             # For first iteration typically resid is b where x = A^-1 b is the equations to solve,
             # unless some starting guess is provided.
             self.d0 = delta
-
+        if self.d0 == 0: self.d0 = 1.
         if (self.logger is not None): self.logger(iter, np.sqrt(delta / self.d0), watch=self.watch,
                                                   soltn=soltn, resid=resid)
 

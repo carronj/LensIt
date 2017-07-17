@@ -181,7 +181,10 @@ class ell_mat():
         return np.max(self.get_ellmat())
 
     def _build_ell_counts(self):
-        """ Number of entries in freq map. for each ell, in the rfftmap. Corresponds roughly to ell + 1/2."""
+        """
+        Number of non-redundant entries in freq map. for each ell, in the rfftmap.
+        Corresponds roughly to ell + 1/2.
+        """
         counts = np.bincount(self.get_ellmat()[:, 1:self.rshape[1] - 1].flatten(), minlength=self.ellmax + 1)
         s_counts = np.bincount(self.get_ellmat()[0:self.shape[0] / 2 + 1, [-1, 0]].flatten())
         counts[0:len(s_counts)] += s_counts

@@ -13,7 +13,7 @@ Starting from real space maps loaded in memory, performance in serial called fro
 
 This is how to call it from python :
 
-from scipy import weave
+import weave
 code = r"\
         for( unsigned int j= 0; j < width; j++ )\
         {\
