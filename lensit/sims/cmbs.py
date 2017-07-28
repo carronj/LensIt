@@ -185,7 +185,7 @@ class sims_cmb_len():
             tlm= self.unlcmbs.get_sim_tlm(idx)
             dlm = self.get_sim_plm(idx)
             hp.almxfl(dlm,np.sqrt(np.arange(self.lmax + 1,dtype = float)*np.arange(1,self.lmax + 2)),inplace=True)
-            hp.write_alm(fname, lens.lens_tlm(tlm,dlm,nside=self.nside_lens))
+            hp.write_alm(fname, lens.lens_tlm(tlm, dlm, nside=self.nside_lens, lmaxout=self.lmax))
         return hp.read_alm(fname)
 
     def get_sim_elm(self, idx):
