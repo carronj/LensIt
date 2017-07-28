@@ -173,7 +173,8 @@ class sims_cmb_len():
         elm = self.unlcmbs.get_sim_elm(idx)
         blm = None if 'b' not in self.fields else self.unlcmbs.get_sim_blm(idx)
         dlm = self.get_sim_plm(idx)
-        hp.almxfl(dlm, np.sqrt(np.arange(self.lmax + 1, dtype=float) * np.arange(1, self.lmax + 2)), inplace=True)
+        lmaxd = hp.Alm.getlmax(dlm.size)
+        hp.almxfl(dlm, np.sqrt(np.arange(lmaxd + 1, dtype=float) * np.arange(1, lmaxd + 2)), inplace=True)
         elm, blm = lens.lens_eblm(elm,dlm,blm = blm, nside=self.nside_lens,lmaxout=self.lmax)
         hp.write_alm(self.lib_dir + '/sim_%04d_elm.fits' % idx, elm)
         del elm
@@ -184,7 +185,8 @@ class sims_cmb_len():
         if not os.path.exists(fname):
             tlm= self.unlcmbs.get_sim_tlm(idx)
             dlm = self.get_sim_plm(idx)
-            hp.almxfl(dlm,np.sqrt(np.arange(self.lmax + 1,dtype = float)*np.arange(1,self.lmax + 2)),inplace=True)
+            lmaxd = hp.Alm.getlmax(dlm.size)
+            hp.almxfl(dlm, np.sqrt(np.arange(lmaxd + 1, dtype=float) * np.arange(1, lmaxd + 2)), inplace=True)
             hp.write_alm(fname, lens.lens_tlm(tlm, dlm, nside=self.nside_lens, lmaxout=self.lmax))
         return hp.read_alm(fname)
 
