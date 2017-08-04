@@ -1,6 +1,6 @@
 # Lensit
 
-This is a set of python tools dedicated to CMB lensing and CMB delensing. 
+This is a set of python tools dedicated to CMB lensing and CMB delensing, by Julien Carron.
 
 **Main features are:**  
  - Maximum a posterior estimation of CMB lensing deflection maps from temperature and/or polarization maps.  
