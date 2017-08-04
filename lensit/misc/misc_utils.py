@@ -237,6 +237,32 @@ class stats():
         return newstats
 
 
+def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean'):
+    """
+    nzell: ells to consider. Use this e.g. to exclude modes with zero counts in flat sky maps.
+    """
+    assert meanorsum in ['mean', 'sum']
+    if meanorsum == 'sum': assert not return_err, 'not implemented'
+    sumfunc = np.mean if meanorsum == 'mean' else np.sum
+    ellmax = np.max(bins_u)
+    ell = np.arange(ellmax + 1, dtype=int)
+    Nbins = bins_l.size
+    assert (Nbins == bins_u.size), "incompatible limits"
+    # enlarge array if needed
+    ret = np.zeros(Nbins)
+    arr = w(ell)
+    err = np.zeros(Nbins)
+    # This should work for ist.cl and arrays
+    arr[0: min(len(Cl), ellmax + 1)] *= Cl[0:min(len(Cl), ellmax + 1)]
+    for i in xrange(Nbins):
+        if (bins_u[i] < arr.size) and (len(arr[bins_l[i]:bins_u[i] + 1]) >= 1):
+            ii = np.where((nzell >= bins_l[i]) & (nzell <= bins_u[i]))
+            ret[i] = sumfunc(arr[nzell[ii]])
+            err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
+    if not return_err:
+        return ret
+    return ret, err
+
 class binner():
     def __init__(self, bins_l, bins_r):
         """
