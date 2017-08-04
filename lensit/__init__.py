@@ -19,6 +19,7 @@ import pbs
 import qcinv
 import sims
 import shts
+import pseudocls
 
 LENSITDIR = os.environ.get('LENSIT', './')
 
