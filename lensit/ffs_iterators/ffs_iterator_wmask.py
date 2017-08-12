@@ -608,7 +608,8 @@ class ffs_iterator_pertMF(ffs_iterator):
     Mean field from theory, perturbatively
     """
 
-    def __init__(self, lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior, **kwargs):
+    def __init__(self, lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
+                 init_rank=pbs.rank, init_barrier=pbs.barrier, **kwargs):
         super(ffs_iterator_pertMF, self).__init__(lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                                                   PBSSIZE=1, PBSRANK=0,  # so that all proc. act independently
                                                   **kwargs)
@@ -619,7 +620,8 @@ class ffs_iterator_pertMF(ffs_iterator):
 
         self.isocov = fs.ffs_covs.ffs_cov.ffs_diagcov_alm(lib_dir + '/isocov',
                                                           cov.lib_skyalm, cov.cls, cov.cls, cov.cl_transf, cls_noise,
-                                                          lib_skyalm=cov.lib_skyalm)
+                                                          lib_skyalm=cov.lib_skyalm, init_rank=init_rank,
+                                                          init_barrier=init_barrier)
         # FIXME : could simply cache the response...
 
     def get_MFresp(self, key):
