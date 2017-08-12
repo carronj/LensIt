@@ -1757,7 +1757,8 @@ class ffs_lencov_alm(ffs_diagcov_alm):
     Must be strictly positive definite.
     """
 
-    def __init__(self, lib_dir, lib_datalm, lib_skyalm, cls_unl, cls_len, cl_transf, cls_noise, f, f_inv):
+    def __init__(self, lib_dir, lib_datalm, lib_skyalm, cls_unl, cls_len, cl_transf, cls_noise, f, f_inv,
+                 init_rank=lensit.pbs.rank, init_barrier=lensit.pbs.barrier):
         """
         f and finv are displacement field classes. Number of points on each side 2**HD_res,2**HD_res.
         f and f_inv must have a f.lens_map routine that does the lensing of map 2**HD_res by 2**HD_res.
@@ -1769,7 +1770,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             (lib_datalm.ell_mat.lsides, lib_skyalm.ell_mat.lsides)
 
         super(ffs_lencov_alm, self).__init__(lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
-                                             lib_skyalm=lib_skyalm)
+                                             lib_skyalm=lib_skyalm, init_barrier=init_barrier, init_rank=init_rank)
 
         self.lmax_dat = self.lib_datalm.ellmax
         self.lmax_sky = self.lib_skyalm.ellmax
