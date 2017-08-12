@@ -60,7 +60,8 @@ def extend_cl(_cl, ell_max, fill_val=0.):
 
 
 class ffs_diagcov_alm(object):
-    def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=None):
+    def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
+                 lib_skyalm=None, init_rank=lensit.pbs.rank, init_barrier=lensit.pbs.barrier):
 
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_datalm.clone() if lib_skyalm is None else lib_skyalm
@@ -79,12 +80,12 @@ class ffs_diagcov_alm(object):
 
         self.lib_dir = lib_dir
 
-        if not os.path.exists(lib_dir) and lensit.pbs.rank == 0:
+        if not os.path.exists(lib_dir) and init_rank == 0:
             os.makedirs(lib_dir)
-        lensit.pbs.barrier()
-        if not os.path.exists(lib_dir + '/cov_hash.pk') and lensit.pbs.rank == 0:
+        init_barrier()
+        if not os.path.exists(lib_dir + '/cov_hash.pk') and init_rank == 0:
             pk.dump(self.hashdict(), open(lib_dir + '/cov_hash.pk', 'w'))
-        lensit.pbs.barrier()
+        init_barrier()
         hash_check(pk.load(open(lib_dir + '/cov_hash.pk', 'r')), self.hashdict())
 
         self.barrier = lensit.pbs.barrier if _runtimebarriers else lambda: -1
@@ -1145,6 +1146,8 @@ class ffs_diagcov_alm(object):
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
         _lib_qlm = lensit.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat,
                                                           filt_func=lambda ell: (ell <= 2 * self.lib_skyalm.ellmax))
+        # FIXME dclhash !
+        print "!!!! dMFresplms::cmb_dcls hash is missing here !! ?"
         fname = self.lib_dir + '/%s_dMFresplm_%s.npy' % (_type, {True: 'len', False: 'unl'}[use_cls_len])
         if not os.path.exists(fname) or recache:
 
