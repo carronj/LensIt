@@ -103,7 +103,7 @@ class ffs_iterator(object):
             self.cov = cov
         if self.PBSRANK == 0:
             if not os.path.exists(self.lib_dir): os.makedirs(self.lib_dir)
-        pbs.barrier()
+        self.barrier()
         self.soltn_cond = np.all([np.all(self.cov.get_mask(_t) == 1.) for _t in self.type])
 
         print 'ffs iterator : This is %s trying to setup %s' % (self.PBSRANK, lib_dir)
@@ -514,10 +514,10 @@ class ffs_iterator(object):
         if self.PBSRANK == 0:  # Single processes routines :
             self.calc_ffinv(iter - 1, key)
             self.get_gradPpri(iter, key, cache_only=True)
-        pbs.barrier()
+        self.barrier()
         # Calculation of the likelihood term, involving the det term over MCs :
         irrelevant = self.calc_gradPlikPdet(iter, key)
-        pbs.barrier()  # Everything should be on disk now.
+        self.barrier()  # Everything should be on disk now.
         if self.PBSRANK == 0:
             incr,steplength = self.build_incr(iter, key, self.load_total_grad(iter - 1, key))
             self.cache_qlm(plm_fname, self.get_Plm(iter - 1, key) + incr, pbs_rank=0)
@@ -551,7 +551,7 @@ class ffs_iterator(object):
                     shutil.rmtree(self.lib_dir + '/finv_%04d_libdir' % (iter - 1))
                     if self.verbose: print "Removed :", self.lib_dir + '/finv_%04d_libdir' % (iter - 1)
 
-        pbs.barrier()
+        self.barrier()
         return None if cache_only else self.load_qlm(plm_fname)
 
 
@@ -701,7 +701,7 @@ class ffs_iterator_simMF(ffs_iterator):
                 if not lib is None and not lib.is_full():
                     print "++ run iterator regenerating %s phases mf_sims rank %s..." % (lab, self.PBSRANK)
                     for idx in np.arange(self.nsims): lib.get_sim(idx, phas_only=True)
-        pbs.barrier()
+        self.barrier()
         return phas_pix, phas_cmb
 
     def calc_gradPlikPdet(self, iter, key, callback='default_callback'):
@@ -718,7 +718,7 @@ class ffs_iterator_simMF(ffs_iterator):
         pix_pha, cmb_pha = self.build_pha(iter)
         if self.PBSRANK == 0 and not os.path.exists(self.lib_dir + '/mf_it%03d' % (iter - 1)):
             os.makedirs(self.lib_dir + '/mf_it%03d' % (iter - 1))
-        pbs.barrier()
+        self.barrier()
 
         # Caching gradients for the mc_sims_mf sims , plus the dat map.
         # The gradient of the det term is the data averaged lik term, with the opposite sign.
@@ -789,7 +789,7 @@ class ffs_iterator_simMF(ffs_iterator):
                 with open(self.lib_dir + '/cghistories/history_sim%04d.txt' % idx, 'a') as file:
                     file.write('%04d %.3f \n' % (iter, time.time() - ti))
                     file.close()
-        pbs.barrier()
+        self.barrier()
         if self.PBSRANK == 0:
             # Collecting terms and caching det term.
             # We also cache arrays formed from independent sims for tests.
@@ -822,4 +822,4 @@ class ffs_iterator_simMF(ffs_iterator):
                 print 'rank %s removing %s maps in ' % (
                     self.PBSRANK, len(files_to_remove)), self.lib_dir + '/mf_it%03d/' % (iter - 1)
                 for file in files_to_remove: os.remove(file)
-        pbs.barrier()
+        self.barrier()
