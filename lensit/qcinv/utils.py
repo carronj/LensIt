@@ -47,10 +47,16 @@ class ffs_converter():
     def rlms2datalms(self, TEBlen, rlms):
         assert rlms.size == TEBlen * self.rlms_size, (rlms.size, TEBlen * self.rlms_size)
         ret = np.zeros((TEBlen, self.lib_alm.alm_size), dtype=complex)
+        slice_size = 2 * self._rlm_size - 1 * self.has_ell0
         for _i in xrange(TEBlen):
+            #FIXME: this is wrong if 0 in ells and more than 1 fields ?!
             _ret = np.zeros(self.lib_alm.alm_size, dtype=complex)
-            sl_imag = slice(2 * _i * self._rlm_size, (2 * _i + 1) * self._rlm_size - 1 * self.has_ell0)
-            sl_real = slice((2 * _i + 1) * self._rlm_size - 1 * self.has_ell0, 2 * (_i + 1) * self._rlm_size)
+            start_im = _i * slice_size
+            end_im = _i * slice_size + self._rlm_size - 1 * self.has_ell0
+            start_re = end_im
+            end_re = start_re + self._rlm_size
+            sl_imag = slice(start_im,end_im)
+            sl_real = slice(start_re,end_re)
             imag = np.zeros(self._rlm_size)
             imag[1 * self.has_ell0:] = rlms[sl_imag]
             reals = rlms[sl_real]
