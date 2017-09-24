@@ -61,6 +61,20 @@ def get_defaultmgchain(lmax_sky, lsides, datshape, tol=1e-5, iter_max=np.inf, de
     return chain_descr
 
 
+def get_densediagchain(lsides,lmax_sky,datshape,dense_file,tol = 1e-5,iter_max = np.inf):
+    assert datshape[0] == datshape[1], datshape
+    dense_size = 2000
+    if np.prod(lsides) >= (4. * np.pi) - 0.1:
+        lmax_dense = 64
+    else:
+        lmax_dense = np.sqrt(2. / 2. / np.pi * (2 * np.pi) ** 2 / np.prod(lsides) * dense_size)
+        lmax_dense = int(np.round(min(lmax_dense, 1300)))
+    print "chain_samples : setting lmax_dense to ", lmax_dense
+    chain_descr = [
+        [0, ["split(dense(" + dense_file + "), %s, diag_cl)" % (int(lmax_dense))], lmax_sky, datshape[0], iter_max,tol,cd_solve.tr_cg, cd_solve.cache_mem()]]
+    return chain_descr
+
+
 def get_isomgchain(lmax_sky, datshape, tol=1e-5, iter_max=np.inf, **kwargs):
     assert datshape[0] == datshape[1], datshape
     nside_max = datshape[0]
