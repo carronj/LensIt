@@ -7,16 +7,12 @@ try :
     from scipy import weave
 except:
     import weave
+import lensit as li
 import lensit.misc.map_spliter as map_spliter
 from lensit.ffs_deflect import ffs_pool
 from lensit.misc import misc_utils as utils
 from lensit.misc import rfft2_utils
 from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq
-
-try:
-    from lensit.gpu import lens_GPU
-except:
-    print "NB : import of lens_GPU unsucessful"
 from lensit import pbs
 
 
@@ -357,7 +353,7 @@ class ffs_displacement(object):
                                   lenmap[j * width + i] = bicubiclensKernel(filtmap,i + dx_gu[j * width + i],j + dy_gu[j * width + i],width);\
                                   }\
                               }"
-            header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+            header = r' "%s/lensit/gpu/bicubicspline.h" ' % li.LENSITDIR
             if do_not_prefilter:
                 filtmap = self.load_map(map).astype(np.float64)
             else:
@@ -727,7 +723,7 @@ class ffs_displacement(object):
         Minv_xx = bic_filter(Minv_xx)
         Minv_yy = bic_filter(Minv_yy)
 
-        header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+        header = r' "%s/lensit/gpu/bicubicspline.h" ' % li.LENSITDIR
         iterate = r"\
             double fx,fy;\
             double ex_len_dx,ey_len_dy,len_Mxx,len_Mxy,len_Myx,len_Myy;\
@@ -820,6 +816,29 @@ class ffs_displacement(object):
         dx = rfft2_utils.degrade(self.get_dx(), LD_shape)
         dy = rfft2_utils.degrade(self.get_dy(), LD_shape)
         return ffs_displacement(dx, dy, self.lsides, **kwargs)
+
+    def get_MF(self, lib_qlm):
+        """
+        :return: The (N0-like) unnormalised mean field for noisefree deflection estimates
+        """
+        alm_magn = lib_qlm.map2alm(1. / self.get_det_magn())
+        alm_d0 = lib_qlm.map2alm(self.get_dy())
+        alm_d1 = lib_qlm.map2alm(self.get_dx())
+        fac = 1./ np.sqrt(np.prod(self.lsides))
+        ik1 = lambda: lib_qlm.get_ikx()
+        ik0 = lambda: lib_qlm.get_iky()
+        g0 = (1. + lib_qlm.alm2map(ik1() * alm_d1)) * (lib_qlm.alm2map(ik0() * alm_magn)) \
+             - lib_qlm.alm2map(ik0() * alm_d1) * lib_qlm.alm2map(ik0() * alm_magn)
+        g1 = (1. + lib_qlm.alm2map(ik0() * alm_d0)) * (lib_qlm.alm2map(ik1() * alm_magn)) \
+             - lib_qlm.alm2map(ik1() * alm_d0) * lib_qlm.alm2map(ik1() * alm_magn)
+
+        del alm_magn, alm_d0, alm_d1
+        # Rotates to phi Omega :
+        # 2 * sqrt(V) / N,  rfft2alm factor. times add. factors fac
+        dy_ell, dx_ell = (fac * lib_qlm.map2alm(g) for g in [g0, g1])
+        dphi_ell = dx_ell * ik1() + dy_ell * ik0()
+        dOm_ell = - dx_ell * ik0() + dy_ell * ik1()
+        return np.array([dphi_ell, dOm_ell])
 
 
 class ffs_id_displacement():
