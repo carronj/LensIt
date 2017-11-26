@@ -156,22 +156,14 @@ class ffs_displacement(object):
         return
 
     def get_dx(self):
-        """
-        Load dx in memmap-mode 'r',unless dx is already on memory.
-        The file on disk is read-only.
-        """
         if isinstance(self.dx, str):
-            return np.load(self.dx, mmap_mode='r')
+            return np.load(self.dx)
         else:
             return self.dx
 
     def get_dy(self):
-        """
-        Load dx in memmap-mode 'r', ,unless dx is already on memory.
-        The file on disk is read-only.
-        """
         if isinstance(self.dy, str):
-            return np.load(self.dy, mmap_mode='r')
+            return np.load(self.dy)
         else:
             return self.dy
 
@@ -467,7 +459,7 @@ class ffs_displacement(object):
                 np.save(fname, det)
                 del det
             # pbs.barrier()
-            return np.load(fname, mmap_mode='r')
+            return np.load(fname)
 
     def pOlm(self, lib_qlm):
         pass
@@ -871,7 +863,7 @@ class ffs_id_displacement():
 
     def lens_map(self, map, **kwargs):
         if isinstance(map, str):
-            return np.load(map, mmap_mode='r')
+            return np.load(map)
         else:
             return map
 
