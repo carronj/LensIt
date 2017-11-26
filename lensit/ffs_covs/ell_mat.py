@@ -96,6 +96,17 @@ class ell_mat():
     def __getitem__(self, item):
         return self.get_ellmat()[item]
 
+    def get_pixwinmat(self):
+        """ sin(kx Lcell_x / 2) sin (k_y Lcell_y / 2 ) """
+        ky = (np.pi/self.shape[0]) * Freq(np.arange(self.shape[0]), self.shape[0])
+        ky[self.shape[0] / 2:] *= -1.
+        kx = (np.pi/self.shape[1]) * Freq(np.arange(self.rshape[1]), self.shape[1])
+        rety = np.sin(ky)
+        rety[1:] /= ky[1:];rety[0] = 1.
+        retx = np.sin(kx)
+        retx[1:] /= kx[1:];retx[0] = 1.
+        return np.outer(rety,retx)
+
     def get_ellmat(self, ellmax=None):
         """
         Returns the matrix containing the multipole ell assigned to k = (kx,ky)
@@ -397,6 +408,9 @@ class ffs_alm(object):
         if ellmin is None: ellmin = self.ellmin
         filt_func = lambda ell: (self.filt_func(ell) & (ell <= ellmax) & (ell >= ellmin))
         return ffs_alm(LD_ellmat, filt_func=filt_func)
+
+    def get_pixwin(self):
+        return np.sqrt(self.bin_realpart_inell(self.ell_mat.get_pixwinmat()[self._cond()] ** 2))
 
     def fsky(self):
         return np.prod(self.ell_mat.lsides) / 4. / np.pi

@@ -704,8 +704,7 @@ class ffs_diagcov_alm(object):
         assert _type in _types, (_type, _types)
         t = timer(_timed)
         Fpp, FOO, FpO = self.get_qlm_curvature(_type, lib_qlm,
-                                               use_cls_len=use_cls_len, cls_obs=cls_obs, cls_filt=cls_filt,
-                                               cls_weights=cls_weights, cls_obs2=cls_obs2)
+                use_cls_len=use_cls_len, cls_obs=cls_obs, cls_filt=cls_filt,cls_weights=cls_weights, cls_obs2=cls_obs2)
 
         t.checkpoint("  get_qlm_resplm:: get curvature matrices")
 
@@ -732,10 +731,7 @@ class ffs_diagcov_alm(object):
                                                                       filt_func=lambda ell: ell > 0)
                     Rpp, ROO = self.get_qlm_resprlm(_type, lib_full, use_cls_len=use_cls_len)
                     header = datetime.datetime.now().strftime("%I:%M%p on %B %d, %Y") + '\n' + __file__
-                    np.savetxt(fname,
-                               np.array(
-                                   (2 * lib_full.alm2cl(np.sqrt(Rpp)), 2 * lib_full.alm2cl(np.sqrt(ROO)))).transpose(),
-                               fmt=['%.8e'] * 2, header=header)
+                    np.savetxt(fname, np.array((2 * lib_full.alm2cl(np.sqrt(Rpp)), 2 * lib_full.alm2cl(np.sqrt(ROO)))).transpose(),fmt=['%.8e'] * 2, header=header)
                 self.barrier()
             cl = np.loadtxt(fname).transpose()[:, 0:lib_qlm.ellmax + 1]
             cl[0] *= lib_qlm.filt_func(np.arange(len(cl[0])))
@@ -1606,7 +1602,8 @@ class ffs_diagcov_alm(object):
                        header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
             print "Cached ", fname
         print "loading ", fname
-        ret = np.array([(_r * lib_qlm.cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
+        cond = lib_qlm.ell_mat.get_Nell() > 0
+        ret = np.array([(_r * cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
         return ret
 
     def get_plmRDlikcurvcls(self, _type, datcls_obs, lib_qlm, use_cls_len=True, use_cls_len_D=None, recache=False,
@@ -1691,7 +1688,8 @@ class ffs_diagcov_alm(object):
             # if withF: ret += np.array([_lib_qlm.bin_realpart_inell(_r) for _r in Fish[:2]])
             # return ret
         print "loading ", fname
-        ret = np.array([(_r * lib_qlm.cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
+        cond = lib_qlm.ell_mat.get_Nell() > 0
+        ret = np.array([(_r * cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
         return ret
 
     def get_dplmRDlikcurvcls(self, _type, cmb_dcls, datcls_obs, lib_qlm, use_cls_len=True, recache=False,
@@ -1748,7 +1746,8 @@ class ffs_diagcov_alm(object):
                        header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
             print "cached ", fname
         print "loading ", fname
-        return np.array([(_r * lib_qlm.cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
+        cond = lib_qlm.ell_mat.get_Nell() > 0
+        return np.array([(_r * cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
         # return np.loadtxt(fname).transpose()
 
 class ffs_lencov_alm(ffs_diagcov_alm):
