@@ -83,7 +83,7 @@ class ffs_iterator(object):
         def newton_step_length(iter, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
             if cov.Nlev_uKamin('t') > 2.1: return 1.0
-            if cov.Nlev_uKamin('t') <= 2.1 :
+            if cov.Nlev_uKamin('t') <= 2.1 and norm_incr >= 0.5:
                 return 0.5
             return 0.5
 
@@ -104,8 +104,9 @@ class ffs_iterator(object):
         if self.PBSRANK == 0:
             if not os.path.exists(self.lib_dir): os.makedirs(self.lib_dir)
         self.barrier()
-        self.soltn_cond = np.all([np.all(self.cov.get_mask(_t) == 1.) for _t in self.type])
-
+        #FIXME: even this does not work on small patches !!:
+        #self.soltn_cond = np.all([np.all(self.cov.get_mask(_t) == 1.) for _t in self.type])
+        self.soltn_cond = False
         print 'ffs iterator : This is %s trying to setup %s' % (self.PBSRANK, lib_dir)
         # Lensed covariance matrix library :
         # We will redefine the displacement at each iteration step
@@ -222,25 +223,6 @@ class ffs_iterator(object):
         return os.path.exists(
             self.lib_dir + '/%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], iter - 1))
 
-    def get_Gausssample(self, iter, key, real_space=False, verbose=False):
-        """
-        Produce a Gaussian random field from the approximate covariance (H, from Broyden) and mean at iteration k
-        :param iter:
-        :param key:
-        :return:
-        """
-        assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        assert iter < self.how_many_iter_done(key), iter
-        # FIXME : redundant freqs.
-        rlm_0 = self.lib_qlm.almxfl(self.lib_qlm.rlm2alm(np.random.standard_normal(2 * self.lib_qlm.alm_size)),
-                                    np.sqrt(self.get_H0(key)))
-
-        ret = self.get_Hessian(iter, key).sample_Gaussian(iter, self.lib_qlm.alm2rlm(rlm_0))
-        ret = self.lib_qlm.rlm2alm(ret)
-        if real_space:
-            return self.lib_qlm.alm2map(ret + self.get_Plm(iter, key))
-        else:
-            return ret + self.get_Plm(iter, key)
 
     def how_many_iter_done(self, key):
         """
@@ -432,6 +414,32 @@ class ffs_iterator(object):
     def calc_norm(self,qlm):
         return np.sqrt(np.sum(self.lib_qlm.alm2rlm(qlm) ** 2))
 
+    def apply_curv(self,k,key,alphak,plm):
+        """
+        Apply curvature matrix making use of information incuding sk and yk.
+
+        Applies v B_{k + 1}v = v B_k v +   (y^t v)** 2/(y^t s) - (s^t B v) ** 2 / (s^t B s))
+        (B_k+1 = B  + yy^t / (y^ts) - B s s^t B / (s^t Bk s))   (all k on the RHS))
+
+            For quasi Newton, s_k = x_k1 - x_k = - alpha_k Hk grad_k with alpha_k newton step-length.
+
+        --> s^t B s at k is alpha_k^2 g_k H g_k
+            B s = -alpha g_k
+        """
+        H = self.get_Hessian(max(k + 1,0), key) # get_Hessian(k) loads sk and yk from 0 to k - 1
+        assert H.L > k,'not implemented'
+        assert len(alphak) >= (k + 1),(k + 1,len(alphak))
+        dot_op = lambda plm1,plm2,:np.sum(self.lib_qlm.alm2cl(plm1,alm2=plm2) * self.lib_qlm.get_Nell()[:self.lib_qlm.ellmax + 1])
+        if k <= -1:
+            return dot_op(plm,self.lib_qlm.rlm2alm(H.applyB0k(self.lib_qlm.alm2rlm(plm),0)))
+        ret = self.apply_curv(k-1,key,alphak,plm)
+        Hgk = H.get_mHkgk(self.lib_qlm.alm2rlm(self.load_total_grad(k, key)), k)
+        st_Bs = alphak[k] ** 2 * dot_op(self.load_total_grad(k, key),self.lib_qlm.rlm2alm(Hgk))
+        yt_s = dot_op(self.lib_qlm.rlm2alm(H.s(k)),self.lib_qlm.rlm2alm(H.y(k)))
+        yt_v = dot_op(self.lib_qlm.rlm2alm(H.y(k)),plm)
+        st_Bv = - alphak[k] *dot_op(self.load_total_grad(k, key),plm)
+        return ret + yt_v ** 2 / yt_s - st_Bv ** 2 / st_Bs
+
     def get_lndetcurv_update(self, k, key, alphak):
         """
         Let B be the curvature matrix, B0 ~ 1/Cpp + 1/N0. and H its inverse
@@ -445,10 +453,24 @@ class ffs_iterator(object):
         assert 1. - num / denom / alphak > 0.
         return np.log(1. - num / denom / alphak)
 
+    def get_Gaussnoisesample(self, k, key,plm_noisephas, real_space=False, verbose=False):
+        """
+        Produce a Gaussian random field from the approximate covariance (H, from Broyden) and mean at iteration k
+        plm_pha: unit spectra random pha.
+        Recall that the curvature matrix B_1 requires two gradients on disk.
+        Makes use of s_k and y_k from 0 to k-1 -> gradient information up to k
+        """
+        assert key.lower() in ['p', 'o'], key  # potential or curl potential.
+        assert plm_noisephas.shape == (self.lib_qlm.alm_size,),(plm_noisephas.shape,self.lib_qlm.alm_size)
+
+        alm_0 = self.lib_qlm.almxfl(plm_noisephas, np.sqrt(self.get_H0(key)))
+        ret = self.get_Hessian(max(k,0), key).sample_Gaussian(k, self.lib_qlm.alm2rlm(alm_0))
+        return (self.lib_qlm.alm2map(self.lib_qlm.rlm2alm(ret)) if real_space else self.lib_qlm.rlm2alm(ret))
+
 
     def get_Hessian(self, k, key):
         """
-        We need the inverse Hessian that will produce phi_iter. If iter == 1 this is simply the first guess.
+        We need the inverse Hessian that will produce phi_iter.
         """
         # Zeroth order inverse Hessian :
         apply_H0k = lambda rlm, k: \
