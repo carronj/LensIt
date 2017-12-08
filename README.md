@@ -18,4 +18,6 @@ Many parts use the flat-sky approximation, with likely extension to curved-sky i
 To use the GPU implementation of some of the routines, you will need pyCUDA. (https://mathema.tician.de/software/pycuda)
 
 An ipython notebook 'demo_basics.ipynb' covers the simple aspects of building simulation librairies etc.  
-Other example and tests scripts might follow, or you may just write to me.  
+Other example and tests scripts might follow, or you may just write to me.
+
+![alt text](https://erc.europa.eu/sites/default/files/content/erc_banner-vertical.jpg)
