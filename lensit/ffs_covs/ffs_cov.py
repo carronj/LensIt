@@ -1920,20 +1920,13 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         #    return self.get_iblms(_type, _datmaps, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
         # assert datmaps.shape == (len(_type), self.dat_shape[0], self.dat_shape[1]),(datmaps.shape,self.dat_shape)
         assert use_cls_len == False, 'not implemented'
-        MLik = SM.TEB2TQUlms(_type, self.lib_skyalm,
-                             self.get_MLlms_new(_type, datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
-        ret = np.zeros(self._skyalms_shape(_type), dtype=complex)
-        for i in range(len(_type)):
-            temp = datalms[i] - self.lib_datalm.almxfl(self.f.lens_alm(self.lib_skyalm, MLik[i],
-                                                                       lib_alm_out=self.lib_datalm, use_Pool=use_Pool),
-                                                       self.cl_transf)
-            self.lib_datalm.almxfl(temp, self.cl_transf[:self.lib_datalm.ellmax + 1]
-                                   * cl_inverse(self.cls_noise[_type[i].lower()][:self.lib_datalm.ellmax + 1]),
-                                   inplace=True)
-            ret[i] = self._upg(temp)
+        MLTQUlms = SM.TEB2TQUlms(_type, self.lib_skyalm,self.get_MLlms_new(_type, datalms,
+                            use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
+        ret = self.MLTQUlms2ibTQUlms(_type,MLTQUlms,datalms,use_Pool=use_Pool)
         return ret, -1  # No iterations info implemented
 
     def iblm2MLlms(self, _type, iblms, use_Pool=0, use_cls_len=False):
+        assert 0,'not good, lensing of small scales maps'
         # C_unl D^t B^t F^t Cov^{-1}
         cmb_cls = self.cls_len if use_cls_len else self.cls_unl
         ret = np.empty(self._skyalms_shape(_type), dtype=complex)
@@ -1941,12 +1934,26 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             ret[_i] = self.f_inv.lens_alm(self.lib_skyalm, iblms[_i], use_Pool=use_Pool, mult_magn=True)
         return SM.apply_TEBmat(_type, self.lib_skyalm, cmb_cls, SM.TQU2TEBlms(_type, self.lib_skyalm, ret))
 
+    def MLTQUlms2ibTQUlms(self,_type,MLTQUlms,datalms,use_Pool = 0):
+        """ Output TQU skyalm shaped """
+        ret = np.zeros(self._skyalms_shape(_type), dtype=complex)
+        for i in range(len(_type)):
+            temp = datalms[i] - self.lib_datalm.almxfl(self.f.lens_alm(self.lib_skyalm, MLTQUlms[i],
+                                lib_alm_out=self.lib_datalm, use_Pool=use_Pool),self.cl_transf)
+            self.lib_datalm.almxfl(temp, self.cl_transf[:self.lib_datalm.ellmax + 1]
+                                   * cl_inverse(self.cls_noise[_type[i].lower()][:self.lib_datalm.ellmax + 1]),
+                                   inplace=True)
+            ret[i] = self._upg(temp)
+        return ret
+
+
     def get_MLlms(self, _type, datmaps, use_Pool=0, use_cls_len=False, **kwargs):
         """
         Returns maximum likelihood sky CMB modes. (P D^t B^t F^t Cov^-1 = (P^-1 + B^F^t N^{-1} F B)^{-1} F B N^{-1} d)
         Outpu TEB shape sky alms
         """
-        iblms, iter = self.get_iblms(_type, datmaps, use_cls_len=use_cls_len)
+        assert 0
+        iblms, iter = self.get_iblms(_type, datmaps, use_cls_len=use_cls_len,**kwargs)
         return self.iblm2MLlms(_type, iblms, use_Pool=use_Pool, use_cls_len=use_cls_len)
 
     def get_MLlms_new(self, _type, datalms, use_Pool=0, use_cls_len=False, **kwargs):
