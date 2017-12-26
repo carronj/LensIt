@@ -759,10 +759,9 @@ class ffs_diagcov_alm(object):
                                           use_cls_len=False)  # TEB matrix output
         cls_delen = {}
         for _k, _cl in self.cls_len.iteritems():
-            # Pertubative calc for lensed cl
-            cls_delen[_k] = self.cls_unl[_k][:self.lib_datalm.ellmax + 1] \
-                            - Bl[{'t': 0, 'e': 1, 'b': 2}[_k[0]], {'t': 0, 'e': 1, 'b': 2}[_k[1]],
-                              :self.lib_datalm.ellmax + 1]
+            cls_delen[_k] = self.cls_unl[_k].copy()
+            _Bl = Bl[{'t': 0, 'e': 1, 'b': 2}[_k[0]], {'t': 0, 'e': 1, 'b': 2}[_k[1]]]
+            cls_delen[_k][:min(len(cls_delen[_k]),len(_Bl))] -= _Bl[:min(len(cls_delen[_k]),len(_Bl))]
         cls_unl = {}
         for _k, _cl in self.cls_unl.iteritems():
             cls_unl[_k] = _cl.copy()
