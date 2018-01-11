@@ -90,7 +90,7 @@ excl. defl. angle calc.: 140 sec.
 from lensit import shts
 import healpy as hp,numpy as np
 from lensit.misc.misc_utils import timer
-
+from . import gauleg
 try:
     import weave
 except:
@@ -190,7 +190,7 @@ def lens_gcband_sym(spin,glm, th1, th2, Nt, (tnewN, phinewN), (tnewS, phinewS),c
     # Actual interpolation for the 4 real maps :
     bicubicspline = r"for(int j= 0; j < npix; j++ )\
                        {lenmap[j] = bicubiclensKernel_rect(filtmap,phinew[j],tnew[j],Nx,Ny);}"
-    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.environ.get('LENSIT',os.curdir))
 
     lenmapNR = np.empty(len(tnewN), dtype=float)
     lenmapNI = np.empty(len(tnewN), dtype=float)
@@ -226,7 +226,7 @@ def lens_band_sym(glm,th1,th2,Nt,(tnewN,phinewN),(tnewS,phinewS),Nphi = 2 ** 14)
 
     bicubicspline = r"for(int j= 0; j < npix; j++ )\
                        {lenmap[j] = bicubiclensKernel_rect(filtmap,phinew[j],tnew[j],Nx,Ny);}"
-    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.environ.get('LENSIT',os.curdir))
     lenmapN = np.empty(len(tnewN),dtype = float)
     lenmapS = np.empty(len(tnewS),dtype = float)
 
@@ -262,7 +262,7 @@ def lens_band_sym_timed(glm, th1, th2, Nt, (tnewN, phinewN), (tnewS, phinewS), N
     lenmapS = np.empty(len(tnewS), dtype=float)
     bicubicspline = r"for(int j= 0; j < npix; j++ )\
                        {lenmap[j] = bicubiclensKernel_rect(filtmap,phinew[j],tnew[j],Nx,Ny);}"
-    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.environ.get('LENSIT',os.curdir))
 
     for N, filtmap, lenmap, (tnew, phinew) in zip([1, 0], [filtmapN, filtmapS], [lenmapN, lenmapS],
                                                   [(tnewN, phinewN), (tnewS, phinewS)]):
@@ -298,7 +298,7 @@ def gclm2lensmap_symband_timed(spin, glm, th1, th2, Nt, (tnewN, phinewN), (tnewS
 
     bicubicspline = r"for(int j= 0; j < npix; j++ )\
                        {lenmap[j] = bicubiclensKernel_rect(filtmap,phinew[j],tnew[j],Nx,Ny);}"
-    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.environ.get('LENSIT',os.curdir))
 
     for N, filtmap, lenmap, (_tnew, _phinew) in zip([1,1,0,0],
                                             [filtmapN.real, filtmapN.imag,filtmapS.real, filtmapS.imag],
@@ -336,7 +336,7 @@ def lensgclm_symband_timed(spin,glm, th1, th2, Nt, (tnewN, phinewN), (tnewS, phi
 
     bicubicspline = r"for(int j= 0; j < npix; j++ )\
                        {lenmap[j] = bicubiclensKernel_rect(filtmap,phinew[j],tnew[j],Nx,Ny);}"
-    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.curdir)
+    header = r' "%s/lensit/gpu/bicubicspline.h" ' % os.path.abspath(os.environ.get('LENSIT',os.curdir))
 
     for N, filtmap, lenmap, (_tnew, _phinew) in zip([1,1,0,0],
                                             [filtmapN.real, filtmapN.imag,filtmapS.real, filtmapS.imag],
@@ -359,18 +359,17 @@ def _buildangles((tht,phi),Red,Imd):
         pix = hp.query_strip(nside, th1, np.max(tht_patch), inclusive=True)
         costnew,phinew = buildangles(hp.pix2ang(nside, pix),Redtot[pix],Imdtot[pix])
     """
-    # FIXME :  poles
     costnew = np.cos(tht)
     phinew = phi.copy()
     norm = np.sqrt(Red ** 2 + Imd ** 2)
     ii = np.where(norm > 0.)
     costnew[ii] = np.cos(norm[ii]) * costnew[ii] - np.sin(norm[ii]) * np.sin(tht[ii]) * (Red[ii] / norm[ii])
+    ii = np.where( (norm > 0.) & (costnew ** 2 < 1.))
     phinew[ii] += np.arcsin((Imd[ii] / norm[ii]) * np.sin(norm[ii]) / (np.sqrt(1. - costnew[ii] ** 2)))
     return np.arccos(costnew),phinew
 
 def polrot(spin,lenmap,tht,Red,Imd):
     # FIXME :  poles
-
     if spin == 2 :
         ret = np.ones(len(lenmap),dtype = complex)
         norm = np.sqrt(Red ** 2 + Imd ** 2)
@@ -380,11 +379,11 @@ def polrot(spin,lenmap,tht,Red,Imd):
         ret[ii] /= (norm[ii] ** 2 * (1. + A ** 2))
         ret[ii] -= 1.
         return ret
-    else : assert 0
+    else : assert 0,'not implemented'
 
-def get_Nphi(th1,th2,facres = 0):
+def get_Nphi(th1,th2,facres = 0,target_amin = 0.745):
     """ Calculates a phi sampling density at co-latitude theta """
-    target_amin = 0.745 # 0.66 corresponds to 2 ** 15 = 32768
+    # 0.66 corresponds to 2 ** 15 = 32768
     sint = max(np.sin(th1),np.sin(th2))
     for res in np.arange(15,3,-1):
         if 2. * np.pi / (2 ** (res-1)) * 180. * 60 /np.pi * sint >= target_amin : return 2 ** (res + facres)
@@ -472,7 +471,6 @@ def lens_glm_sym_timed(spin,dlm,glm,nside,nband = 32,facres = 0,clm = None,rotpo
         mitnewN = np.min(tnewN)
         matnewS = np.max(tnewS)
         mitnewS = np.min(tnewS)
-
         buffN = 10 * (matnewN - mitnewN) / (Nt_perband - 1) / (1. - 2. * 10. / (Nt_perband - 1))
         buffS = 10 * (matnewS - mitnewS) / (Nt_perband - 1) / (1. - 2. * 10. / (Nt_perband - 1))
         _thup = min(np.pi - (matnewS + buffS),mitnewN - buffN)
@@ -518,88 +516,255 @@ def lens_glm_sym_timed(spin,dlm,glm,nside,nband = 32,facres = 0,clm = None,rotpo
 
     return ret
 
-def vtm2filtmap(spin,vtm,Nphi,threads = 8,phiflip = []):
-    return vtm2map(spin,vtm,Nphi,threads=threads,bicubic_prefilt=True,phiflip=phiflip)
 
-def vtm2map(spin,vtm, Nphi,threads = 8,bicubic_prefilt = False,phiflip = []):
-        """
-        Send vtm array to bicubic prefiltered map to be interpolated with Nphi points equidistant in [0,2pi).
-        This uses 2lmax + 1 1d Ntheta-sized FFTs and one 2d (Ntheta x Nphi) iFFT.
+def lens_glm_GLth_sym_timed(spin,dlm,glm,lmax_target,
+            nband = 16,facres = 0,clm = None,olm = None,rotpol = True):
+    """
+    Same as lens_alm but lens simultnously a North and South colatitude band,
+    to make profit of the symmetries of the spherical harmonics.
+    """
+    assert spin >= 0,spin
+    times = {}
+    t0 = time.time()
+    tGL,wg = gauleg.get_xgwg(lmax_target + 2)
+    times['GL points and weights'] =time.time() -t0
+    target_nt = 3 ** 1 * 2 ** (11 + facres) # on one hemisphere (0.87 arcmin spacing)
+    th1s = np.arange(nband) * (np.pi * 0.5 / nband)
+    th2s = np.concatenate((th1s[1:],[np.pi * 0.5]))
+    Nt = target_nt / nband
+    tGL = np.arccos(tGL)
+    tGL = np.sort(tGL)
+    wg = wg[np.argsort(tGL)]
+    times['pol. rot.'] = 0.
+    times['vtm2defl2ang'] = 0.
+    times['vtmdefl'] = 0.
 
-        Apparently the pyFFTW.FFTW is twice as fast than the pyFFTW.interface.
-        But the FFTW wisdom calculation overhead can compensate for the gain if only one map is lensed.
+    def coadd_times(tim):
+        for _k,_t in tim.iteritems():
+            if _k not in times :
+                times[_k] = _t
+            else : times[_k] += _t
 
-        vtm should come from shts.vlm2vtm which returns a farray, with contiguous vtm[:,ip].
+    shapes = []
+    shapes_d =[]
 
-        for spin 0 we have vtm^* = vt_-m, real filtered maps and we may use rffts.
+    tGLNs = []
+    tGLSs = []
+    wgs = []
+    # Collects (Nt,Nphi) per band and prepare wisdom
+    wisdomhash = str(lmax_target) + '_' + str(nband) + '_' + str(facres + 1000) + '.npy'
+    assert os.path.exists(os.path.dirname(os.path.realpath(__file__)) + '/pyfftw_cache/')
+    t0 = time.time()
+    print "building and caching FFTW wisdom, this might take a while"
+    for ib,th1,th2 in zip(range(nband),th1s,th2s):
+        Np = get_Nphi(th1,th2, facres=facres,target_amin =60. * 90. / target_nt) # same spacing as theta grid
+        Np_d = min(get_Nphi(th1,th2,target_amin = 180. * 60. / lmax_target),2 * lmax_target) #Equator point density
+        pixN, = np.where((tGL >= th1) & (tGL <= th2))
+        pixS, = np.where((tGL >= (np.pi - th2)) & (tGL <= (np.pi - th1)))
+        assert np.all(pixN[::-1] == len(tGL) - 1 -pixS),'symmetry of GL points'
+        shapes_d.append((len(pixN),Np_d))
+        shapes.append((Nt,Np))
+        tGLNs.append(tGL[pixN])
+        tGLSs.append(tGL[pixS])
+        wgs.append(np.concatenate([wg[pixN],wg[pixS]]))
+        print "BAND %s in %s. deflection    (%s x %s) pts "%(ib,nband,len(pixN),Np_d)
+        print "               interpolation (%s x %s) pts "%(Nt,Np)
+        #==== For each block we have the following ffts:
+        # (Np_d) complex to complex (deflection map) BACKWARD (vtm2map)
+        # (Nt,Np) complex to complex (bicubic prefiltering) BACKWARD (vt2mmap) (4 threads)
+        # (Nt) complex to complex (bicubic prefiltering) FORWARD (vt2map)
+        # (Np_d) complex to complex  FORWARD (map2vtm)
+        # Could rather do a try with FFTW_WISDOM_ONLY
+        if not os.path.exists(os.path.dirname(os.path.realpath(__file__)) + '/pyfftw_cache/' + wisdomhash):
+            a = pyfftw.empty_aligned(Np_d, dtype='complex128')
+            b = pyfftw.empty_aligned(Np_d, dtype='complex128')
+            fft = pyfftw.FFTW(a, b, direction='FFTW_FORWARD', threads=1)
+            fft = pyfftw.FFTW(a, b, direction='FFTW_BACKWARD', threads=1)
+            a = pyfftw.empty_aligned(Nt, dtype='complex128')
+            b = pyfftw.empty_aligned(Nt, dtype='complex128')
+            fft = pyfftw.FFTW(a, b, direction='FFTW_FORWARD', threads=1)
+            a = pyfftw.empty_aligned((Nt,Np), dtype='complex128')
+            b = pyfftw.empty_aligned((Nt,Np), dtype='complex128')
+            fft = pyfftw.FFTW(a, b, direction='FFTW_BACKWARD', axes = (0,1),threads=4)
 
-        vtm should of size 2 * lmax + 1
+    if not os.path.exists(os.path.dirname(os.path.realpath(__file__)) + '/pyfftw_cache/' + wisdomhash):
+        np.save(os.path.dirname(os.path.realpath(__file__)) + '/pyfftw_cache/' + wisdomhash,pyfftw.export_wisdom())
+    pyfftw.import_wisdom(np.load(os.path.dirname(os.path.realpath(__file__)) + '/pyfftw_cache/' + wisdomhash))
+    shts.PYFFTWFLAGS = ['FFTW_WISDOM_ONLY']
+    times['pyfftw_caches'] = time.time() -t0
+    print "Total number of interpo points: %s = %s ** 2"%(np.sum([np.prod(s) for s in shapes]),np.sqrt(1. * np.sum([np.prod(s) for s in shapes])))
+    print "Total number of deflect points: %s = %s ** 2"%(np.sum([np.prod(s) for s in shapes_d]),np.sqrt(1. * np.sum([np.prod(s) for s in shapes_d])))
 
-        Flipping phi amounts to phi -> 2pi - phi -> The phi fft is sent to its transpose.
-        """
-        # looks like it actually works OK
-        # TODO : separate spin 0  (using rffts etc) from spin != 0. (~2 gain)
-        # TODO : better wisdom handling ? (~10 sec gain)
-        # TODO : put the phi filtering in the vtm calculation ? (Probably nothing)
-        lmax = (vtm.shape[1] - 1) / 2
-        Nt = vtm.shape[0]
-        assert (Nt, 2 * lmax + 1) == vtm.shape, ((Nt, 2 * lmax + 1), vtm.shape)
-        # pyFFTW objects and Wisdom. Apparently the pyFFTW.FFTW is twice as fast than the pyFFTW.interface.
-        ret = pyfftw.empty_aligned((Nt, Nphi), dtype=complex,order='C')
-        ifftmap = pyfftw.empty_aligned((Nt, Nphi),dtype=complex,order = 'C')
-        ifft2 = pyfftw.FFTW(ifftmap, ret, axes=(0, 1), direction='FFTW_BACKWARD', threads=threads)
+    glmout = np.zeros(shts.util.lmax2nlm(lmax_target), dtype=np.complex)
+    clmout = np.zeros(shts.util.lmax2nlm(lmax_target), dtype=np.complex)
+    for ib,th1,th2 in zip(range(nband),th1s,th2s):
 
-        a = pyfftw.empty_aligned(Nt, dtype=complex)
-        b = pyfftw.empty_aligned(Nt, dtype=complex)
-        fft1d = pyfftw.FFTW(a, b,direction='FFTW_FORWARD',threads=threads)
-        if bicubic_prefilt :
-            w0 = (Nphi) * 6. / (2. * np.cos(2. * np.pi * np.fft.fftfreq(Nt)) + 4.)
-            w1 = 6. / (2. * np.cos(2. * np.pi * np.fft.fftfreq(Nphi)) + 4.)
-            ifftmap[:] = np.outer(w0, w1)
+        Nt_d,Np_d = shapes_d[ib]
+        Nt,Np = shapes[ib]
+
+        t0 = time.time()
+        vtm_def = shts.vlm2vtm_sym(1, _th2colat(tGLNs[ib]), shts.util.alm2vlm(dlm, clm=olm))
+        times['vtmdefl'] += time.time() - t0
+
+        #==== gettting deflected positions
+        # NB: forward slice to keep theta -> pi - theta correspondance.
+        t0 = time.time()
+        dmapN = shts.vtm2map(1, vtm_def[:Nt_d,:], Np_d).flatten()
+        dmapS = shts.vtm2map(1, vtm_def[slice(Nt_d,2 * Nt_d), :], Np_d).flatten()
+
+        told = np.outer(tGLNs[ib],np.ones(Np_d)).flatten()
+        phiold = np.outer(np.ones(Nt_d),np.arange(Np_d) * (2. * np.pi / Np_d)).flatten()
+
+        tnewN, phinewN = _buildangles((told, phiold), dmapN.real, dmapN.imag)
+        tnewS, phinewS = _buildangles(( (np.pi -told)[::-1], phiold), dmapS.real, dmapS.imag)
+        del vtm_def
+        times['vtm2defl2ang'] += time.time() - t0
+
+        #===== Adding a 10 pixels buffer for new angles to be safely inside interval.
+        # th1,th2 is mapped onto pi - th2,pi -th1 so we need to make sure to cover both buffers
+        matnewN = np.max(tnewN)
+        mitnewN = np.min(tnewN)
+        matnewS = np.max(tnewS)
+        mitnewS = np.min(tnewS)
+
+
+        buffN = 10 * (matnewN - mitnewN) / (Nt - 1) / (1. - 2. * 10. / (Nt - 1))
+        buffS = 10 * (matnewS - mitnewS) / (Nt - 1) / (1. - 2. * 10. / (Nt - 1))
+        _thup = min(np.pi - (matnewS + buffS),mitnewN - buffN)
+        _thdown = max(np.pi - (mitnewS - buffS),matnewN + buffN)
+
+        #==== these are the theta and limits. It is ok to go negative or > 180
+
+        dphi_patch = (2. * np.pi) / Np * max(np.sin(_thup),np.sin(_thdown))
+        dth_patch = (_thdown - _thup) / (Nt -1)
+
+        print 'input t1,t2 %.3f %.3f in degrees'%(_thup /np.pi * 180,_thdown/np.pi * 180.)
+        print 'North %.3f and South %.3f buffers in amin'%(buffN /np.pi * 180 * 60,buffS/np.pi * 180. * 60.)
+        print "cell (theta,phi) in amin (%.3f,%.3f)" % (dth_patch / np.pi * 60. * 180, dphi_patch / np.pi * 60. * 180)
+
+        if spin == 0:
+            lenN,lenS,tim = lens_band_sym_timed(glm,_thup,_thdown,Nt,(tnewN,phinewN),(tnewS,phinewS),Nphi=Np)
+            ret = np.zeros((2 * Nt_d,Np_d),dtype = complex)
+            ret[:Nt_d,:]  = lenN.reshape((Nt_d, Np_d))
+            ret[Nt_d:, :] = lenS.reshape((Nt_d, Np_d))
+            vtm = shts.map2vtm(spin, lmax_target, ret)
+            glmout -= shts.vtm2tlm_sym(np.concatenate([tGLNs[ib],tGLSs[ib]]),vtm * np.outer(wgs[ib], np.ones(vtm.shape[1])))
         else :
-            ifftmap[:] = 1.
+            assert 0,'fix this'
+            lenNR,lenNI,lenSR,lenSI,tim = gclm2lensmap_symband_timed(spin, glm, _thup, _thdown, Nt,
+                                                            (tnewN, phinewN), (tnewS, phinewS), Nphi=Nphi, clm = clm)
+            retN = (lenNR + 1j * lenNI).reshape( (len(pixN),Np_d))
+            retS = (lenSR + 1j * lenSI).reshape( (len(pixN),Np_d))
+            glm, clm = shts.util.vlm2alm(shts.vtm2vlm(spin, tGL, vtm * np.outer(wg, np.ones(vtm.shape[1]))))
+            t0 = time.time()
+            if rotpol and spin > 0 :
+                ret[pixN,:] *= polrot(spin,retN.flatten(), tnewN,dmapN.real,dmapN.imag)
+                ret[pixS,:] *= polrot(spin,retS.flatten(), tnewS,dmapS.real,dmapS.imag)
+                times['pol. rot.'] += time.time() -t0
+        coadd_times(tim)
 
-        #pyfftw.interfaces.cache.enable()
-        if Nphi > 2 * lmax :
-            # There is unique correspondance m <-> kphi where kphi is the 2d flat map frequency
-            for ip, m in enumerate(range(-lmax, lmax + 1)):
-                # vtm array goes from -lmax to + lmax
-                ifftmap[:, (Nphi + m if m < 0 else m)] *= fft1d(vtm[:, ip])
-                #ifftmap[:, (Nphi + m if m < 0 else m)] = pyfftw.interfaces.numpy_fft.fft(vtm[:, ip],
-                #                                        threads=threads,overwrite_input=True)
-        else :
-            # The correspondance m <-> k is not unique anymore, but given by
-            # (m - k) = N j for j in 0,+- 1, +- 2 ,etc. -> m = k + Nj
-            for ik in range(Nphi):
-                # vtm array goes from -lmax to + lmax
-                ms = lmax + ik + Nphi * np.arange(-lmax / Nphi - 1,lmax / Nphi + 1,dtype = int) # candidates for m index
-                ms = ms[np.where( (ms >= 0) & (ms <= 2 * lmax))]
-                ifftmap[:, ik] *= fft1d(np.sum(vtm[:,ms],axis = 1))
-                # ifftmap[:, ik] = pyfftw.interfaces.numpy_fft.fft(np.sum(vtm[:,ms],axis = 1),
-                #                                        threads=threads,overwrite_input=True)
-        ifftmap[phiflip,:].imag *= -1.
-        if spin == 0 : return ifft2().real
-        return ifft2()
-        #return pyfftw.interfaces.numpy_fft.ifft2(ifftmap,threads=threads,overwrite_input=True)
-        #wisdom = pyfftw.export_wisdom()
+    t0 = time.time()
+    print "STATS for lmax tlm %s lmax dlm %s"%(hp.Alm.getlmax(glm.size),hp.Alm.getlmax(dlm.size))
+    tot= 0.
+    for _k,_t in times.iteritems() :
+        print '%20s: %.2f'%(_k,_t)
+        tot += _t
+    print "%20s: %2.f sec."%('tot',tot)
+    return glmout,clmout,ret
 
-def map2vtm(spin,lmax,_map,threads = 8):
+
+def vtm2filtmap(spin,vtm,Nphi,threads = 4,phiflip = []):
+    return shts.vtm2map(spin,vtm,Nphi,pfftwthreads=threads,bicubic_prefilt=True,phiflip=phiflip)
+
+
+
+def _map2gclm(spin,lmax,_map,tht,wg,threads = 1):
     """
     input _map is (Ntheta,Nphi)-shaped.
     Output vtm is (Ntheta,2 * lmax + 1) shaped, with v[t,lmax + m] = vtm.
     This assume the _map samples uniformly the longitude [0,2pi) with Nphi = _map.shape[1] points.
+    tht and wg : colatitude and integration weights (e.g. GL zeroes and weights)
+
+    Here is a trick to save fac of 2 time in map2alm:
+    \int dcost f(t) sLlm(t) = int_(upperhalf) f+(t) sLlm + int_(upperhalf) f-(t) sLlm
+    where f+,f_ are the symmmetric / antisymmetric part, and the first term non zero only for l-m of the same partity and vice vers.
+
     """
-    assert _map.shape[1] % 2 == 0,_map.shape
-    Nt,Nphi = _map.shape
-    a = pyfftw.empty_aligned(Nphi, dtype=complex)
-    b = pyfftw.empty_aligned(Nphi, dtype=complex)
-    fft1d = pyfftw.FFTW(a, b, direction='FFTW_FORWARD', threads=threads)
-    vtm = np.zeros( (Nt,2 * lmax + 1),dtype = complex)
-    if Nphi <= 2 * lmax:
-        sli = slice(lmax - Nphi/2,lmax+Nphi/2)
-        for it in range(Nt): vtm[it, sli] = np.fft.fftshift(fft1d(_map[it, :]))
-        vtm[:,lmax + Nphi/2] = vtm[:,lmax - Nphi/2]
-    else : # We could conceive downsampling in some situations but who cares.
-        sli = slice(Nphi/2 - lmax ,Nphi/2 + lmax + 1)
-        for it in range(Nt): vtm[it,:] = np.fft.fftshift(fft1d(_map[it, :]))[sli]
-    return vtm
+    vtm = shts.map2vtm(spin,lmax,_map,pfftwthreads=threads)
+    vlm = shts.vtm2vlm(spin,tht, vtm * np.outer(wg, np.ones(vtm.shape[1])))
+    return shts.util.vlm2alm(vlm)
+
+
+
+"""
+                 vtm: 444.31
+            map2gclm: 72.41
+              interp: 2.37
+         vtm2filtmap: 24.86
+        vtm2defl2ang: 12.77
+           pol. rot.: 0.00
+GL points and weights: 28.04
+             vtmdefl: 314.82
+                 tot: 900 sec.
+      Tot. int. pix.: 311427072 = 17647.3^2
+lmax = 4096
+lmax_target = 4096
+dlmax = 1024
+facres = 0
+import lensit as li,jc_camb as camb
+pl.ion()
+clunltt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['tt'][:]
+cllentt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lensedCls.dat')['tt'][:]
+clunlpp = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['pp'][:]
+dlm = hp.synalm(clunlpp[:lmax + dlmax + 1],verbose = True)
+hp.almxfl(dlm,np.sqrt(np.arange(6001,dtype = float)*np.arange(1,6002)),inplace=True)
+unltlm = hp.synalm(clunltt[:lmax + dlmax  + 1],verbose = True)
+tlm2,glm,ret = li.curvedskylensing.lenscurv.lens_glm_GLth_sym_timed(0,dlm,-unltlm,lmax_target + dlmax,facres = facres)
+del clm
+pl.plot(hp.alm2cl(tlm2)[:lmax_target+ dlmax+ 1]/cllentt[:lmax_target+ dlmax+ 1])
+pl.ylim(0.9,1.1)
+pl.axhline(0.99,color = 'black')
+
+
+"""
+"""
+
+#Testing the thinned routine
+lmax = 4096
+lmax_target = 4096
+dlmax = 0
+facres = 0
+import lensit as li,jc_camb as camb
+pl.ion()
+clunltt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['tt'][:]
+cllentt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lensedCls.dat')['tt'][:]
+clunlpp = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['pp'][:]
+dlm = hp.synalm(clunlpp[:lmax + dlmax + 1],verbose = True)
+hp.almxfl(dlm,np.sqrt(np.arange(6001,dtype = float)*np.arange(1,6002)),inplace=True)
+dlm *= 0
+unltlm = hp.synalm(clunltt[:lmax + dlmax  + 1],verbose = True)
+%time tlm2,clm,ret = li.curvedskylensing.lenscurv.lens_glm_GLth_sym_timed(0,dlm,-unltlm,lmax_target,facres = facres)
+%time tlm3,clm,ret = li.curvedskylensing.lenscurv.lens_glm_GL_sym_timed(0,dlm,-unltlm,lmax_target,facres = facres)
+
+del clm
+pl.plot(hp.alm2cl(tlm2)[:lmax_target+ 1]/clunltt[:lmax_target+ 1])
+pl.axhline(0.99,color = 'black')
+"""
+
+
+"""
+
+import jc_camb as camb
+import lensit as li
+clunltt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['tt'][:]
+tlm = hp.synalm(clunltt[:200])
+from lensit import shts
+from lensit.misc import gausslegendre
+xg,wg = gausslegendre.get_xgwg(500)
+t = np.arccos(xg)[::-1]
+vlm = shts.util.alm2vlm(tlm)
+vtm = shts.vlm2vtm(0,t,vlm)
+alm2 = -shts.util.vlm2alm(shts.vtm2vlm(0,t,vtm))[0]
+alm3 = shts.vtm2tlm_sym(t,vtm)
+np.max(np.abs(alm2 - alm3))
+"""
