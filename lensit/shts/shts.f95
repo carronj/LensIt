@@ -7,49 +7,6 @@
 !
 ! NOTE: THESE ROUTINES ARE ONLY WRITTEN FOR SPIN s>=0
 
-subroutine vlm2map(ntht, nphi, lmax, s, tht, phi, vlm, map)
-  integer ntht, nphi, lmax, s
-  double precision tht(ntht), phi(nphi)
-  double complex, intent(in)  :: vlm(0:((lmax+1)*(lmax+1)-1))
-  double complex, intent(out), dimension(ntht, nphi) :: map
-  double complex, save, allocatable ::  vtm(:,:)
-  !f2py intent(in)   :: ntht, nphi, s, lmax
-  !f2py intent(in)   :: tht, phi, vlm
-  !f2py intent(hide) :: ntht, nphi
-  !f2py intent(out)  :: map
-
-  allocate( vtm(ntht,-lmax:lmax) )
-  vtm(:,:) = 0.0
-  map(:,:) = 0.0
-
-  call vlm2vtm(ntht, lmax, s, tht, vlm, vtm)
-  call vtm2map(ntht, nphi, lmax, phi, vtm, map)
-  deallocate(vtm)
-end subroutine vlm2map
-
-subroutine vtm2map(ntht, nphi, lmax, phi, vtm, map)
-  integer ntht, nphi, lmax
-  double precision phi(nphi)
-  double complex, intent(in)  :: vtm(ntht, -lmax:lmax)
-  double complex, intent(out) :: map(ntht, nphi)
-
-  integer p, m
-
-  do p=1,nphi
-     map(:,p) = vtm(:,0)
-  end do
-
-!$omp parallel do default(shared)
-  do p=1,nphi
-     do m=1,lmax
-        map(:,p) = map(:,p) + vtm(:,+m) * &
-             (cos(phi(p)*m)+(0.0,1.0)*sin(phi(p)*m)) + &
-             vtm(:,-m) * (cos(phi(p)*m)-(0.0,1.0)*sin(phi(p)*m))
-     end do
-  end do
-!$omp end parallel do
-end subroutine vtm2map
-
 
 subroutine glm2vtm(ntht, lmax, s, tht, glm, vtm) 
 ! This assume ordering (healpy) ordering g[m * (2 lmax + 1 -m)/2 + l] = glm
@@ -935,3 +892,108 @@ subroutine vtm2vlm(ntht, lmax, s, tht, vtm, vlm)
   end do
 !$omp end parallel do
 end subroutine vtm2vlm
+
+subroutine vtm2alm_syms0(ntht, lmax, tht, vtm,alm)
+! This calculates sum_th sLlm(tht) vtm(theta,m)
+! vtm is meant to be e.g. sum_l slm(tht) vlm
+! such that vtm2vlm(sin(tht)*(2. * np.pi) * vtm)
+! this uses symmetry tricks
+! using for spin 0 vt-m = vtm^*
+! Could further reduce that by a factor of two
+  integer ntht, lmax
+  double precision tht(ntht)
+! 0:nth :symmetric part, nth: antysmetric part
+  double complex, intent(in)  :: vtm(0:2 * ntht-1,0:lmax)
+  double complex, intent(out) :: alm(0:((lmax+1)*(lmax+2)) / 2-1)
+
+  integer l, m, tl, tm, j,parity
+  double precision costht(ntht), sintht(ntht)
+  double precision scal(ntht), spow(ntht), spow_i(ntht)
+
+  double precision tfac, sfac, llm_arr_p(ntht)
+  double precision llm_arr_p_lm0(ntht), llm_arr_p_lm1(ntht)
+  double precision llm_arr_x_lmt(ntht), rl(0:lmax), zl(0:lmax)
+
+  sfac = 2.**40
+  costht(:)    = dcos(tht(:))
+  sintht(:)    = dsin(tht(:))
+
+  llm_arr_p(:) = 1./dsqrt(8.d0*acos(0.d0))
+
+  l = 0
+  m = 0
+
+  zl(:) = 0.d0
+  ! do m=0
+  llm_arr_p_lm0(:) = llm_arr_p(:)
+  llm_arr_p_lm1(:) = 0.d0
+
+  parity = mod(l - m,2)
+  alm(m * (2 * lmax + 1 -m)/2 + l) = sum( llm_arr_p_lm0(:)*vtm(ntht * parity:(1 + parity) * ntht - 1,0) )
+
+  rl(:) = 0.d0
+  do tl=l+1,lmax
+     rl(tl) = sqrt( 1.d0 * tl*tl * (tl*tl) / (tl*tl * (4.d0*tl*tl-1.d0)) )
+  end do
+  do tl=l+1,lmax
+     llm_arr_x_lmt(:) = (llm_arr_p_lm0(:) * costht(:) - llm_arr_p_lm1(:) * rl(tl-1)) / rl(tl)
+     llm_arr_p_lm1(:) = llm_arr_p_lm0(:)
+     llm_arr_p_lm0(:) = llm_arr_x_lmt(:)
+     parity = mod(tl,2)
+     alm(m * (2 * lmax + 1 -m)/2 + tl) = sum( llm_arr_p_lm0(:)*vtm(ntht * parity:(1 + parity) * ntht - 1,0) )
+  end do
+
+  spow_i(:) = 0.d0
+
+!$omp parallel do default(none) &
+!$omp private(j, tl, tm, scal,parity, spow, tfac, llm_arr_p_lm0) &
+!$omp private(llm_arr_p_lm1, llm_arr_x_lmt, rl) &
+!$omp firstprivate(l, m, lmax, spow_i, llm_arr_p) schedule(dynamic, 1) &
+!$omp shared(costht, sintht, sfac, zl, ntht, tht, vlm, vtm)
+  do tm=1,lmax ! m loop
+     do m=m+1,tm
+        tfac = +sqrt( 1.d0 * m * (2.d0*m+1.d0)/(2.d0*(m)*(m)) )
+        llm_arr_p(:) = -llm_arr_p(:) * tfac * sintht(:)
+        l = m
+        do j=1,ntht
+           if (abs(llm_arr_p(j)) < 1./sfac) then
+              llm_arr_p(j) = llm_arr_p(j)*sfac
+              spow_i(j) = spow_i(j)-1
+           end if
+        end do
+     end do
+     m = tm
+
+     spow(:) = spow_i(:)
+     scal(:) = sfac**(spow(:))
+
+     llm_arr_p_lm0(:) = llm_arr_p(:)
+     llm_arr_p_lm1(:) = 0.d0
+
+     parity = mod(l - m,2)
+     alm(m * (2 * lmax + 1 -m)/2 + l) = sum( llm_arr_p_lm0(:)*scal(:)*vtm(ntht * parity:(1 + parity) * ntht - 1,m) )
+     rl(:) = 0.d0
+     do tl=l+1,lmax
+        rl(tl) = sqrt( 1.d0 * (tl*tl - m*m) * (tl*tl) / (tl*tl * (4.*tl*tl-1.d0)) )
+     end do
+
+     do tl=l+1,lmax ! l loop starting from m + 1
+        llm_arr_x_lmt(:) = (llm_arr_p_lm0(:) * (costht(:) + m*zl(tl)) - llm_arr_p_lm1(:) * rl(tl-1)) / rl(tl)
+        llm_arr_p_lm1(:) = llm_arr_p_lm0(:)
+        llm_arr_p_lm0(:) = llm_arr_x_lmt(:)
+        parity = mod(tl - m,2)
+        alm(m * (2 * lmax + 1 -m)/2 + tl) = sum( llm_arr_p_lm0(:)*scal(:)*vtm(ntht * parity:(1 + parity) * ntht - 1,m) )
+        if (mod(tl,10) == 0) then
+           do j=1,ntht
+              if (abs(llm_arr_p_lm0(j)) > sfac) then
+                 llm_arr_p_lm0(j) = llm_arr_p_lm0(j)/sfac
+                 llm_arr_p_lm1(j) = llm_arr_p_lm1(j)/sfac
+                 spow(j) = spow(j) + 1
+                 scal(j) = sfac**(spow(j))
+              end if
+           end do
+        end if
+     end do
+  end do
+!$omp end parallel do
+end subroutine vtm2alm_syms0
