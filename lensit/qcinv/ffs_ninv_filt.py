@@ -1,6 +1,8 @@
 import numpy as np
 import lensit as fs
 from lensit.qcinv import template_removal
+from lensit.misc.misc_utils import cls_hash
+import hashlib
 
 load_map = lambda _map: np.load(_map) if type(_map) is str else _map
 
@@ -78,7 +80,10 @@ class ffs_ninv_filt(object):
         self.marge_maps = marge_maps
 
     def hashdict(self):
-        return {}
+        #FIXME:
+        return {'transf':cls_hash({'transf':self.cl_transf}),'cls':cls_hash(self.cls),
+                'ninv':{k:hashlib.sha1(self.ninv_rad[k]).hexdigest() for k in self.ninv_rad.keys()},
+                'marge_lmin':self.marge_uptolmin,'lib_datalm':self.lib_datalm.hashdict(),'lib_skyalm':self.lib_skyalm.hashdict()}
 
     def Nlev_uKamin(self, field):
         return np.sqrt(np.mean(1. / self.ninv_rad[field.lower()][np.where(self.ninv_rad[field.lower()] > 0)])) \
@@ -108,6 +113,9 @@ class ffs_ninv_filt(object):
             ret[ii] = np.sqrt(1. / self.ninv_rad[field.lower()][ii] / vcell)
         return ret
 
+    def get_cl_transf(self,lab):
+        return self.cl_transf
+
     def get_nTpix(self):
         return self._get_rmspixnoise('T')
 
@@ -126,6 +134,13 @@ class ffs_ninv_filt(object):
         assert alm.size == self.lib_skyalm.alm_size, (alm.size, self.lib_skyalm.alm_size)
         return self.lib_datalm.alm2map(self._deg(self.lib_skyalm.almxfl(alm, self.cl_transf)))
 
+    def apply_Rs(self, TQUtype,TEBlms):
+        """
+        Apply transfer function, T E B skyalm to T Q U map.
+        """
+        assert len(TQUtype) == len(TEBlms),(len(TQUtype),len(TEBlms))
+        return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype,fs.ffs_covs.ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
+
     def apply_Rt(self, field, _map):
         """
         Apply tranposed transfer function, from T Q U real space to T Q U skyalm.
@@ -134,6 +149,15 @@ class ffs_ninv_filt(object):
         assert field.lower() in ['t', 'q', 'u'], field
         assert _map.size == self.npix, (self.npix, _map.shape)
         return self.lib_skyalm.almxfl(self._upg(self.lib_datalm.map2alm(_map)), self.cl_transf)
+
+    def apply_Rts(self, TQUtype,_maps):
+        """
+        Apply tranposed transfer function, from T Q U real space to T E B skyalm.
+        B^t
+        """
+        assert TQUtype in ['T','QU','TQU']
+        assert _maps.shape == (len(TQUtype),self.lib_datalm.shape[0],self.lib_datalm.shape[1]), (self.npix, TQUtype,_maps.shape)
+        return fs.ffs_covs.ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
 
     def apply_alm(self, field, alm, inplace=True):
         """
@@ -149,6 +173,17 @@ class ffs_ninv_filt(object):
             alm[:] = self._upg(self.lib_datalm.map2alm(_map))
             self.lib_skyalm.almxfl(alm, self.cl_transf, inplace=True)
             return
+
+    def apply_alms(self,TQUtype, TEBalms, inplace=True):
+        """
+        Applies B^t Ni B. (TEB skyalms to TEB skyalms)
+        """
+        assert TQUtype in ['T','QU','TQU']
+        if inplace:
+            TEBalms[:] = self.apply_Rts(TQUtype,self.apply_maps(TQUtype,self.apply_Rs(TQUtype,TEBalms),inplace=False))
+            return
+        else:
+            return self.apply_Rts(TQUtype,self.apply_maps(TQUtype,self.apply_Rs(TQUtype,TEBalms),inplace=False))
 
     def apply_map(self, field, _map, inplace=True):
         """
@@ -183,6 +218,42 @@ class ffs_ninv_filt(object):
                 pmodes *= self.ninv_rad[_f]
                 nmap -= pmodes
             return nmap
+
+    def apply_maps(self, TQUtype, _maps, inplace=True):
+        """
+        Applies ninv to real space T, Q, or U map, in radians units.
+        """
+        assert _maps.shape == (len(TQUtype),self.lib_datalm.shape[0],self.lib_datalm.shape[1]), (self.npix, TQUtype,_maps.shape)
+        assert TQUtype in ['T','QU','TQU']
+        if inplace:
+            for i, _f in enumerate(TQUtype.lower()):
+                _maps[i] *= self.ninv_rad[_f]
+                if (len(self.templates[_f]) != 0):
+                    coeffs = np.concatenate(([t.dot(_maps[i]) for t in self.templates[_f]]))
+                    coeffs = np.dot(self.Pt_Nn1_P_inv[_f], coeffs)
+                    pmodes = np.zeros(self.ninv_rad[_f].shape)
+                    im = 0
+                    for t in self.templates[_f]:
+                        t.accum(pmodes, coeffs[im:(im + t.nmodes)])
+                        im += t.nmodesx
+                    pmodes *= self.ninv_rad[_f]
+                    _maps[i] -= pmodes
+            return
+        else:
+            nmaps = np.zeros_like(_maps)
+            for i, _f in enumerate(TQUtype.lower()):
+                nmaps[i] = _maps[i] * self.ninv_rad[_f]
+                if (len(self.templates[_f]) != 0):
+                    coeffs = np.concatenate(([t.dot(nmaps[i]) for t in self.templates[_f]]))
+                    coeffs = np.dot(self.Pt_Nn1_P_inv[_f], coeffs)
+                    pmodes = np.zeros(self.ninv_rad[_f].shape)
+                    im = 0
+                    for t in self.templates[_f]:
+                        t.accum(pmodes, coeffs[im:(im + t.nmodes)])
+                        im += t.nmodes
+                    pmodes *= self.ninv_rad[_f]
+                    nmaps[i] -= pmodes
+            return nmaps
 
     def iNoiseCl(self, field):
         return self._iNoiseCl[field.lower()]

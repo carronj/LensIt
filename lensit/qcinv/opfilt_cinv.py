@@ -100,7 +100,7 @@ def soltn2TQUMlik(soltn, cov):
 # =====================
 
 class dot_op():
-    def __init__(self):
+    def __init__(self,*args):
         pass
 
     def __call__(self, alms1, alms2, **kwargs):
