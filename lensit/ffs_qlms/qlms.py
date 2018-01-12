@@ -45,6 +45,14 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None, use_Pool
     We can get something without having to lens any weird maps through
     ( B^t Ni (data - B D Xmap))(z)    (D ika Xmap)(z)
     """
+    if _type in ['EE','EB','BE','BB']:
+        TEB_Mlik = lib_sky.QUlms2EBalms(TQU_Mlik)
+        TEB_Res = lib_sky.QUlms2EBalms(ResTQU_Mlik)
+        TEB_Mlik[{'E':1,'B':0}[_type[0]]] *= 0.
+        TEB_Res[{'E':1,'B':0}[_type[1]]] *= 0.
+        return get_qlms_wl('QU',lib_sky,lib_sky.EBlms2QUalms(TEB_Mlik),lib_sky.EBlms2QUalms(TEB_Res),lib_qlm,
+                           f = f,use_Pool=use_Pool)
+
     assert len(TQU_Mlik) == len(_type) and len(ResTQU_Mlik) == len(_type)
     t = fs.misc.misc_utils.timer(verbose, prefix=__name__)
     if f is None: f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
@@ -86,6 +94,99 @@ def _Mlik2ResTQUMlik_diag(field, ninv_filt, TQUMlik, data, f, fi):
     ninv_filt.set_ffi(f_id, f_id)
     return ninv_filt.apply_Rt(field, _map)
 
+def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
+                 wAl = None,wBl = None,fAl = None,fBl = None,lib_qlm = None):
+    """ Q. estimator response """
+    assert _type[0] in ['T','E','B'] and _type[1] in ['T','E','B']
+    assert _type[0] in ['E','B'] and _type[1] in ['E','B'], "T not implemented"
+    assert 'eb' not in cls_len.keys() and 'be' not in cls_len.keys()
+    assert 'tb' not in cls_len.keys() and 'bt' not in cls_len.keys()
+
+    lmax = lib_datalm.ellmax
+    if wAl is None: wAl = np.ones(lmax + 1,dtype = float)
+    if wBl is None: wBl = cls_len[(_type[1] + _type[1]).lower()][:lmax + 1]
+    if fAl is None:
+        Nlev = NlevT_uKamin if _type[0] == 'T' else NlevP_uKamin
+        print Nlev
+        ii = np.where(cl_transf[:lmax + 1] > 0.)
+        fAl = np.zeros(lmax + 1,dtype = float)
+        fAl[ii] = 1./ (cls_len[(_type[0] + _type[0]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
+    if fBl is None:
+        Nlev = NlevT_uKamin if _type[1] == 'T' else NlevP_uKamin
+        print Nlev
+
+        ii = np.where(cl_transf[:lmax + 1] > 0.)
+        fBl = np.zeros(lmax + 1,dtype = float)
+        fBl[ii] = 1./ (cls_len[(_type[1] + _type[1]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
+
+    if lib_qlm is None: lib_qlm = lib_datalm
+
+    def get_pmat(A,i,j,clA):
+        if A == 'T':
+            if i == 0 and j == 0:
+                return clA[lib_datalm.reduced_ellmat()]
+            else:
+                assert 0,('zero',i,j)
+        elif A == 'E':
+            cos, sin = lib_datalm.get_cossin_2iphi()  # in mmap mode 'r' in principle.
+            if i == 1 and j == 1:
+                return clA[lib_datalm.reduced_ellmat()] * cos ** 2
+            elif i == 2 and j == 2:
+                return clA[lib_datalm.reduced_ellmat()] * sin ** 2
+            elif i == 2 and j == 1:
+                return clA[lib_datalm.reduced_ellmat()] * cos * sin
+            elif i == 1 and j == 2:
+                return clA[lib_datalm.reduced_ellmat()] * cos * sin
+            else:
+                assert 0,('zero',i,j)
+        elif A == 'B':
+            cos, sin = lib_datalm.get_cossin_2iphi()  # in mmap mode 'r' in principle.
+            if i == 1 and j == 1:
+                return clA[lib_datalm.reduced_ellmat()] * sin ** 2
+            elif i == 2 and j == 2:
+                return clA[lib_datalm.reduced_ellmat()] * cos ** 2
+            elif i == 1 and j == 2:
+                return -clA[lib_datalm.reduced_ellmat()] * cos * sin
+            elif i == 2 and j == 1:
+                return -clA[lib_datalm.reduced_ellmat()] * cos * sin
+            else:
+                assert 0,('zero',i,j)
+        else:
+            assert 0,(A,['T','E','B'])
+    retxx = np.zeros(lib_datalm.shape,dtype = float)
+    retyy = np.zeros(lib_datalm.shape,dtype = float)
+    retxy = np.zeros(lib_datalm.shape,dtype = float)
+    retyx = np.zeros(lib_datalm.shape,dtype = float)
+
+    _2map = lambda alm : lib_datalm.alm2map(alm)
+    ikx = lambda : lib_datalm.get_ikx()
+    iky = lambda: lib_datalm.get_iky()
+
+    clB = wBl * fBl * cls_len[(_type[1] + _type[1]).lower()][:lmax + 1]
+    clA = wAl * fAl
+    for i, j in [(1, 1),(1, 2),(2, 1),(2, 2)]:
+        retxx += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(ikx() ** 2 * get_pmat(_type[1],j,i,clB ))
+        retyy += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(iky() ** 2 * get_pmat(_type[1],j,i,clB ))
+        retxy += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(ikx() * iky() * get_pmat(_type[1],j,i,clB ))
+        retyx += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(ikx() * iky() * get_pmat(_type[1],j,i,clB ))
+
+    clB = wBl * fBl
+    clA = wAl * fAl * cls_len[(_type[0] + _type[0]).lower()][:lmax + 1]
+    for i, j in [(1, 1), (1, 2), (2, 1), (2, 2)]:
+        retxx += _2map(ikx() * get_pmat(_type[0], i, j, clA)) * _2map(ikx() * get_pmat(_type[1], j, i, clB))
+        retyy += _2map(iky() * get_pmat(_type[0], i, j, clA)) * _2map(iky() * get_pmat(_type[1], j, i, clB))
+        retxy += _2map(ikx() * get_pmat(_type[0], i, j, clA)) * _2map(iky() * get_pmat(_type[1], j, i, clB))
+        retyx += _2map(iky() * get_pmat(_type[0], i, j, clA)) * _2map(ikx() * get_pmat(_type[1], j, i, clB))
+    fac = 1. / np.sqrt(np.prod(lib_datalm.lsides))
+    _2alm = lambda _map : lib_qlm.map2alm(_map)
+    retxx = _2alm(retxx)
+    retyy = _2alm(retyy)
+    retxy = _2alm(retxy)
+    retyx = _2alm(retyx)
+    ikx = lambda : lib_qlm.get_ikx()
+    iky = lambda : lib_qlm.get_iky()
+    return  (fac * (retxx * ikx() ** 2 + retyy * iky() ** 2 + (retxy + retyx) * ikx() * iky()),
+             fac * (retxx * iky() ** 2 + retyy * ikx() ** 2 - (retxy + retyx) * ikx() * iky()) )
 
 class MFestimator():
     def __init__(self, ninv_filt, opfilt, mchain, lib_qlm, pix_pha=None, cmb_pha=None, use_Pool=0):
