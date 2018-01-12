@@ -10,6 +10,6 @@ import cd_monitors
 import cd_solve
 import multigrid
 import chain_samples
-import opfilt_cinv,opfilt_cinv_TEBdense,opfilt_cinv_test
+import opfilt_cinv,opfilt_cinv_TEBdense
 import opfilt_cinv_noBB
 import ffs_ninv_filt, ffs_ninv_filt_ideal
