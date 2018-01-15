@@ -103,6 +103,12 @@ class ffs_ninv_filt(object):
                              self.nlevs['q'],
                              verbose=self.verbose)
 
+    def degrade(self, shape, ellmax=None, ellmin=None, **kwargs):
+        lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
+        lib_almdat = self.lib_datalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
+        assert self.nlevs['q'] == self.nlevs['u']
+        return ffs_ninv_filt(lib_almdat, lib_almsky, self.cls, self.cl_transf, self.nlevs['t'], self.nlevs['q'],verbose=self.verbose)
+
 
 class ffs_ninv_filt_wl(ffs_ninv_filt):
     def __init__(self, lib_datalm, lib_skyalm, unl_cls, cl_transf, nlev_t, nlev_p, f, fi, verbose=False, lens_pool=0):
