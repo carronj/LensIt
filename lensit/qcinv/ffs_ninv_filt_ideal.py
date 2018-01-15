@@ -103,6 +103,9 @@ class ffs_ninv_filt(object):
                              self.nlevs['q'],
                              verbose=self.verbose)
 
+    def get_cl_transf(self,lab):
+        return self.cl_transf
+
     def degrade(self, shape, ellmax=None, ellmin=None, **kwargs):
         lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         lib_almdat = self.lib_datalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
