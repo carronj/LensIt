@@ -117,7 +117,7 @@ class lib_noisevmap():
                 np.save(self.lib_dir + '/sim_tmap_%05d.npy' % idx, self._build_sim_tmap(idx))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx, mmap_mode='r')
+            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx)
         else:
             return self._build_sim_tmap(idx)
 
@@ -127,7 +127,7 @@ class lib_noisevmap():
                 np.save(self.lib_dir + '/sim_qumap_%05d.npy' % idx, np.array(self._build_sim_qumap(idx)))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx, mmap_mode='r')
+            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx)
         else:
             return self._build_sim_qumap(idx)
 
@@ -214,13 +214,13 @@ class lib_noisemap():
         return hash
 
     def _loadTnoise(self):
-        return np.load(self.nTpix, mmap_mode='r')
+        return np.load(self.nTpix)
 
     def _loadQnoise(self):
-        return np.load(self.nQpix, mmap_mode='r')
+        return np.load(self.nQpix)
 
     def _loadUnoise(self):
-        return np.load(self.nUpix, mmap_mode='r')
+        return np.load(self.nUpix)
 
     def _build_sim_tmap(self, idx):
         tmap = self.lib_skyalm.almxfl(self.lencmbs.get_sim_tlm(idx), self.cl_transf)
@@ -274,14 +274,16 @@ class lib_noisefree():
         self.cl_transf[:min(len(self.cl_transf), len(cl_transf))] = cl_transf[:min(len(self.cl_transf), len(cl_transf))]
         self.lib_dir = lib_dir
         self.cache_sims = cache_sims
-        if not os.path.exists(lib_dir) and pbs.rank == 0:
-            os.makedirs(lib_dir)
-        pbs.barrier()
+        if self.cache_sims :
+            assert lib_dir is not None
+            if not os.path.exists(lib_dir) and pbs.rank == 0:
+                os.makedirs(lib_dir)
+            pbs.barrier()
 
-        if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
-            pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
-        pbs.barrier()
-        hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
+            if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
+                pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+            pbs.barrier()
+            hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
 
     def hashdict(self):
         hash = {'len_cmb': self.lencmbs.hashdict()}
