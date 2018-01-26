@@ -19,7 +19,7 @@ verbose = True
 _types = ['T', 'QU', 'TQU']
 
 
-def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None, use_Pool=0, **kwargs):
+def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 =None, use_Pool=0, **kwargs):
     """
     Stand alone qlm estimator starting from lib_sky and unlensed Cls
     Likelihood gradient (from the quadratic part).
@@ -45,13 +45,14 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None, use_Pool
     We can get something without having to lens any weird maps through
     ( B^t Ni (data - B D Xmap))(z)    (D ika Xmap)(z)
     """
+    lib_sky2 = lib_sky if lib_sky2 is None else lib_sky
     if _type in ['EE','EB','BE','BB']:
         TEB_Mlik = lib_sky.QUlms2EBalms(TQU_Mlik)
         TEB_Res = lib_sky.QUlms2EBalms(ResTQU_Mlik)
         TEB_Mlik[{'E':1,'B':0}[_type[0]]] *= 0.
         TEB_Res[{'E':1,'B':0}[_type[1]]] *= 0.
-        return get_qlms_wl('QU',lib_sky,lib_sky.EBlms2QUalms(TEB_Mlik),lib_sky.EBlms2QUalms(TEB_Res),lib_qlm,
-                           f = f,use_Pool=use_Pool)
+        return get_qlms_wl('QU',lib_sky,lib_sky.EBlms2QUalms(TEB_Mlik),lib_sky2.EBlms2QUalms(TEB_Res),lib_qlm,
+                           f = f,use_Pool=use_Pool,lib_sky2 = lib_sky2)
 
     assert len(TQU_Mlik) == len(_type) and len(ResTQU_Mlik) == len(_type)
     t = fs.misc.misc_utils.timer(verbose, prefix=__name__)
@@ -64,8 +65,8 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None, use_Pool
     def Right(S_id, axis):
         assert S_id in range(len(_type)), (S_id, _type)
         assert axis in [0, 1]
-        kfunc = lib_sky.get_ikx if axis == 1 else lib_sky.get_iky
-        return f.alm2lenmap(lib_sky, TQU_Mlik[S_id] * kfunc(), use_Pool=use_Pool)
+        kfunc = lib_sky2.get_ikx if axis == 1 else lib_sky2.get_iky
+        return f.alm2lenmap(lib_sky2, TQU_Mlik[S_id] * kfunc(), use_Pool=use_Pool)
 
     retdx = left(0) * Right(0, 1)
     for _i in range(1, len(_type)): retdx += left(_i) * Right(_i, 1)
