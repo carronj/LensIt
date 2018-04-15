@@ -423,7 +423,12 @@ def get_response_flexible(lib_tlm, lib_elm, lib_blm, cls, cls_transf, cls_noise,
         K_almmap[:,:,2, 2] = Ki_cls['bb'][ellmat()] * lib_blm._cond()
         K_almmap[:,:,0, 1] = Ki_cls['te'][ellmat()] * lib_tlm._cond()* lib_elm._cond()
         K_almmap[:,:,1, 0] = Ki_cls['te'][ellmat()] * lib_tlm._cond()* lib_elm._cond()
-        K_almmap = np.linalg.pinv(K_almmap) # B^t Covi B
+        if np.__version__ >= '1.14':
+            K_almmap = np.linalg.pinv(K_almmap) # B^t Covi B
+        else:
+            for l1 in range(ellmat.rshape[0]):
+                for l2 in range(ellmat.rshape[1]):
+                    K_almmap[l1,l2,:,:] = np.linalg.pinv(K_almmap[l1,l2,:,:])
         K_almmap[:, :, 0, 0] *= t_cls['t'][ellmat()] ** 2
         K_almmap[:, :, 1, 1] *= t_cls['e'][ellmat()] ** 2
         K_almmap[:, :, 0, 1] *= t_cls['t'][ellmat()] * t_cls['e'][ellmat()]
