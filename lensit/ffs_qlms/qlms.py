@@ -15,7 +15,7 @@ import numpy as np
 import lensit as fs
 from lensit.ffs_covs import ffs_specmat as SM
 
-verbose = True
+verbose = False
 _types = ['T', 'QU', 'TQU']
 
 
@@ -129,7 +129,7 @@ def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
             else:
                 assert 0,('zero',i,j)
         elif A == 'E':
-            cos, sin = lib_datalm.get_cossin_2iphi()  # in mmap mode 'r' in principle.
+            cos, sin = lib_datalm.get_cossin_2iphi()
             if i == 1 and j == 1:
                 return clA[lib_datalm.reduced_ellmat()] * cos ** 2
             elif i == 2 and j == 2:
@@ -141,7 +141,7 @@ def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
             else:
                 assert 0,('zero',i,j)
         elif A == 'B':
-            cos, sin = lib_datalm.get_cossin_2iphi()  # in mmap mode 'r' in principle.
+            cos, sin = lib_datalm.get_cossin_2iphi()
             if i == 1 and j == 1:
                 return clA[lib_datalm.reduced_ellmat()] * sin ** 2
             elif i == 2 and j == 2:
@@ -390,3 +390,140 @@ def get_qlms(_type, lib_sky, Res_TEBlms, cls_unl, lib_qlm, Res_TEBlms2=None, f=N
 
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
                      retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest
+
+
+def get_response_flexible(lib_tlm, lib_elm, lib_blm, cls, cls_transf, cls_noise, lib_qlm, isoN0s = True):
+        """
+        N0 calc, allowing for abritrary aniso filtering.
+        -(xi,a K) (xi,b K) - (K)ab (xi,a K xi,b) with K = B^t Covi B
+        """
+        assert lib_tlm.ell_mat == lib_elm.ell_mat and lib_tlm.ell_mat == lib_blm.ell_mat
+        assert 'tt' in cls_noise.keys() and 'ee' in cls_noise.keys() and 'bb' in cls_noise.keys()
+        ellmat = lib_tlm.ell_mat
+        lmax = max(lib_tlm.ellmax,lib_elm.ellmax,lib_blm.ellmax)
+        Ki_cls  = {}
+        w_cls = {}
+        t_cls = {}
+        for k in ['tt','ee','te','bb']:
+            Ki_cls[k] = np.zeros(ellmat.ellmax + 1,dtype = float)
+            Ki_cls[k][:lmax + 1] = cls[k][:lmax + 1] * cls_transf[k[0]][:lmax + 1] * cls_transf[k[1]][:lmax + 1]
+            if k in cls_noise.keys():  Ki_cls[k][:lmax + 1]  += cls_noise[k][:lmax + 1]
+            w_cls[k] = np.zeros(ellmat.ellmax + 1,dtype = float)
+            w_cls[k][:lmax + 1] = cls[k][:lmax + 1]
+        for k in ['t','e','b']:
+            t_cls[k] =  np.zeros(ellmat.ellmax + 1,dtype = float)
+            t_cls[k][:lmax + 1] = np.copy(cls_transf[k][:lmax + 1])
+        if lib_tlm.ellmax > 0: t_cls['t'][:lib_tlm.ellmax + 1] *= (lib_tlm.get_Nell() > 0)
+        if lib_elm.ellmax > 0: t_cls['e'][:lib_elm.ellmax + 1] *= (lib_elm.get_Nell() > 0)
+        if lib_blm.ellmax > 0: t_cls['b'][:lib_blm.ellmax + 1] *= (lib_blm.get_Nell() > 0)
+
+        K_almmap = np.zeros((ellmat.rshape[0],ellmat.rshape[1],3,3),dtype = float)
+        K_almmap[:,:,0, 0] = Ki_cls['tt'][ellmat()] * lib_tlm._cond()
+        K_almmap[:,:,1, 1] = Ki_cls['ee'][ellmat()] * lib_elm._cond()
+        K_almmap[:,:,2, 2] = Ki_cls['bb'][ellmat()] * lib_blm._cond()
+        K_almmap[:,:,0, 1] = Ki_cls['te'][ellmat()] * lib_tlm._cond()* lib_elm._cond()
+        K_almmap[:,:,1, 0] = Ki_cls['te'][ellmat()] * lib_tlm._cond()* lib_elm._cond()
+        K_almmap = np.linalg.pinv(K_almmap) # B^t Covi B
+        K_almmap[:, :, 0, 0] *= t_cls['t'][ellmat()] ** 2
+        K_almmap[:, :, 1, 1] *= t_cls['e'][ellmat()] ** 2
+        K_almmap[:, :, 0, 1] *= t_cls['t'][ellmat()] * t_cls['e'][ellmat()]
+        K_almmap[:, :, 1, 0] *= t_cls['e'][ellmat()] * t_cls['t'][ellmat()]
+        K_almmap[:, :, 2, 2] *= t_cls['b'][ellmat()] ** 2
+
+        xiK_almmap = np.zeros((ellmat.rshape[0],ellmat.rshape[1],3,3),dtype = float)
+        xiK_almmap[:, :, 0, 0] = w_cls['tt'][ellmat()] * K_almmap[:, :, 0, 0] + w_cls['te'][ellmat()] * K_almmap[:, :, 1, 0]
+        xiK_almmap[:, :, 1, 1] = w_cls['te'][ellmat()] * K_almmap[:, :, 0, 1] + w_cls['ee'][ellmat()] * K_almmap[:, :, 1, 1]
+        xiK_almmap[:, :, 2, 2] = w_cls['bb'][ellmat()] * K_almmap[:, :, 2, 2]
+        xiK_almmap[:, :, 0, 1] = w_cls['tt'][ellmat()] * K_almmap[:, :, 0, 1] + w_cls['te'][ellmat()] * K_almmap[:, :, 1, 1]
+        xiK_almmap[:, :, 1, 0] = w_cls['te'][ellmat()] * K_almmap[:, :, 0, 0] + w_cls['ee'][ellmat()] * K_almmap[:, :, 1, 0]
+
+        xiKxi_almmap = np.zeros((ellmat.rshape[0],ellmat.rshape[1],3,3),dtype = float)
+        xiKxi_almmap[:, :, 0, 0] = w_cls['tt'][ellmat()] * xiK_almmap[:, :, 0, 0] + w_cls['te'][ellmat()] * xiK_almmap[:, :, 0, 1]
+        xiKxi_almmap[:, :, 1, 1] = w_cls['te'][ellmat()] * xiK_almmap[:, :, 1, 0] + w_cls['ee'][ellmat()] * xiK_almmap[:, :, 1, 1]
+        xiKxi_almmap[:, :, 2, 2] = w_cls['bb'][ellmat()] * xiK_almmap[:, :, 2, 2]
+        xiKxi_almmap[:, :, 0, 1] = w_cls['ee'][ellmat()] * xiK_almmap[:, :, 0, 1] + w_cls['te'][ellmat()] * xiK_almmap[:, :, 0, 0]
+        xiKxi_almmap[:, :, 1, 0] = w_cls['tt'][ellmat()] * xiK_almmap[:, :, 1, 0] + w_cls['te'][ellmat()] * xiK_almmap[:, :, 1, 1]
+        cos,sin = ellmat.get_cossin_2iphi_mat()
+
+        def apply_RSX(almmap,iS,iX):
+            """ T Q U = (1 0 0
+                         0 c  -s
+                        0 s c)    T E B"""
+            if iS == 0:
+                return almmap.copy() if iX == 0 else np.zeros_like(almmap)
+            elif iS == 1:
+                if iX == 1:
+                    return cos * almmap
+                elif iX == 2:
+                    return -sin * almmap
+                else :
+                    return np.zeros_like(almmap)
+            elif iS == 2:
+                if iX == 1:
+                    return sin * almmap
+                elif iX == 2:
+                    return cos * almmap
+                else :
+                    return np.zeros_like(almmap)
+            else:
+                assert 0
+
+        def TEB2TQU(iS,jS,TEBmat):
+            """ R_sx R_ty Y Pxy """
+            assert TEBmat.shape == (ellmat.rshape[0],ellmat.rshape[1],3,3)
+            ret = np.zeros(ellmat.rshape)
+            for iX in range(3):
+                for jX in range(3):
+                    ret += apply_RSX(apply_RSX(TEBmat[:,:,iX,jX],iS,iX),jS,jX)
+            return ret
+        # turn TEB to TQU:
+        xiK = np.zeros_like(xiK_almmap)
+        for iS in range(3):
+            for jS in range(3):
+                xiK[:,:,iS,jS] = TEB2TQU(iS,jS,xiK_almmap)
+        del xiK_almmap
+
+        xiKxi = np.zeros_like(xiKxi_almmap)
+        for iS in range(3):
+            for jS in range(3):
+                xiKxi[:, :, iS, jS] = TEB2TQU(iS, jS, xiKxi_almmap)
+        del xiKxi_almmap
+
+        K = np.zeros_like(K_almmap)
+        for iS in range(3):
+            for jS in range(3):
+                K[:, :, iS, jS] = TEB2TQU(iS, jS, K_almmap)
+        del K_almmap
+
+        Fxx = np.zeros(ellmat.shape, dtype=float)
+        Fyy = np.zeros(ellmat.shape, dtype=float)
+        Fxy = np.zeros(ellmat.shape, dtype=float)
+        Fyx = np.zeros(ellmat.shape, dtype=float)
+
+        _2map = lambda almmap:np.fft.irfft2(almmap.astype(complex))
+        ikx = lambda :ellmat.get_ikx_mat()
+        iky = lambda: ellmat.get_iky_mat()
+
+        #-(xi, a K)(xi, b K) - (K)(xi, a  K xi, b)
+        for iS in range(3):
+            for jS in range(3):
+                Fxx += _2map(xiK[:,:,iS,jS] * ikx()) * _2map(xiK[:,:,jS,iS] * ikx())
+                Fyy += _2map(xiK[:,:,iS,jS] * iky()) * _2map(xiK[:,:,jS,iS] * iky())
+                Fxy += _2map(xiK[:,:,iS,jS] * ikx()) * _2map(xiK[:,:,jS,iS] * iky())
+                Fyx += _2map(xiK[:,:,iS,jS] * iky()) * _2map(xiK[:,:,jS,iS] * ikx())
+
+                Fxx += _2map(K[:, :, iS, jS]) * _2map(xiKxi[:, :, jS, iS] * ikx() * ikx())
+                Fyy += _2map(K[:, :, iS, jS]) * _2map(xiKxi[:, :, jS, iS] * iky() * iky())
+                Fxy += _2map(K[:, :, iS, jS]) * _2map(xiKxi[:, :, jS, iS] * ikx() * iky())
+                Fyx += _2map(K[:, :, iS, jS]) * _2map(xiKxi[:, :, jS, iS] * iky() * ikx())
+
+        fac = 1. / np.sqrt(np.prod(ellmat.lsides)) * lib_tlm.fac_alm2rfft ** 2
+        Fxx = lib_qlm.map2alm(Fxx)
+        Fyy = lib_qlm.map2alm(Fyy)
+        Fxy = lib_qlm.map2alm(Fxy)
+        Fyx = lib_qlm.map2alm(Fyx)
+        ikx = lambda : lib_qlm.get_ikx()
+        iky = lambda : lib_qlm.get_iky()
+        assert isoN0s,'implement this (non anisotropic N0 2d cls)' #this affects only the following line:
+        return (fac*lib_qlm.bin_realpart_inell(Fxx * ikx() ** 2 + Fyy * iky() ** 2 + (Fxy + Fyx) * ikx() * iky()),
+                fac * lib_qlm.bin_realpart_inell( (Fxx * iky() ** 2 + Fyy * ikx() ** 2 - (Fxy + Fyx) * ikx() * iky())))
