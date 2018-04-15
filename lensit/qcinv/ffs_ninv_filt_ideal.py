@@ -106,6 +106,9 @@ class ffs_ninv_filt(object):
     def get_cl_transf(self,lab):
         return self.cl_transf
 
+    def apply_Rs(self, TQUtype,TEBlms):
+        assert 0,'not implemented'
+
     def degrade(self, shape, ellmax=None, ellmin=None, **kwargs):
         lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         lib_almdat = self.lib_datalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
@@ -138,6 +141,9 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
         assert alm.size == self.lib_skyalm.alm_size, (alm.size, self.lib_skyalm.alm_size)
         _alm = self.f.lens_alm(self.lib_skyalm, alm, use_Pool=self.lens_pool)
         return self._deg(self.lib_skyalm.almxfl(_alm, self.cl_transf))
+
+    def apply_Rs(self, TQUtype,TEBlms):
+        assert 0,'not implemented'
 
     def apply_Rt(self, field, _map):
         """

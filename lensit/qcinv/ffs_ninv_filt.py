@@ -14,11 +14,19 @@ def cl_inv(cl):
 
 class ffs_ninv_filt(object):
     def __init__(self, lib_datalm, lib_skyalm, len_cls, cl_transf, ninv_rad,
-                 marge_maps={}, marge_uptolmin={}, cls_noise={}, verbose=False):
+                 marge_maps=None, marge_uptolmin=None,marge_ells = None,eigv_thres = 0., cls_noise=None, verbose=False):
         """
         ninv_rad is the inverse variance map in 1 / rad ** 2, not the pixel variance maps.
         This is the inverse pixel variance map / volume of cell.
+
+        eigenvalues in the template matrix with eigv <= max(eigv) * eigv_thres will be set to zero before inversion
         """
+        if marge_maps is None : marge_maps = dict()
+        if marge_uptolmin is None : marge_uptolmin = dict()
+        if marge_ells is None : marge_ells = dict()
+
+        if cls_noise is None: cls_noise = dict()
+
         self.ninv_rad = ninv_rad
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_skyalm
@@ -53,9 +61,15 @@ class ffs_ninv_filt(object):
                 if _f not in templates.keys(): templates[_f] = []
                 templates[_f].append(template_removal.template_uptolmin(lib_datalm.ell_mat, marge_uptolmin[_f]))
 
+        for _f in marge_ells.iterkeys():
+            if marge_ells[_f] >= 0:
+                if _f not in templates.keys(): templates[_f] = []
+                templates[_f].append(template_removal.template_ellfilt(lib_datalm.ell_mat, marge_ells[_f]))
+
+
         assert np.all([_f in ninv_rad.keys() for _f in templates.keys()]), (ninv_rad.keys(), templates.keys())
+        self.Pt_Nn1_P_inv = {}
         for _f, _templates in templates.iteritems():
-            self.Pt_Nn1_P_inv = {}
             if (len(_templates) != 0):
                 nmodes = np.sum([t.nmodes for t in _templates])
                 modes_idx_t = np.concatenate(([t.nmodes * [int(im)] for im, t in enumerate(_templates)]))
@@ -72,7 +86,8 @@ class ffs_ninv_filt(object):
                         Pt_Nn1_P[ic:(ic + tc.nmodes), ir] = Pt_Nn1_P[ir, ic:(ic + tc.nmodes)]
                         ic += tc.nmodes
                 eigv, eigw = np.linalg.eigh(Pt_Nn1_P)
-                eigv_inv = 1.0 / eigv
+                eigv_inv = np.where(eigv <= np.max(eigv) * eigv_thres,np.zeros_like(eigv),1.0 / eigv)
+                if eigv_thres > 0: print "Kept %.2f percent of the modes"%( (100. * len(eigv_inv.nonzero())) / len(eigv))
                 self.Pt_Nn1_P_inv[_f] = np.dot(np.dot(eigw, np.diag(eigv_inv)), np.transpose(eigw))
         self.templates = templates
         self.marge_uptolmin = marge_uptolmin
@@ -289,7 +304,7 @@ class ffs_ninv_filt(object):
 
 class ffs_ninv_filt_wl(ffs_ninv_filt):
     def __init__(self, lib_datalm, lib_skyalm, unl_cls, cl_transf, ninv_rad, f, fi,
-                 marge_maps={}, marge_uptolmin={}, cls_noise={}, lens_pool=0):
+                 marge_maps=None, marge_uptolmin=None, cls_noise=None, lens_pool=0):
         """
         Same as above, but the transfer functions contain the lensing.
         Note that the degradation will kill the lensing.

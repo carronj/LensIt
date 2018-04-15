@@ -90,7 +90,7 @@ class multigrid_chain():
             crit_op = self.opfilt.dot_op(self.cov.lib_skyalm)
         fwd_op = self.opfilt.fwd_op(self.cov, False)
         _b = self.opfilt.calc_prep(alms, self.cov)
-        if d0 is None: d0 = self.opfilt.dot_op(self.cov.lib_skyalm)(_b, _b)
+        if d0 is None: d0 = crit_op(_b, _b)
         monitor = cd_monitors.monitor_basic(crit_op, logger=logger, iter_max=self.bstage.iter_max,
                                             eps_min=self.bstage.eps_min, d0=d0)
         cd_solve.cd_solve(soltn, _b, fwd_op, self.bstage.pre_ops, self.opfilt.dot_op(self.cov.lib_skyalm), monitor,
