@@ -62,6 +62,9 @@ class ell_mat():
         self._ell_counts = self._build_ell_counts()
         self._nz_counts = self._ell_counts.nonzero()
 
+    def __eq__(self, ell_mat):
+        return self.shape == ell_mat.shape and self.lsides == self.lsides
+
     def _build_ellmat(self):
         kmin = 2. * np.pi / np.array(self.lsides)
         ky2 = Freq(np.arange(self.shape[0]), self.shape[0]) ** 2 * kmin[0] ** 2
@@ -333,8 +336,8 @@ class ffs_alm(object):
         self.alm_size = np.count_nonzero(self._cond())
         # The mapping ell[i] for i in alm array :
         self.reduced_ellmat = lambda: ellmat()[self._cond()]
-        self.ellmax = np.max(self.reduced_ellmat())
-        self.ellmin = np.min(self.reduced_ellmat())
+        self.ellmax = np.max(self.reduced_ellmat()) if self.alm_size > 0 else None
+        self.ellmin = np.min(self.reduced_ellmat()) if self.alm_size > 0 else None
         # Some trivial convenience factors :
         self.fac_rfft2alm = np.sqrt(np.prod(ellmat.lsides)) / np.prod(self.ell_mat.shape)
         self.fac_alm2rfft = 1. / self.fac_rfft2alm

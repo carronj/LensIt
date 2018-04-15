@@ -743,7 +743,7 @@ class ffs_diagcov_alm(object):
                                             cls_filt=cls_filt, cls_obs2=cls_obs2)
             return (2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO)))
 
-    def iterateN0cls(self, _type, lib_qlm, Nitmax, Nit=0):
+    def iterateN0cls(self, _type, lib_qlm, Nitmax, Nit=0,return_delCls = False):
         """
         Iterates delensing and N0 calculation to estimate the noise levels of the iterative estimator.
         This uses perturbative approach in Wiener filtered displacement, consistent with box shape and
@@ -751,7 +751,7 @@ class ffs_diagcov_alm(object):
         See iterateN0cls_camb for alternative approach.
         """
         N0 = self.get_N0cls(_type, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
-        if Nit == Nitmax: return N0
+        if Nit == Nitmax: return (N0 if not return_delCls else N0,self.cls_len)
         cpp = np.zeros(lib_qlm.ellmax + 1)
         cpp[:min(len(cpp), len(self.cls_unl['pp']))] = (self.cls_unl['pp'][:min(len(cpp), len(self.cls_unl['pp']))])
         clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])
@@ -780,9 +780,9 @@ class ffs_diagcov_alm(object):
                                                               self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
 
-        return new_cov.iterateN0cls(_type, lib_qlm, Nitmax, Nit=Nit + 1)
+        return new_cov.iterateN0cls(_type, lib_qlm, Nitmax, Nit=Nit + 1,return_delCls = return_delCls)
 
-    def iterateN0cls_camb(self, _type, lib_qlm, Nitmax, cambfile, Nit=0):
+    def iterateN0cls_camb(self, _type, lib_qlm, Nitmax, cambfile, Nit=0,return_delCls = False):
         """
         Iterates delensing and N0 calculation to estimate the noise levels of the iterative estimator.
         This version is not fully-self-consistent as it calls camb using lensing at all ell
@@ -791,7 +791,7 @@ class ffs_diagcov_alm(object):
         """
         assert os.path.exists(cambfile), cambfile
         N0 = self.get_N0cls(_type, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
-        if Nit == Nitmax: return N0
+        if Nit == Nitmax: return (N0 if not return_delCls else N0,self.cls_len)
 
         def build_cppweight():
             ret = np.ones(lib_qlm.ellmax + 1, dtype=float)
@@ -837,7 +837,7 @@ class ffs_diagcov_alm(object):
                                                               lib_skyalm=self.lib_skyalm)
         np.savetxt(new_libdir + '/iterN0_cpp_weights.dat', np.array([np.arange(len(clWF)), (1. - clWF)]).transpose(),
                    fmt=['%i', '%10.5f'])
-        return new_cov.iterateN0cls_camb(_type, lib_qlm, Nitmax, cambfile, Nit=Nit + 1)
+        return new_cov.iterateN0cls_camb(_type, lib_qlm, Nitmax, cambfile, Nit=Nit + 1,return_delCls=return_delCls)
 
     def get_N0Pk_minimal(self, _type, lib_qlm, use_cls_len=True, cls_obs=None):
         """

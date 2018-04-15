@@ -381,6 +381,48 @@ def TEBPmat2TQUPmatij(_type, lib_alm, TEBclmat, i, j):
     else:
         assert 0
 
+def TEBcls2TQUPmatij(_type, lib_alm, TEBcls, i, j):
+    """
+    Rotates TEB TQU anisotrpoic spec matrix.
+    using T Q U = 1 0 0    T E B  = R TEB
+                 0  c -s
+                 0 s c
+            -> R P R^t
+    """
+    if _type == 'T':
+        ret = np.ones((1,1,lib_alm.alm_size),dtype = complex)
+        return lib_alm.almxfl(ret,TEBcls[0,0])
+    elif _type == 'QU':
+        fl = lambda alm, i, j: lib_alm.almxfl(alm,TEBcls[i, j])
+        c, s = lib_alm.get_cossin_2iphi()
+        if i == 0 and j == 0:
+            return fl(c ** 2, 0, 0) + fl(s ** 2, 1, 1) - fl(c * s, 0, 1) - fl(c * s, 1, 0)
+        if i == 1 and j == 1:
+            return fl(s ** 2, 0, 0) + fl(c ** 2, 1, 1) + fl(c * s, 0, 1) + fl(c * s, 1, 0)
+        if i == 0 and j == 1:
+            return fl(c * s, 0, 0) - fl(c * s, 1, 1) + fl(c ** 2, 0, 1) - fl(s ** 2, 1, 0)
+        if i == 1 and j == 0:
+            return fl(c * s, 0, 0) - fl(c * s, 1, 1) - fl(s ** 2, 0, 1) + fl(c ** 2, 1, 0)
+        assert 0, (i, j)
+    elif _type == 'TQU':
+
+        fl = lambda alm, i, j: lib_alm.almxfl(alm,TEBcls[i, j])
+        if i == 0 or j == 0:
+            ret = np.ones((1, 1, lib_alm.alm_size), dtype=complex)
+            return fl(ret,0,0)
+        c, s = lib_alm.get_cossin_2iphi()
+        if i == 1 and j == 1:
+            return fl(c ** 2, 1, 1) + fl(s ** 2, 2, 2) - fl(c * s, 1, 2) - fl(c * s, 2, 1)
+        if i == 2 and j == 2:
+            return fl(s ** 2, 1, 1) + fl(c ** 2, 2, 2) + fl(c * s, 1, 2) + fl(c * s, 2, 1)
+        if i == 1 and j == 2:
+            return fl(c * s, 1, 1) - fl(c * s, 2, 2) + fl(c ** 2, 1, 2) - fl(s ** 2, 2, 1)
+        if i == 2 and j == 1:
+            return fl(c * s, 1, 1) - fl(c * s, 2, 2) - fl(s ** 2, 1, 2) + fl(c ** 2, 2, 1)
+        assert 0, (i, j)
+    else:
+        assert 0
+
 
 def TQUPmat2TEBPmatij(_type, lib_alm, TQUPmat, i, j):
     """
