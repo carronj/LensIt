@@ -108,21 +108,18 @@ def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
     if wBl is None: wBl = cls_len[(_type[1] + _type[1]).lower()][:lmax + 1]
     if fAl is None:
         Nlev = NlevT_uKamin if _type[0] == 'T' else NlevP_uKamin
-        print Nlev
         ii = np.where(cl_transf[:lmax + 1] > 0.)
         fAl = np.zeros(lmax + 1,dtype = float)
         fAl[ii] = 1./ (cls_len[(_type[0] + _type[0]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
     if fBl is None:
         Nlev = NlevT_uKamin if _type[1] == 'T' else NlevP_uKamin
-        print Nlev
-
         ii = np.where(cl_transf[:lmax + 1] > 0.)
         fBl = np.zeros(lmax + 1,dtype = float)
         fBl[ii] = 1./ (cls_len[(_type[1] + _type[1]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
 
     if lib_qlm is None: lib_qlm = lib_datalm
 
-    def get_pmat(A,i,j,clA):
+    def get_pmat(A, i, j, clA):
         if A == 'T':
             if i == 0 and j == 0:
                 return clA[lib_datalm.reduced_ellmat()]
@@ -186,8 +183,8 @@ def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
     retyx = _2alm(retyx)
     ikx = lambda : lib_qlm.get_ikx()
     iky = lambda : lib_qlm.get_iky()
-    return  (fac * (retxx * ikx() ** 2 + retyy * iky() ** 2 + (retxy + retyx) * ikx() * iky()),
-             fac * (retxx * iky() ** 2 + retyy * ikx() ** 2 - (retxy + retyx) * ikx() * iky()) )
+    return  np.array([fac * (retxx * ikx() ** 2 + retyy * iky() ** 2 + (retxy + retyx) * ikx() * iky()),
+             fac * (retxx * iky() ** 2 + retyy * ikx() ** 2 - (retxy + retyx) * ikx() * iky()) ])
 
 class MFestimator():
     def __init__(self, ninv_filt, opfilt, mchain, lib_qlm, pix_pha=None, cmb_pha=None, use_Pool=0):
