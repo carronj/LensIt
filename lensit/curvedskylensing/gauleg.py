@@ -18,7 +18,6 @@ def get_xgwg(n,x1 = -1.,x2 = 1.):
     and weights of the Gauss-Legendre n-point quadrature formula.
     """
     header = ["<stdlib.h>","<math.h>"]
-    support_code = "#define EPS 3.0e-11 /* EPS is the relative precision. */"
     gauleg = """
     //{
     	int m,j,i;
@@ -44,7 +43,7 @@ def get_xgwg(n,x1 = -1.,x2 = 1.):
     			pp=n*(z*p1-p2)/(z*z-1.0);
     			z1=z;
     			z=z1-p1/pp;  /* Newton's method. */
-    		} while (fabs(z-z1) > EPS);
+    		} while (fabs(z-z1) > 1.0e-15);
     		x[i-1]=xm-xl*z;      /* Scale the root to the desired interval, */
     		x[n-i]=xm+xl*z;  /* and put in its symmetric counterpart.   */
     		w[i-1]=2.0*xl/((1.0-z*z)*pp*pp); /* Compute the weight             */
@@ -57,7 +56,7 @@ def get_xgwg(n,x1 = -1.,x2 = 1.):
     x = np.empty(n,dtype = float)
     x1 = float(x1)
     x2 = float(x2)
-    weave.inline(gauleg, ['x1','x2','x','w','n'], headers=header,support_code=support_code)
+    weave.inline(gauleg, ['x1','x2','x','w','n'], headers=header)
     return x,w
 
 def get_Pn(N,x,norm = False):
