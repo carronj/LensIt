@@ -75,7 +75,7 @@ class multigrid_chain():
         # TODO   off, or using a crude lensing method.
         self.bstage = stages[0]  # these are the pre_ops called in cd_solve
 
-    def solve(self, soltn, alms, finiop=None, d0=None):
+    def solve(self, soltn, alms, finiop=None, d0=None, no_calc_prep=False):
         self.watch = stopwatch()
 
         self.iter_tot = 0
@@ -89,7 +89,10 @@ class multigrid_chain():
         else:
             crit_op = self.opfilt.dot_op(self.cov.lib_skyalm)
         fwd_op = self.opfilt.fwd_op(self.cov, False)
-        _b = self.opfilt.calc_prep(alms, self.cov)
+        if not no_calc_prep:
+            _b = self.opfilt.calc_prep(alms, self.cov)
+        else:
+            _b = alms.copy()
         if d0 is None: d0 = crit_op(_b, _b)
         monitor = cd_monitors.monitor_basic(crit_op, logger=logger, iter_max=self.bstage.iter_max,
                                             eps_min=self.bstage.eps_min, d0=d0)
