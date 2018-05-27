@@ -98,16 +98,19 @@ def soltn2TQUMlik(soltn, cov):
 
 
 # =====================
-
-class dot_op():
-    def __init__(self,*args):
-        pass
+class dot_op:
+    def __init__(self, lib_skyalm):
+        self.lib_skyalm = lib_skyalm
+        self.Nell = lib_skyalm.get_Nell()
 
     def __call__(self, alms1, alms2, **kwargs):
-        return np.sum(alms1.real * alms2.real + alms1.imag * alms2.imag)
+        ret = 0.
+        for alm1, alm2 in zip(alms1, alms2):
+            ret += np.sum(self.lib_skyalm.alm2cl(alm1,alm2=alm2) * self.Nell)
+        return ret
+        #return np.sum(alms1.real * alms2.real + alms1.imag * alms2.imag)
 
-
-class fwd_op():  # (P^-1 + R^t Ni R)^{-1} (skyalms)
+class fwd_op:  # (P^-1 + R^t Ni R)^{-1} (skyalms)
     def __init__(self, cov, *args):
         self.cov = cov
         self.lib_alm = self.cov.lib_skyalm
@@ -119,7 +122,7 @@ class fwd_op():  # (P^-1 + R^t Ni R)^{-1} (skyalms)
         return filtTEBlms(ret,self.cov)
 
 # =====================
-class pre_op_diag():
+class pre_op_diag:
     # (1/P + bl G Ni Gt bl)^-1
     def __init__(self, cov, *args):
         inv_cls = SM.get_pinvTEBcls(_type, cov.cls)
