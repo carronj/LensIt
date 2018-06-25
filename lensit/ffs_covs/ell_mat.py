@@ -692,7 +692,7 @@ class ffs_alm_pyFFTW(ffs_alm):
     Same as ffs_alm but ffts are done with much faster (10 x !) threaded fftw library.
     """
 
-    def __init__(self, ellmat, filt_func=lambda ell: ell > 0, num_threads=os.environ.get('OMP_NUM_THREADS', 1), flags_init=('FFTW_MEASURE',)):
+    def __init__(self, ellmat, filt_func=lambda ell: ell > 0, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), flags_init=('FFTW_MEASURE',)):
         super(ffs_alm_pyFFTW, self).__init__(ellmat, filt_func=filt_func)
         # FIXME : This can be tricky in in hybrid MPI-OPENMP
         # Builds FFTW Wisdom :
