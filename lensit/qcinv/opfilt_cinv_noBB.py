@@ -82,11 +82,16 @@ class fwd_op():  # (P^-1 + B^t Ni B)^{-1} (skyalms)
 
     def __call__(self, TElms):
         # print "This is fwd_op w. no_lensing %s _type %s"%(self.no_lensing,_type)
-        TQUlms = SM.TE2TQUlms(_type, self.cov.lib_skyalm, TElms)
-        for i, f in enumerate(_type): self.cov.apply_alm(f, TQUlms[i], inplace=True)
-        return filtTElms(SM.apply_pinvTEmat(_type, self.lib_alm, self.cov.cls, TElms)
-                             + SM.TQU2TElms(_type, self.lib_alm, TQUlms),self.cov)
-
+        if _type == 'T':
+            TEBlms = TElms
+        elif _type == 'QU':
+            TEBlms = np.array([TElms[0], np.zeros_like(TElms[0])])
+        elif _type == 'TQU':
+            TEBlms = np.array([TElms[0], TElms[1], np.zeros_like(TElms[0])])
+        else:
+            assert 0
+        self.cov.apply_alms(_type, TEBlms, inplace=True)
+        return filtTElms(SM.apply_pinvTEmat(_type, self.lib_alm, self.cov.cls, TElms)  + TEBlms[:TEBlen(_type)], self.cov)
 
 # =====================
 class pre_op_diag():
