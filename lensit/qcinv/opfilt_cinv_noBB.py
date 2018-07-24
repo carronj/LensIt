@@ -32,11 +32,12 @@ def TQUlen(_type):
 def TEfields(_type):
     if _type == 'T': return 't'
     if _type == 'QU': return ['e']
-    if _type == 'TQU': return ['t']
+    if _type == 'TQU': return ['t', 'e']
     assert 0,_type
 
 def filtTElms(TElms,cov):
     # The inverse matrix acts on the non-zero modes space
+    assert len(TElms) == TEBlen(_type), (len(TElms), TEBlen(_type))
     for i,e in enumerate(TEfields(_type)):
         cov.lib_skyalm.almxfl(TElms[i],cov.cls[e + e] > 0,inplace=True)
     return TElms
@@ -48,12 +49,8 @@ def calc_prep(maps, cov, *args, **kwargs):
     B Ni data projected onto T E alms
     """
     print "This is calc prep for %s W. Filtering" % _type, _prefix
-    _TQUalms = np.empty((TQUlen(_type), cov.lib_skyalm.alm_size), dtype=complex)
-    for i, f in enumerate(_type):
-        _map = cov.apply_map(f, maps[i], inplace=False)
-        _TQUalms[i] = cov.apply_Rt(f, _map)
-    return filtTElms(SM.TQU2TElms(_type, cov.lib_skyalm, _TQUalms),cov)
-
+    TEBalms = cov.apply_Rts(_type, cov.apply_maps(_type, maps, inplace=False))
+    return filtTElms(TEBalms[:TEBlen(_type)],cov)
 
 def apply_fini_MLIK(soltn, cov, maps, **kwargs):
     """
@@ -64,27 +61,9 @@ def apply_fini_MLIK(soltn, cov, maps, **kwargs):
     return soltn
 
 
-def MLIK2BINV(soltn, cov, maps, **kwargs):
-    """
-    Output TEB skyalms shaped
-    B^t Cov^-1 d = B^t Ni data - (B^t Ni B) MLIK(data)
-             = B^t Ni (data - B MLIK(data))
-    """
-    assert len(soltn) == TEBlen(_type)
-    assert len(maps) == TQUlen(_type), (maps.shape, _type)
-    TQUmlik = SM.TE2TQUlms(_type, cov.lib_skyalm, soltn)
-    for i, f in enumerate(_type):
-        _map = maps[i] - cov.apply_R(f, TQUmlik[i])
-        cov.apply_map(f, _map, inplace=True)
-        TQUmlik[i] = cov.apply_Rt(f, _map)
-    del _map
-    return opfilt_cinv.filtTEBlms(SMwBB.TQU2TEBlms(_type, cov.lib_skyalm, TQUmlik),cov)
-
-
 def soltn2TQUMlik(soltn, cov):
     assert len(soltn) == TEBlen(_type), (len(soltn), TEBlen(_type))
     return SM.TE2TQUlms(_type, cov.lib_skyalm, soltn)
-
 
 # =====================
 
