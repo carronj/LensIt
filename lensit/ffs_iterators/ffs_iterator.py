@@ -372,16 +372,14 @@ class ffs_iterator(object):
         Produces B^t Ni (data - B D Mlik) in TQU space,
         that is fed into the qlm estimator.
         """
-        Ret = np.empty_like(TQUMlik)
         f_id = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(self.cov.lib_skyalm.shape, self.cov.lib_skyalm.lsides)
-
-        for i, f in enumerate(self.type):
-            self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
-            _map = self.get_datmaps()[i] - self.cov.apply_R(f, TQUMlik[i])
-            self.cov.apply_map(f, _map, inplace=True)
-            self.cov.set_ffi(f_id, f_id)
-            Ret[i] = self.cov.apply_Rt(f, _map)
-        return Ret
+        self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
+        temp = fs.ffs_covs.ffs_specmat.TQU2TEBlms(self.type, self.cov.lib_skyalm, TQUMlik)
+        maps = self.get_datmaps() - self.cov.apply_Rs(self.type, temp)
+        self.cov.apply_maps(self.type, maps, inplace=True)
+        self.cov.set_ffi(f_id, f_id)
+        temp = self.cov.apply_Rts(self.type, maps)
+        return fs.ffs_covs.ffs_specmat.TEB2TQUlms(self.type, self.cov.lib_skyalm, temp)
 
     def calc_gradPlikPdet(self, iter, key):
         """
