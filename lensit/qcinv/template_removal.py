@@ -83,7 +83,7 @@ class template_uptolmin(template):
     def __init__(self, ellmat, lmin):
         try:
             from lensit.ffs_covs.ell_mat import ffs_alm_pyFFTW as ffs_alm
-        except:
+        except ImportError:
             from lensit.ffs_covs.ell_mat import ffs_alm as ffs_alm
         self.lmin = lmin
         lib_alm = ffs_alm(ellmat, filt_func=lambda ell: (ell <= lmin))
@@ -141,7 +141,7 @@ class template_ellfilt(template):
         return self._alm2rlm(self.lib_alm.map2alm(tmap)) * self.lib_alm.nbar() # (norm. totally irrelevant in principle)
 
 
-class template_pol():
+class template_pol:
     """
     Generic template class for template projection in polarization,
     in the form of a modifiction of a noise matrix N:
@@ -163,7 +163,7 @@ class template_pol():
 
     def apply(self, map, coeffs,X):
         # map -> map*[coeffs combination of templates]
-        assert (0),'subclass this'
+        assert 0, 'subclass this'
 
     def apply_mode(self, Smap, mode,X):
         assert (mode < self.nmodes)
@@ -174,12 +174,12 @@ class template_pol():
         self.apply(Smap, tcoeffs,X)
 
     def accum(self, map, coeffs,X):
-        assert (0)
+        assert 0, 'subclass this'
 
     def dot(self,qumap):
-        assert 0
+        assert 0, 'subclass this'
 
-    def _build_TtNiT(self,Ni):
+    def build_TtNiT(self,Ni):
         """ return the nmodes x nmodes matrix T^t Ni T """
         TtNiT = np.zeros((self.nmodes,self.nmodes),dtype = float)
         for a in range(self.nmodes):
@@ -195,7 +195,7 @@ class template_Bfilt(template_pol):
     def __init__(self, ellmat,bfilt_func):
         try:
             from lensit.ffs_covs.ell_mat import ffs_alm_pyFFTW as ffs_alm
-        except:
+        except ImportError:
             from lensit.ffs_covs.ell_mat import ffs_alm as ffs_alm
         lib_blm = ffs_alm(ellmat, filt_func=lambda ell: bfilt_func(ell))
         self.conv = ffs_converter(lib_blm)
@@ -208,7 +208,7 @@ class template_Bfilt(template_pol):
     def _blm2rlm(self, blm):
         return self.conv.datalms2rlms(1, [blm])
 
-    def apply(self, Smap, coeffs,X):  # RbQ  * Q or  RbU * U
+    def apply(self, Smap, coeffs, X):  # RbQ  * Q or  RbU * U
         assert (len(coeffs) == self.nmodes)
         assert Smap.shape == self.lib_alm.shape
         assert X in ['Q','U']
@@ -216,7 +216,7 @@ class template_Bfilt(template_pol):
         elm = np.zeros_like(blm)
         Smap *= self.lib_alm.alm2map(self.lib_alm.EBlms2QUalms(np.array([elm,blm]))[0 if X == 'Q' else 1])
 
-    def accum(self, Smap, coeffs,X):
+    def accum(self, Smap, coeffs, X):
         """(Q, U), c -> (Q + \sum_b T_Qib c_b, U + \sum_b T_Uib c_b) for template coefficients 'c', pixel map 'Q,U'"""
         assert (len(coeffs) == self.nmodes)
         assert Smap.shape == self.lib_alm.shape
@@ -230,7 +230,7 @@ class template_Bfilt(template_pol):
         blm = self.lib_alm.QUlms2EBalms(np.array([self.lib_alm.map2alm(S) for S in qumap]))[1]
         return self._blm2rlm(blm) * self.lib_alm.nbar() # (norm. totally irrelevant in principle)
 
-    def _build_TtNiT(self,(NiQQ,NiUU,NiQU)):
+    def build_TtNiT(self,(NiQQ,NiUU,NiQU)):
         """ return the nmodes x nmodes matrix (T^t Ni T )_{bl bl'}'"""
         TtNiT = np.zeros((self.nmodes,self.nmodes),dtype = float)
         for a in range(self.nmodes):
