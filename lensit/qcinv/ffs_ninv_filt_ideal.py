@@ -1,5 +1,6 @@
 # FIXME : might think about passing 2 sets of Cls, the correct one and the preconditioner.
 import numpy as np
+import lensit as li
 
 
 class ffs_ninv_filt(object):
@@ -56,6 +57,13 @@ class ffs_ninv_filt(object):
         assert alm.size == self.lib_skyalm.alm_size, (alm.size, self.lib_skyalm.alm_size)
         return self._deg(self.lib_skyalm.almxfl(alm, self.cl_transf))
 
+    def apply_Rs(self, TQUtype, TEBlms):
+        """
+        Apply transfer function, T E B skyalm to T Q U map.
+        """
+        assert len(TQUtype) == len(TEBlms),(len(TQUtype),len(TEBlms))
+        return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype,li.ffs_covs.ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
+
     def apply_Rt(self, field, _map):
         """
         Apply tranposed transfer function, from T Q U real space to T Q U skyalm.
@@ -64,6 +72,15 @@ class ffs_ninv_filt(object):
         assert field.lower() in ['t', 'q', 'u'], field
         assert _map.size == self.lib_datalm.alm_size, (_map.size, self.lib_datalm.alm_size)
         return self.lib_skyalm.almxfl(self._upg(_map), self.cl_transf)
+
+    def apply_Rts(self, TQUtype,_maps):
+        """
+        Apply tranposed transfer function, from T Q U real space to T E B skyalm.
+        B^t
+        """
+        assert TQUtype in ['T','QU','TQU']
+        assert _maps.shape == (len(TQUtype),self.lib_datalm.alm_size), (self.lib_datalm.alm_size,_maps.shape, len(TQUtype))
+        return li.ffs_covs.ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
 
     def apply_alm(self, field, alm, inplace=True):
         """
@@ -106,8 +123,6 @@ class ffs_ninv_filt(object):
     def get_cl_transf(self,lab):
         return self.cl_transf
 
-    def apply_Rs(self, TQUtype,TEBlms):
-        assert 0,'not implemented'
 
     def degrade(self, shape, ellmax=None, ellmin=None, **kwargs):
         lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
