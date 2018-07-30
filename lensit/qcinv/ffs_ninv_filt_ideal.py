@@ -108,7 +108,25 @@ class ffs_ninv_filt(object):
         else:
             return _map * (1. / self._nlevs_rad2[field.lower()])
 
-    def turn2wlfilt(self, f, fi, cls_unl=None, lens_pool=0):
+    def apply_maps(self, TQUtype, _maps, inplace=True):
+        """
+        Applies ninv to real space T, Q, or U map, in radians units.
+        """
+        if inplace:
+            for i, field in enumerate(TQUtype):
+                assert field.lower() in ['t', 'q', 'u'], field
+                assert _maps[i].size == self.lib_datalm.alm_size, (_maps[i].size, self.lib_datalm.alm_size)
+                _maps[i][:] *= (1. / self._nlevs_rad2[field.lower()])
+        else:
+            ret = np.zeros_like(_maps)
+            for i, field in enumerate(TQUtype):
+                assert field.lower() in ['t', 'q', 'u'], field
+                assert _maps[i].size == self.lib_datalm.alm_size, (_maps[i].size, self.lib_datalm.alm_size)
+                ret[i] =_maps[i] * (1. / self._nlevs_rad2[field.lower()])
+            return ret
+
+
+def turn2wlfilt(self, f, fi, cls_unl=None, lens_pool=0):
         assert self.nlevs['q'] == self.nlevs['u']
         cls = self.cls if cls_unl is None else cls_unl
         return ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm, cls, self.cl_transf, self.nlevs['t'], self.nlevs['q'],
