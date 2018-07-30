@@ -126,11 +126,11 @@ class ffs_ninv_filt(object):
             return ret
 
 
-def turn2wlfilt(self, f, fi, cls_unl=None, lens_pool=0):
-        assert self.nlevs['q'] == self.nlevs['u']
-        cls = self.cls if cls_unl is None else cls_unl
-        return ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm, cls, self.cl_transf, self.nlevs['t'], self.nlevs['q'],
-                                f, fi, verbose=self.verbose, lens_pool=lens_pool)
+    def turn2wlfilt(self, f, fi, cls_unl=None, lens_pool=0):
+            assert self.nlevs['q'] == self.nlevs['u']
+            cls = self.cls if cls_unl is None else cls_unl
+            return ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm, cls, self.cl_transf, self.nlevs['t'], self.nlevs['q'],
+                                    f, fi, verbose=self.verbose, lens_pool=lens_pool)
 
     def turn2isofilt(self):
         assert self.nlevs['q'] == self.nlevs['u']
