@@ -157,9 +157,6 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
         _alm = self.f.lens_alm(self.lib_skyalm, alm, use_Pool=self.lens_pool)
         return self._deg(self.lib_skyalm.almxfl(_alm, self.cl_transf))
 
-    def apply_Rs(self, TQUtype,TEBlms):
-        assert 0,'not implemented'
-
     def apply_Rt(self, field, _map):
         """
         Apply tranposed transfer function, from T Q U real space to T Q U skyalm.
