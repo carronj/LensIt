@@ -45,11 +45,7 @@ def calc_prep(maps, cov, *args, **kwargs):
     R^t Ni data projected onto T E alms
     """
     print "This is calc prep for %s W. Filtering" % _type, _prefix
-    TQUalms = np.empty((len(_type), cov.lib_skyalm.alm_size), dtype=complex)
-    for i, f in enumerate(_type):
-        _map = cov.apply_map(f, maps[i], inplace=False)
-        TQUalms[i] = cov.apply_Rt(f, _map)
-    return filtTEBlms(SM.TQU2TEBlms(_type, cov.lib_skyalm, TQUalms),cov)
+    return filtTEBlms(cov.apply_Rts(_type,cov.apply_maps(_type, maps, inplace=False)),cov)
 
 def apply_fini_BINV(soltn, cov, maps, **kwargs):
     """
@@ -57,13 +53,9 @@ def apply_fini_BINV(soltn, cov, maps, **kwargs):
     B^t Cov^-1 d = B^t Ni data - (B^t Ni B) MLIK(data)
              = B^t Ni (data - B MLIK(data))
     """
-    TQUmlik = SM.TEB2TQUlms(_type, cov.lib_skyalm, apply_fini_MLIK(soltn, cov, maps, **kwargs))
-    for i, f in enumerate(_type):
-        _map = maps[i] - cov.apply_R(f, TQUmlik[i])
-        cov.apply_map(f, _map, inplace=True)
-        TQUmlik[i] = cov.apply_Rt(f, _map)
-    del _map
-    return SM.TQU2TEBlms(_type, cov.lib_skyalm, TQUmlik)
+    assert len(soltn) == TEBlen(_type)
+    assert len(maps) == TQUlen(_type)
+    return cov.apply_Rts(_type,cov.apply_maps(_type,maps - cov.apply_Rs(_type,soltn), inplace=False))
 
 
 def apply_fini_MLIK(soltn, cov, maps, **kwargs):
@@ -83,13 +75,7 @@ def MLIK2BINV(soltn, cov, maps, **kwargs):
     """
     assert len(soltn) == TEBlen(_type)
     assert len(maps) == TQUlen(_type)
-    TQUmlik = SM.TEB2TQUlms(_type, cov.lib_skyalm, soltn)
-    for i, f in enumerate(_type):
-        _map = maps[i] - cov.apply_R(f, TQUmlik[i])
-        cov.apply_map(f, _map, inplace=True)
-        TQUmlik[i] = cov.apply_Rt(f, _map)
-    del _map
-    return SM.TQU2TEBlms(_type, cov.lib_skyalm, TQUmlik)
+    return cov.apply_Rts(_type,cov.apply_maps(_type,maps - cov.apply_Rs(_type,soltn), inplace=False))
 
 
 def soltn2TQUMlik(soltn, cov):
@@ -116,10 +102,8 @@ class fwd_op:  # (P^-1 + R^t Ni R)^{-1} (skyalms)
         self.lib_alm = self.cov.lib_skyalm
 
     def __call__(self, TEBlms):
-        TQUlms = SM.TEB2TQUlms(_type, self.cov.lib_skyalm, TEBlms)
-        for i, f in enumerate(_type): self.cov.apply_alm(f, TQUlms[i], inplace=True)
-        ret = SM.apply_pinvTEBmat(_type, self.lib_alm, self.cov.cls, TEBlms) + SM.TQU2TEBlms(_type, self.lib_alm,TQUlms)
-        return filtTEBlms(ret,self.cov)
+        return filtTEBlms( SM.apply_pinvTEBmat(_type, self.lib_alm, self.cov.cls, TEBlms) +  self.cov.apply_alms(_type, TEBlms,inplace=False),self.cov)
+
 
 # =====================
 class pre_op_diag:
