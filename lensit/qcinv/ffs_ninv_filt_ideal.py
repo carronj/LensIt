@@ -82,6 +82,17 @@ class ffs_ninv_filt(object):
         assert _maps.shape == (len(TQUtype),self.lib_datalm.alm_size), (self.lib_datalm.alm_size,_maps.shape, len(TQUtype))
         return li.ffs_covs.ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
 
+    def apply_alms(self,TQUtype, TEBalms, inplace=True):
+        """
+        Applies B^t Ni B. (TEB skyalms to TEB skyalms)
+        """
+        assert TQUtype in ['T','QU','TQU']
+        if inplace:
+            TEBalms[:] = self.apply_Rts(TQUtype,self.apply_maps(TQUtype,self.apply_Rs(TQUtype,TEBalms),inplace=False))
+            return
+        else:
+            return self.apply_Rts(TQUtype,self.apply_maps(TQUtype,self.apply_Rs(TQUtype,TEBalms),inplace=False))
+
     def apply_alm(self, field, alm, inplace=True):
         """
         Applies B^t Ni B to T, Q or U lms.
