@@ -1,4 +1,3 @@
-import hashlib
 import os
 import pickle as pk
 
@@ -6,11 +5,11 @@ import numpy as np
 
 import lensit as fs
 from lensit import pbs
+from lensit.misc.misc_utils import npy_hash
 
-verbose = True
+verbose = False
 
 def get_fields(cls):
-    print cls.keys()
     fields = ['p', 't', 'e', 'b', 'o']
     ret = ['p', 't', 'e', 'b', 'o']
     for _f in fields:
@@ -45,7 +44,7 @@ class sim_cmb_unl():
 
         self._cl_hash = {}
         for _k, cl in cls_unl.iteritems():
-            self._cl_hash[_k] = hashlib.sha1(cl[lib_alm.ellmin:lib_alm.ellmax + 1].copy(order = 'C')).hexdigest()
+            self._cl_hash[_k] = npy_hash(cl[lib_alm.ellmin:lib_alm.ellmax + 1])
         self.rmat = rmat
         self.lib_pha = lib_pha
         self.lib_skyalm = self.lib_pha.lib_alm

@@ -1,7 +1,7 @@
 import numpy as np
-import hashlib
 import os
 from lensit import pbs
+from lensit.misc.misc_utils import npy_hash
 import pickle as pk
 from .sims_generic import hash_check
 from . import ffs_phas
@@ -60,11 +60,10 @@ class lib_noisevmap():
 
     def hashdict(self):
         hash = {'len_cmb': self.lencmbs.hashdict()}
-        hash['transf'] = hashlib.sha1(self.cl_transf).hexdigest()
+        hash['transf'] = npy_hash(self.cl_transf)
 
         def noisehash(_m):
-            # FIXME : something better ?
-            return hashlib.sha1(_m if _m.size == 1 else np.diag(_m).copy()).hexdigest()
+            return npy_hash(np.array([_m]) if _m.size == 1 else np.diag(_m))
 
         TQU = np.load(self.TQUcovfname, mmap_mode='r')
         hash['NoiseT'] = noisehash(np.diag(TQU[0, 0]))
@@ -202,11 +201,10 @@ class lib_noisemap():
 
     def hashdict(self):
         hash = {'len_cmb': self.lencmbs.hashdict()}
-        hash['transf'] = hashlib.sha1(self.cl_transf).hexdigest()
+        hash['transf'] = npy_hash(self.cl_transf)
 
         def noisehash(_m):
-            # FIXME : something better ?
-            return hashlib.sha1(_m if _m.size == 1 else np.diag(_m).copy()).hexdigest()
+            return npy_hash(np.array([_m]) if _m.size == 1 else np.diag(_m))
 
         hash['NoiseT'] = noisehash(self._loadTnoise())
         hash['NoiseQ'] = noisehash(self._loadQnoise())
@@ -287,7 +285,7 @@ class lib_noisefree():
 
     def hashdict(self):
         hash = {'len_cmb': self.lencmbs.hashdict()}
-        hash['transf'] = hashlib.sha1(self.cl_transf.copy(order='C')).hexdigest()
+        hash['transf'] = npy_hash(self.cl_transf)
         return hash
 
     def _build_sim_tmap(self, idx):

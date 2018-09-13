@@ -1,12 +1,11 @@
 
 import cPickle as pk
-import hashlib
 import os
 
 import healpy as hp
 import sims_generic
 from lensit import pbs
-
+from lensit.misc.misc_utils import npy_hash
 
 class sims_cmb_maps(object):
     def __init__(self,sims_cmb_len,cl_ttransf,cl_ptransf,nside = 2048,lib_dir = None):
@@ -22,8 +21,7 @@ class sims_cmb_maps(object):
 
     def hashdict(self):
         return {'sims_cmb_len':self.sims_cmb_len.hashdict(),'nside':self.nside,
-                'cl_ttransf':hashlib.sha1(self.cl_ttransf.copy(order='C')).hexdigest(),
-                'cl_ptransf': hashlib.sha1(self.cl_ptransf.copy(order='C')).hexdigest()}
+                'cl_ttransf':npy_hash(self.cl_ttransf), 'cl_ptransf': npy_hash(self.cl_ptransf)}
 
     def get_sim_tmap(self,idx):
         tmap = self.sims_cmb_len.get_sim_tlm(idx)

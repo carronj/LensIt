@@ -1,11 +1,10 @@
-import hashlib
 import numpy as np
 import sqlite3
 import os, io
 import pickle as pk
 import operator
 from lensit import pbs
-
+from lensit.misc.misc_utils import npy_hash
 
 class rng_db():
     """
@@ -326,7 +325,7 @@ class Gauss_sim_generic(sim_lib):
 
     def hashdict(self):
         return {'lib_dir': self.lib_dir, 'shape': self.shape, 'lsides': self.lsides,
-                'has_pixwin': self.has_pixwin(), 'cl': hashlib.sha1(self.cl).hexdigest()}
+                'has_pixwin': self.has_pixwin(), 'cl': npy_hash(self.cl)}
 
     def _build_sim_from_rng_2(self, rng_state):
         """
