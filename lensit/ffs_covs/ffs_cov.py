@@ -1,5 +1,4 @@
 import datetime
-import hashlib
 import os
 import pickle as pk
 import shutil
@@ -12,7 +11,7 @@ import lensit.qcinv
 from lensit.ffs_covs import ffs_specmat as SM
 from lensit.ffs_covs.ffs_specmat import get_unlPmat_ij, get_Pmat, get_datPmat_ij, \
     TQUPmats2TEBcls, get_rootunlPmat_ij, get_unlrotPmat_ij
-from lensit.misc.misc_utils import timer, cls_hash
+from lensit.misc.misc_utils import timer, cls_hash, npy_hash
 from lensit.sims.sims_generic import hash_check
 
 _timed = True
@@ -122,12 +121,12 @@ class ffs_diagcov_alm(object):
     def hashdict(self):
         hash = {'lib_alm': self.lib_datalm.hashdict(), 'lib_skyalm': self.lib_skyalm.hashdict()}
         for key, cl in self.cls_noise.iteritems():
-            hash['cls_noise ' + key] = hashlib.sha1(cl).hexdigest()
+            hash['cls_noise ' + key] = npy_hash(cl)
         for key, cl in self.cls_unl.iteritems():
-            hash['cls_unl ' + key] = hashlib.sha1(cl).hexdigest()
+            hash['cls_unl ' + key] = npy_hash(cl)
         for key, cl in self.cls_len.iteritems():
-            hash['cls_len ' + key] = hashlib.sha1(cl).hexdigest()
-        hash['cl_transf'] = hashlib.sha1(self.cl_transf.copy()).hexdigest()
+            hash['cls_len ' + key] =  npy_hash(cl)
+        hash['cl_transf'] =  npy_hash(self.cl_transf)
         return hash
 
     def _get_Nell(self, field):
@@ -187,7 +186,7 @@ class ffs_diagcov_alm(object):
         if len(clpp_rec) <= lib_qlm.ellmax: clpp_rec = extend_cl(clpp_rec, lib_qlm.ellmax)
         fname = self.lib_dir + '/TEBdelensUncorrBias_wN%s_w%sCMB%s_%s_%s.dat' \
                                % (wNoise, {True: 'len', False: 'unl'}[use_cls_len],
-                                  wCMB, hashlib.sha1(clpp_rec[lib_qlm.ellmin:lib_qlm.ellmax + 1]).hexdigest(),
+                                  wCMB,  npy_hash(clpp_rec[lib_qlm.ellmin:lib_qlm.ellmax + 1]),
                                   lib_qlm.filt_hash())
         if (not os.path.exists(fname) or recache) and self.pbsrank == 0:
             def ik_q(a):
@@ -1786,12 +1785,12 @@ class ffs_lencov_alm(ffs_diagcov_alm):
     def hashdict(self):
         hash = {'lib_alm': self.lib_datalm.hashdict(), 'lib_skyalm': self.lib_skyalm.hashdict()}
         for key, cl in self.cls_noise.iteritems():
-            hash['cls_noise ' + key] = hashlib.sha1(cl).hexdigest()
+            hash['cls_noise ' + key] =  npy_hash(cl)
         for key, cl in self.cls_unl.iteritems():
-            hash['cls_unl ' + key] = hashlib.sha1(cl).hexdigest()
+            hash['cls_unl ' + key] =  npy_hash(cl)
         for key, cl in self.cls_len.iteritems():
-            hash['cls_len ' + key] = hashlib.sha1(cl).hexdigest()
-        hash['cl_transf'] = hashlib.sha1(self.cl_transf.copy()).hexdigest()
+            hash['cls_len ' + key] =  npy_hash(cl)
+        hash['cl_transf'] =  npy_hash(self.cl_transf)
         return hash
 
     def set_ffinv(self, f, finv):
