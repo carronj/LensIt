@@ -1,7 +1,7 @@
 import numpy as np
 import lensit as fs
 from lensit.qcinv import template_removal
-from lensit.misc.misc_utils import cls_hash
+from lensit.misc.misc_utils import cls_hash, npy_hash
 import hashlib
 
 load_map = lambda _map: np.load(_map) if type(_map) is str else _map
@@ -96,8 +96,8 @@ class ffs_ninv_filt(object):
 
     def hashdict(self):
         #FIXME:
-        return {'transf':cls_hash({'transf':self.cl_transf}),'cls':cls_hash(self.cls),
-                'ninv':{k:hashlib.sha1(self.ninv_rad[k]).hexdigest() for k in self.ninv_rad.keys()},
+        return {'transf':cls_hash({'transf':self.cl_transf}, astype=np.float32),'cls':cls_hash(self.cls, astype=np.float32),
+                'ninv':{k:npy_hash(self.ninv_rad[k], astype=np.float32) for k in self.ninv_rad.keys()},
                 'marge_lmin':self.marge_uptolmin,'lib_datalm':self.lib_datalm.hashdict(),'lib_skyalm':self.lib_skyalm.hashdict()}
 
     def Nlev_uKamin(self, field):
