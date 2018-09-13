@@ -30,7 +30,7 @@ def prt_time(dt, label=''):
 
 class ffs_iterator(object):
     def __init__(self, lib_dir, type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
-                 use_Pool_lens=0, use_Pool_inverse=0, chain_descr=None, opfilt=None, soltn0=None, cache_magn=True,
+                 use_Pool_lens=0, use_Pool_inverse=0, chain_descr=None, opfilt=None, soltn0=None, cache_magn=False,
                  no_deglensing=False, NR_method=100, tidy=10, verbose=True, maxcgiter=150, PBSSIZE=None, PBSRANK=None,
                  **kwargs):
         """
@@ -659,7 +659,6 @@ class ffs_iterator_pertMF(ffs_iterator):
             return 0
 
         assert self.is_previous_iter_done(iter, key)
-
         # Identical MF here
         self.cache_qlm(fname_detterm, self.load_qlm(self.get_MFresp(key.lower()) * self.get_Plm(iter - 1, key.lower())))
         self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
