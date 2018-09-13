@@ -4,12 +4,12 @@ import pickle as pk
 import lensit as fs
 from lensit.sims import sims_generic
 from lensit.sims.sims_generic import hash_check
-import hashlib
+from lensit.misc.misc_utils import npy_hash
 from lensit import pbs
 
 try:
     import pyfftw
-except:
+except ImportError:
     print "-- NB : import of pyfftw unsucessful -- "
 
 
@@ -398,11 +398,11 @@ class ffs_alm(object):
 
     def hashdict(self):
         ret = {'ellmat': self.ell_mat.hash_dict(),
-                'filt_func': hashlib.sha1(self.filt_func(np.arange(self.ell_mat.ellmax + 1))).hexdigest()}
+                'filt_func': npy_hash(self.filt_func(np.arange(self.ell_mat.ellmax + 1)))}
         if self.kxfilt_func is not None:
-            ret[ 'kxfilt_func'] =  hashlib.sha1(self.kxfilt_func(np.arange(-self.ell_mat.ellmax,self.ell_mat.ellmax + 1))).hexdigest()
+            ret[ 'kxfilt_func'] =  npy_hash(self.kxfilt_func(np.arange(-self.ell_mat.ellmax,self.ell_mat.ellmax + 1)))
         if self.kyfilt_func is not None:
-            ret[ 'kyfilt_func'] =  hashlib.sha1(self.kyfilt_func(np.arange(-self.ell_mat.ellmax,self.ell_mat.ellmax + 1))).hexdigest()
+            ret[ 'kyfilt_func'] =  npy_hash(self.kyfilt_func(np.arange(-self.ell_mat.ellmax,self.ell_mat.ellmax + 1)))
         return ret
 
     def degrade(self, LD_shape, ellmax=None, ellmin=None):
@@ -420,7 +420,7 @@ class ffs_alm(object):
 
     def filt_hash(self):
         if self.kyfilt_func is None and self.kxfilt_func is None :
-            return hashlib.sha1(self.filt_func(np.arange(self.ellmax + 1))).hexdigest()
+            return  npy_hash(self.filt_func(np.arange(self.ellmax + 1)))
         else:
             assert 0,'implement this'
     def clone(self):
