@@ -201,12 +201,13 @@ class ffs_diagcov_alm(object):
             cls_noise = {}
             for _k, _cl in self.cls_noise.iteritems():
                 cls_noise[_k] = _cl / self.cl_transf[:len(_cl)] ** 2 * (wNoise)
+            cmb_cls = self.cls_len if use_cls_len else self.cls_unl
             for _i in range(3):
                 for _j in range(_i, 3):
                     if wCMB or (_i == _j):
                         _map = np.zeros(self.dat_shape, dtype=float)
                         if wCMB:
-                            Pmat = get_datPmat_ij('TQU', self.lib_datalm, self.cls_len, np.ones_like(self.cl_transf),
+                            Pmat = get_datPmat_ij('TQU', self.lib_datalm, cmb_cls, np.ones_like(self.cl_transf),
                                                   cls_noise, _i, _j)
                         elif wNoise:
                             assert _i == _j, (_i, _j)
