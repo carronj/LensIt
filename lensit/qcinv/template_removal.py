@@ -191,13 +191,13 @@ class template_pol:
 
 
 class template_Bfilt(template_pol):
-    """ Here only B-modes are set to infinite noise, not E """
-    def __init__(self, ellmat,bfilt_func):
+    """ Here only B-modes are set to infinite noise, not E. bfilt_func(ell) returns true if ell is marginalized """
+    def __init__(self, ellmat, bfilt_func):
         try:
             from lensit.ffs_covs.ell_mat import ffs_alm_pyFFTW as ffs_alm
         except ImportError:
             from lensit.ffs_covs.ell_mat import ffs_alm as ffs_alm
-        lib_blm = ffs_alm(ellmat, filt_func=lambda ell: bfilt_func(ell))
+        lib_blm = ffs_alm(ellmat, filt_func=lambda ell: (bfilt_func(ell) & (ell > 0)))
         self.conv = ffs_converter(lib_blm)
         self.nmodes = self.conv.rlms_size
         self.lib_alm = lib_blm
