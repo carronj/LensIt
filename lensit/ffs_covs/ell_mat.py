@@ -712,8 +712,8 @@ class ffs_alm_pyFFTW(ffs_alm):
             pbs.barrier()
         pyfftw.import_wisdom(np.load(wisdom_fname))
         # print "++ ffs_alm_pyFFTW :: loaded widsom ", wisdom_fname
-        self.flags = ('FFTW_WISDOM_ONLY',)  # This will make the code crash if arrays are not properly aligned.
-        # self.flags = ('FFTW_MEASURE',)
+        #self.flags = ('FFTW_WISDOM_ONLY',)  # This will make the code crash if arrays are not properly aligned.
+        self.flags = ('FFTW_MEASURE',)
         self.threads = num_threads
 
     def alm2rfft(self, alm):
