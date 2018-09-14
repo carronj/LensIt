@@ -36,7 +36,7 @@ def FlatIndices(coord, shape):
     """
     ndim = len(shape)
     idc = coord[ndim - 1, :]
-    for j in xrange(1, ndim): idc += np.prod(shape[ndim - j:ndim]) * coord[ndim - 1 - j, :]
+    for j in range(1, ndim): idc += np.prod(shape[ndim - j:ndim]) * coord[ndim - 1 - j, :]
     return idc
 
 
@@ -64,7 +64,7 @@ class ffs_displacement(object):
     and finding the inverse mapping.
     """
 
-    def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=True, spline_order=3, rule_for_derivative='4pts',
+    def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=False, spline_order=3, rule_for_derivative='4pts',
                  NR_iter=3, lib_dir=None, cache_magn=False):
         """
          dx and dy path to .npy array, x and y displacements. (displaced map(x) = map(x + d(x))
