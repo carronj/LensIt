@@ -19,7 +19,7 @@ To use the GPU implementation of some of the routines, you will need pyCUDA. (ht
 
 An ipython notebook 'demo_basics.ipynb' covers the simple aspects of building simulation librairies. 
 
-(**New** Sept. 2018)  The notebook demo_lensit shows an example of iterative lensing map reconstruction for a configuration roughly in line with CMB Stage IV specifications.
+(**New** Sept. 2018)  The notebook 'demo_lensit.ipynb' shows an example of iterative lensing map reconstruction for a configuration roughly in line with CMB Stage IV specifications.
 
 
 Other example and tests scripts might follow, or you may just write to me.
