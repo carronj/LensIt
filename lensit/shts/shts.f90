@@ -7,6 +7,23 @@
 !
 ! NOTE: THESE ROUTINES ARE ONLY WRITTEN FOR SPIN s>=0
 
+subroutine HELLOfunc
+  INTEGER :: NTHREADS, TID, OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
+
+  ! Fork a team of threads giving them their own copies of variables
+  !$omp PARALLEL PRIVATE(NTHREADS, TID)
+
+  ! Obtain thread number
+  TID = OMP_GET_THREAD_NUM()
+  write(*,*) 'Hello World from thread = ', TID
+  ! Only master thread does this
+  IF (TID .EQ. 0) THEN
+    NTHREADS = OMP_GET_NUM_THREADS()
+    write(*,*) 'Number of threads = ', NTHREADS
+  END IF
+  ! All threads join master thread and disband
+  !$omp END PARALLEL
+end
 
 subroutine glm2vtm(ntht, lmax, s, tht, glm, vtm) 
 ! This assume ordering (healpy) ordering g[m * (2 lmax + 1 -m)/2 + l] = glm
@@ -472,7 +489,7 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
   ! using for spin 0 vt-m = vtm^*
   ! Only 'upper half' of vtm array is used.
 
-  integer ntht, lmax
+  integer ntht, lmax, NTHREADS, TID, OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   double precision tht(ntht)
   double complex, intent(in)  :: glm(0:((lmax+1)*(lmax+2)/2-1))
   double complex, intent(out) :: vtm(ntht,0:lmax) 
@@ -484,6 +501,18 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
   double precision tfac, sfac, llm_arr_p(ntht), llm_arr_m(ntht)
   double precision llm_arr_p_lm0(ntht), llm_arr_p_lm1(ntht)
   double precision llm_arr_x_lmt(ntht), rl(0:lmax)
+
+  !## !$OMP PARALLEL PRIVATE(NTHREADS, TID)
+  !## TID = OMP_GET_THREAD_NUM()
+  !## write(*,*) 'Hello World from thread = ', TID
+
+  ! Only master thread does this
+  !## IF (TID .EQ. 0) THEN
+  !##   NTHREADS = OMP_GET_NUM_THREADS()
+  !##   write(*,*) 'Number of threads = ', NTHREADS
+  !## END IF
+  !## !$OMP END PARALLEL
+
 
   sfac = 2.d0**40
   costht(:)    = dcos(tht(:))
@@ -526,6 +555,8 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
 !$omp firstprivate(l, m, lmax, spow_i, llm_arr_p) schedule(dynamic, 1) &
 !$omp shared(costht, sintht, sfac, s, zl, ntht, tht, glm, vtm)
   ! for m > 0 we first build sLambda_mm:
+  ! Fork a team of threads giving them their own copies of variables
+
   do tm=1,lmax
      do m=m+1,tm
         tfac = +dsqrt( 1.d0 * m * (2.d0*m+1.d0)/(2.d0*(m+s)*(m-s)) )
@@ -949,7 +980,7 @@ subroutine vtm2alm_syms0(ntht, lmax, tht, vtm,alm)
 !$omp private(j, tl, tm, scal,parity, spow, tfac, llm_arr_p_lm0) &
 !$omp private(llm_arr_p_lm1, llm_arr_x_lmt, rl) &
 !$omp firstprivate(l, m, lmax, spow_i, llm_arr_p) schedule(dynamic, 1) &
-!$omp shared(costht, sintht, sfac, zl, ntht, tht, vlm, vtm)
+!$omp shared(costht, sintht, sfac, zl, ntht, tht, vlm, vtm, alm)
   do tm=1,lmax ! m loop
      do m=m+1,tm
         tfac = +sqrt( 1.d0 * m * (2.d0*m+1.d0)/(2.d0*(m)*(m)) )

@@ -9,7 +9,7 @@ import distutils
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration
     config = Configuration('',parent_package,top_path)
-    config.add_extension('fsht', ['shts.f95'],
+    config.add_extension('fsht', ['shts.f90'],
                              libraries=['gomp'], f2py_options=[],
                              extra_compile_args=['-fopenmp'], extra_link_args=[],)
 

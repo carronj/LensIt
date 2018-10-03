@@ -16,6 +16,8 @@ except ImportError, exc:
     sys.stderr.write("IMPORT ERROR: " + __file__ + " ({})".format(exc)
     + ". Try running 'python setup.py install' or 'python setup.py build_ext --inplace' from the shts directory.\n")
 
+#FIXME: It looks like the setup.py build does not work properly with openMP.
+#FIXME: Instead this seems to work: f2py -c -m fsht shts.f90 --f90flags="-fopenmp" -lgomp
 PYFFTWFLAGS = []
 
 def add_PYFFTWFLAGS(flag):
@@ -38,7 +40,7 @@ def vtm2map(spin, vtm, Nphi, pfftwthreads=4, bicubic_prefilt=False, phiflip=[]):
     lmax = (vtm.shape[1] - 1) / 2
     Nt = vtm.shape[0]
     assert (Nt, 2 * lmax + 1) == vtm.shape, ((Nt, 2 * lmax + 1), vtm.shape)
-    assert Nphi % 2 == 0,Nphi
+    assert Nphi % 2 == 0, Nphi
 
     if bicubic_prefilt:
         a = pyfftw.empty_aligned(Nt, dtype=complex)
