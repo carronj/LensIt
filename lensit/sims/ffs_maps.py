@@ -8,7 +8,7 @@ from . import ffs_phas
 from .. import misc
 
 
-class lib_noisevmap():
+class lib_noisevmap:
     def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, TQUcovfname, pix_pha=None, cache_sims=True):
         """
         Library for sims with pixel to pixel independent noise with specified noise variance maps.
@@ -20,7 +20,7 @@ class lib_noisevmap():
         :param pix_pha: random for phases for the noise maps
         :param cache_sims: does cache ims on disk if set
         """
-        assert np.load(TQUcovfname, mmap_mode='r').shape == (3, 3, lib_datalm.shape[0], lib_datalm.shape[1])
+        assert np.load(TQUcovfname).shape == (3, 3, lib_datalm.shape[0], lib_datalm.shape[1])
         self.lencmbs = lib_lencmb
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_lencmb.lib_skyalm
@@ -65,7 +65,7 @@ class lib_noisevmap():
         def noisehash(_m):
             return npy_hash(np.array([_m]) if _m.size == 1 else np.diag(_m))
 
-        TQU = np.load(self.TQUcovfname, mmap_mode='r')
+        TQU = np.load(self.TQUcovfname)
         hash['NoiseT'] = noisehash(np.diag(TQU[0, 0]))
         hash['NoiseQ'] = noisehash(np.diag(TQU[1, 1]))
         hash['NoiseU'] = noisehash(np.diag(TQU[2, 2]))
@@ -130,7 +130,7 @@ class lib_noisevmap():
         else:
             return self._build_sim_qumap(idx)
 
-class lib_noisemap():
+class lib_noisemap:
     def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, nTpix, nQpix, nUpix, pix_pha=None, cache_sims=True):
         """
         Library for sims with pixel to pixel independent noise with specified noise variance maps.
@@ -248,7 +248,7 @@ class lib_noisemap():
                 np.save(self.lib_dir + '/sim_tmap_%05d.npy' % idx, self._build_sim_tmap(idx))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx, mmap_mode='r')
+            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx)
         else:
             return self._build_sim_tmap(idx)
 
@@ -258,11 +258,11 @@ class lib_noisemap():
                 np.save(self.lib_dir + '/sim_qumap_%05d.npy' % idx, np.array(self._build_sim_qumap(idx)))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx, mmap_mode='r')
+            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx)
         else:
             return self._build_sim_qumap(idx)
 
-class lib_noisefree():
+class lib_noisefree:
     def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, cache_sims=False):
 
         self.lencmbs = lib_lencmb
@@ -321,7 +321,7 @@ class lib_noisefree():
         else:
             return self._build_sim_qumap(idx)
 
-class library_sum():
+class library_sum:
     def __init__(self,sims_list,weights = None):
         weights = np.ones(len(sims_list),dtype = float) if weights is None else weights
         assert len(weights) == len(sims_list),(len(weights),len(sims_list))
@@ -330,6 +330,11 @@ class library_sum():
         self.nlib = len(sims_list)
         self.sims_list = sims_list
         self.weights = weights
+
+    def hashdict(self):
+        ret = {'simlib %s'%i : sim.hashdict() for i, sim in enumerate(self.sims_list)}
+        ret['weights'] = self.weights
+        return ret
 
     def get_sim_tmap(self,idx):
         ret = self.weights[0] * self.sims_list[0].get_sim_tmap(idx)
