@@ -1,7 +1,8 @@
-import sys, os, re, copy
+from __future__ import print_function
+
+import sys, re, copy
 import numpy as np
 import time
-import pickle as pk
 import cd_solve, cd_monitors
 
 
@@ -50,7 +51,7 @@ class multigrid_stage(object):
         self.pre_ops = []
 
 
-class multigrid_chain():
+class multigrid_chain:
     def __init__(self, opfilt, _type, chain_descr, cov, lib_to_split='skydat',
                  debug_log_prefix=None, plogdepth=0, no_deglensing=False):
         self.debug_log_prefix = debug_log_prefix
@@ -84,7 +85,7 @@ class multigrid_chain():
         logger = (lambda iter, eps, stage=self.bstage, **kwargs:
                   self.log(stage, iter, eps, **kwargs))
         if hasattr(self.opfilt, 'crit_op'):
-            print "**** multigrid : setting up criterium operation"
+            print("**** multigrid : setting up criterium operation")
             crit_op = self.opfilt.crit_op(self.cov)
         else:
             crit_op = self.opfilt.dot_op(self.cov.lib_skyalm)
@@ -121,7 +122,8 @@ class multigrid_chain():
             log.write(log_str)
             log.close()
 
-            if (stage.depth == 0):
+            if False:
+            #if (stage.depth == 0):
                 f_handle = file(self.debug_log_prefix + 'stage_soltn_' + str(stage.depth) + '.dat', 'a')
                 np.savetxt(f_handle, [[v for v in kwargs['soltn']]])
                 f_handle.close()
@@ -130,7 +132,7 @@ class multigrid_chain():
                 np.savetxt(f_handle, [[v for v in kwargs['resid']]])
                 f_handle.close()
 
-            log_str = '%05d %05d %10.6e %05d %s\n' % (self.iter_tot, int(elapsed), eps, iter, str(elapsed))
+            log_str = '%05d %05d %10.6e %05d\n' % (self.iter_tot, int(elapsed), eps, iter)
             log = open(self.debug_log_prefix + 'stage_' + str(stage.depth) + '.dat', 'a')
             log.write(log_str)
             log.close()
@@ -153,7 +155,7 @@ class multigrid_chain():
 def parse_pre_op_descr(pre_op_descr, **kwargs):
     if re.match("split\((.*),\s*(.*),\s*(.*)\)\Z", pre_op_descr):
         (low_descr, lsplit, hgh_descr) = re.match("split\((.*),\s*(.*),\s*(.*)\)\Z", pre_op_descr).groups()
-        print 'creating split preconditioner ', (low_descr, lsplit, hgh_descr)
+        print('creating split preconditioner ', (low_descr, lsplit, hgh_descr))
 
         lsplit = int(lsplit)
         lmax = kwargs['lmax']
@@ -200,21 +202,18 @@ def parse_pre_op_descr(pre_op_descr, **kwargs):
         no_lensing = kwargs['no_lensing']
         _shape = (kwargs['nside'], kwargs['nside'])
 
-        print 'creating dense preconditioner. (nside = %d, lmax = %d, cache = %s)' \
-              '' % (kwargs['nside'], lmax, dense_cache_fname)
+        print('creating dense preconditioner. (nside = %d, lmax = %d, cache = %s)' % (kwargs['nside'], lmax, dense_cache_fname))
         cov = kwargs['cov'].degrade(_shape, no_lensing=no_lensing, ellmin=lmin, ellmax=lmax,
                                     libtodegrade=kwargs['libtosplit'])
-        print dense_cache_fname, ' DENSE CACHE FNAME'
+        print('DENSE CACHE FNAME' + dense_cache_fname)
         return kwargs['opfilt'].pre_op_dense(cov, no_lensing, cache_fname=dense_cache_fname)
 
     elif re.match("stage\(.*\)\Z", pre_op_descr):
         (stage_id,) = re.match("stage\((.*)\)\Z", pre_op_descr).groups()
-        print 'creating multigrid preconditioner: stage_id = %s, ell range %s %s' % (
-            stage_id, kwargs['lmin'], kwargs['lmax'])
+        print('creating multigrid preconditioner: stage_id = %s, ell range %s %s' % (stage_id, kwargs['lmin'], kwargs['lmax']))
 
         stage = kwargs['stages'][int(stage_id)]
-        logger = (lambda iter, eps, stage=stage, chain=kwargs['chain'], **kwargs:
-                  chain.log(stage, iter, eps, **kwargs))
+        logger = (lambda iter, eps, stage=stage, chain=kwargs['chain'], **kwargs: chain.log(stage, iter, eps, **kwargs))
         lmax = kwargs['lmax']
         lmin = kwargs['lmin']
         no_lensing = kwargs['no_lensing']
@@ -229,13 +228,13 @@ def parse_pre_op_descr(pre_op_descr, **kwargs):
     # opfilt, lmax, nside, cov, no_lensing, _type, pre_ops,
     # logger, tr, cache, iter_max, eps_min
     else:
-        print 'pre_op_descr = ', pre_op_descr, ' is unrecognized!'
-        assert (0)
+        print('pre_op_descr = ', pre_op_descr, ' is unrecognized!')
+        assert 0
 
 
 # ===
 # FIXME : a better flat sky scheme might be good here as well...
-class pre_op_split():
+class pre_op_split:
     def __init__(self, cov, pre_op_low, pre_op_hgh):
         self.cov = cov  # Base class for lib_alm that we will split
         self.pre_op_low = pre_op_low
@@ -244,7 +243,7 @@ class pre_op_split():
         self.lmin_high = self.pre_op_hgh.cov.lib_datalm.ellmin
 
         # assert lmax_low  < lmin_high,(lmax_low,lmin_high) # Not necessary
-        print "    ++ setting up split cov", self.cov.lib_datalm.ellmin, self.cov.lib_datalm.ellmax
+        print("    ++ setting up split cov", self.cov.lib_datalm.ellmin, self.cov.lib_datalm.ellmax)
         self.iter = 0
 
     def __call__(self, alms):
@@ -269,12 +268,12 @@ class pre_op_split():
             return ret
         else:
             idc = np.where(self.cov.lib_datalm.reduced_ellmat() <= self.pre_op_low.cov.lib_datalm.ellmax)
-            for _i in xrange(ret.shape[0]):
+            for _i in range(ret.shape[0]):
                 ret[_i, idc] = self.cov.lib_datalm.udgrade(self.pre_op_low.cov.lib_datalm, alms_low[_i])[idc]
             return ret
 
 
-class pre_op_split_sky():
+class pre_op_split_sky:
     def __init__(self, cov, pre_op_low, pre_op_hgh):
         self.cov = cov  # Base class for lib_alm that we will split
         self.pre_op_low = pre_op_low
@@ -283,7 +282,7 @@ class pre_op_split_sky():
         self.lmin_high = self.pre_op_hgh.cov.lib_skyalm.ellmin
 
         # assert lmax_low  < lmin_high,(lmax_low,lmin_high) # Not necessary
-        print "    ++ setting up split cov", self.cov.lib_skyalm.ellmin, self.cov.lib_skyalm.ellmax
+        print("    ++ setting up split cov", self.cov.lib_skyalm.ellmin, self.cov.lib_skyalm.ellmax)
         self.iter = 0
 
     def __call__(self, alms):
@@ -308,12 +307,12 @@ class pre_op_split_sky():
             return ret
         else:
             idc = np.where(self.cov.lib_skyalm.reduced_ellmat() <= self.pre_op_low.cov.lib_skyalm.ellmax)
-            for _i in xrange(ret.shape[0]):
+            for _i in range(ret.shape[0]):
                 ret[_i, idc] = self.cov.lib_skyalm.udgrade(self.pre_op_low.cov.lib_skyalm, alms_low[_i])[idc]
             return ret
 
 
-class pre_op_multigrid():
+class pre_op_multigrid:
     def __init__(self, opfilt, nside, cov, no_lensing, pre_ops,
                  logger, tr, cache, iter_max, eps_min):
         self.opfilt = opfilt
@@ -335,10 +334,10 @@ class pre_op_multigrid():
         return self.calc(alms)
 
     def calc(self, alms):
-        monitor = cd_monitors.monitor_basic(self.opfilt.dot_op(), iter_max=self.iter_max, eps_min=self.eps_min,
+        monitor = cd_monitors.monitor_basic(self.opfilt.dot_op(self.cov.lib_skyalm), iter_max=self.iter_max, eps_min=self.eps_min,
                                             logger=self.logger)
         soltn = alms * 0.0
         cd_solve.cd_solve(soltn, alms.copy(),
-                          self.fwd_op, self.pre_ops, self.opfilt.dot_op(), monitor, tr=self.tr, cache=self.cache)
+                          self.fwd_op, self.pre_ops, self.opfilt.dot_op(self.cov.lib_skyalm), monitor, tr=self.tr, cache=self.cache)
 
         return soltn
