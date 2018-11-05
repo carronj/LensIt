@@ -4,10 +4,12 @@ Contains some pure convenience functions for quick startup.
 import numpy as np
 import healpy as hp
 import os,sys
-try:
-    import gpu
-except:
-    print "NB : import of GPU module unsuccessful"
+import shts
+
+#try:
+#    import gpu
+#except:
+#    print "NB : import of GPU module unsuccessful"
 
 import ffs_covs
 import ffs_iterators
@@ -18,7 +20,6 @@ import misc
 import pbs
 import qcinv
 import sims
-import shts
 import pseudocls
 
 LENSITDIR = os.environ.get('LENSIT', './')
@@ -63,6 +64,11 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 3000
+    elif exp == 'SOmark':
+        sN_uKamin = 10.
+        Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
     elif exp == 'PB85':
         sN_uKamin = 8.5 /np.sqrt(2.)
         Beam_FWHM_amin = 3.5
@@ -73,6 +79,11 @@ def get_config(exp):
         Beam_FWHM_amin = 3.5
         ellmin = 10
         ellmax = 3000
+    elif exp == 'fcy_mark':
+        sN_uKamin = 5.
+        Beam_FWHM_amin = 1.4
+        ellmin=10
+        ellmax=3000
     else:
         sN_uKamin = 0
         Beam_FWHM_amin = 0
