@@ -489,7 +489,7 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
   ! using for spin 0 vt-m = vtm^*
   ! Only 'upper half' of vtm array is used.
 
-  integer ntht, lmax, NTHREADS, TID, OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
+  integer ntht, lmax
   double precision tht(ntht)
   double complex, intent(in)  :: glm(0:((lmax+1)*(lmax+2)/2-1))
   double complex, intent(out) :: vtm(ntht,0:lmax) 
@@ -501,18 +501,6 @@ subroutine glm2vtm_s0(ntht, lmax, tht, glm, vtm)
   double precision tfac, sfac, llm_arr_p(ntht), llm_arr_m(ntht)
   double precision llm_arr_p_lm0(ntht), llm_arr_p_lm1(ntht)
   double precision llm_arr_x_lmt(ntht), rl(0:lmax)
-
-  !## !$OMP PARALLEL PRIVATE(NTHREADS, TID)
-  !## TID = OMP_GET_THREAD_NUM()
-  !## write(*,*) 'Hello World from thread = ', TID
-
-  ! Only master thread does this
-  !## IF (TID .EQ. 0) THEN
-  !##   NTHREADS = OMP_GET_NUM_THREADS()
-  !##   write(*,*) 'Number of threads = ', NTHREADS
-  !## END IF
-  !## !$OMP END PARALLEL
-
 
   sfac = 2.d0**40
   costht(:)    = dcos(tht(:))
