@@ -76,14 +76,15 @@ class multigrid_chain:
         # TODO   off, or using a crude lensing method.
         self.bstage = stages[0]  # these are the pre_ops called in cd_solve
 
-    def solve(self, soltn, alms, finiop=None, d0=None, no_calc_prep=False):
+    def solve(self, soltn, alms, finiop=None, d0=None, no_calc_prep=False, logger=None):
         self.watch = stopwatch()
 
         self.iter_tot = 0
         self.prev_eps = None
 
-        logger = (lambda iter, eps, stage=self.bstage, **kwargs:
-                  self.log(stage, iter, eps, **kwargs))
+        if logger is None:
+            logger = (lambda it, eps, stage=self.bstage, **kwargs: self.log(stage, it, eps, **kwargs))
+
         if hasattr(self.opfilt, 'crit_op'):
             print("**** multigrid : setting up criterium operation")
             crit_op = self.opfilt.crit_op(self.cov)
@@ -117,7 +118,7 @@ class multigrid_chain:
             stage.nside, stage.lmax, str(elapsed), iter, eps) + '\n'
         sys.stdout.write(log_str)
 
-        if (self.debug_log_prefix is not None):
+        if self.debug_log_prefix is not None:
             log = open(self.debug_log_prefix + 'stage_all.dat', 'a')
             log.write(log_str)
             log.close()
@@ -148,6 +149,57 @@ class multigrid_chain:
             self.prev_stage = stage
             self.prev_eps = eps
             self.prev_elapsed = elapsed
+
+    def log_cache(self, stage, iter, eps, soltn=None, cache_cond=lambda it:it%5==0, **kwargs):
+        #Same as above but caches soltn every 5 iterations
+        self.iter_tot += 1
+        elapsed = self.watch.elapsed()
+
+        if stage.depth > self.plogdepth:
+            # pass #Uncomment this to print the details of the multigrid convergence
+            return
+
+        log_str = ('   ') * stage.depth + '(%4d, %04d) [%s] (%d, %.10f)' % (
+            stage.nside, stage.lmax, str(elapsed), iter, eps) + '\n'
+        sys.stdout.write(log_str)
+
+        if self.debug_log_prefix is not None:
+            log = open(self.debug_log_prefix + 'stage_all.dat', 'a')
+            log.write(log_str)
+            log.close()
+
+            if False:
+            #if (stage.depth == 0):
+                f_handle = file(self.debug_log_prefix + 'stage_soltn_' + str(stage.depth) + '.dat', 'a')
+                np.savetxt(f_handle, [[v for v in kwargs['soltn']]])
+                f_handle.close()
+
+                f_handle = file(self.debug_log_prefix + 'stage_resid_' + str(stage.depth) + '.dat', 'a')
+                np.savetxt(f_handle, [[v for v in kwargs['resid']]])
+                f_handle.close()
+
+            log_str = '%05d %05d %10.6e %05d\n' % (self.iter_tot, int(elapsed), eps, iter)
+            log = open(self.debug_log_prefix + 'stage_' + str(stage.depth) + '.dat', 'a')
+            log.write(log_str)
+            log.close()
+            if cache_cond(iter)and soltn is not None:
+                fname = self.debug_log_prefix + '_soltn_it%05d.npy'%iter
+                np.save(fname, soltn)
+                print("Cached "+ fname)
+
+
+            if ((self.prev_eps is not None) and (self.prev_stage.depth > stage.depth)):
+                log_final_str = '%05d %05d %10.6e %s\n' % (
+                    self.iter_tot - 1, int(self.prev_elapsed), self.prev_eps, str(self.prev_elapsed))
+
+                log = open(self.debug_log_prefix + 'stage_final_' + str(self.prev_stage.depth) + '.dat', 'a')
+                log.write(log_final_str)
+                log.close()
+
+            self.prev_stage = stage
+            self.prev_eps = eps
+            self.prev_elapsed = elapsed
+
 
 
 # ===
