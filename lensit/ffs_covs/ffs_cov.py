@@ -691,7 +691,7 @@ class ffs_diagcov_alm(object):
 
         return np.array([2 * dphi, 2 * dOm])  # Factor 2 since gradient w.r.t. real and imag. parts.
 
-    def get_qlm_resprlm(self, _type, lib_qlm,
+    def  get_qlm_resprlm(self, _type, lib_qlm,
                         use_cls_len=True, cls_obs=None, cls_obs2=None, cls_filt=None, cls_weights=None):
         """
         Full-fledged alm response matrix. qlm * Rpp_lm is the normalized qest.
@@ -846,6 +846,114 @@ class ffs_diagcov_alm(object):
         assert _type in _types, (_type, _types)
         Rpp, ROO = self.get_qlm_resprlm(_type, lib_qlm, use_cls_len=use_cls_len, cls_obs=cls_obs)
         return (lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO)))
+
+    def get_response(self, _type, lib_qlm, use_cls_len=True, cls_weights=None, cls_filt=None, cls_cmb=None):
+        """
+        Lensing quadratic estimator gradient and curl response functions.
+
+            Args:
+                cls_filt: CMB spectra used in the filtering procedure ( i.e. those entering Cov^{-1}).
+                          Defaults to self.cls_len if use_cls_len else self.cls_unl
+                cls_weights: CMB spectra used in the QE weights
+                         (those entering the numerator in the usual Okamoto & Hu formulae e.g.)
+                          Defaults to self.cls_len if use_cls_len else self.cls_unl
+                cls_cmb: CMB spectra of the sky
+                         (~contractions of X,b with X ~ il_b Cl^cmb when writing pertub. X ~ X + alpha_b X,b)
+
+
+        -(xi^cmb,b K )_{ab}(z) (xi^w,a K)^{ba}(z)
+         - (K)(z) (xi^w,a K xi^cmb,b)(z)
+         
+        """
+        assert _type in _types, (_type, _types)
+        t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
+
+        _cls_weights = cls_weights or (self.cls_len if use_cls_len else self.cls_unl)
+        _cls_filt = cls_filt or (self.cls_len if use_cls_len else self.cls_unl)
+        _cls_cmb = cls_cmb or (self.cls_len if use_cls_len else self.cls_unl)
+        if not cls_weights is None: t.checkpoint('Using custom Cls weights')
+        if not cls_filt is None: t.checkpoint('Using custom Cls filt')
+        if not cls_cmb is None: t.checkpoint('Using custom Cls cmb')
+
+        Pinv_obs1 = get_Pmat(_type, self.lib_datalm, _cls_filt,
+                             cls_noise=self.cls_noise, cl_transf=self.cl_transf, inverse=True)
+        Pinv_obs2 = Pinv_obs1
+
+        # xi K
+        def get_xiK(i, j, id, cls):
+            assert id in [1, 2]
+            _Pinv_obs = Pinv_obs1 if id == 1 else Pinv_obs2
+            ret = get_unlPmat_ij(_type, self.lib_datalm, cls, i, 0) * _Pinv_obs[:, 0, j]
+            for _k in range(1, len(_type)):
+                ret += get_unlPmat_ij(_type, self.lib_datalm, cls, i, _k) * _Pinv_obs[:, _k, j]
+            return self.lib_datalm.almxfl(ret, self.cl_transf ** 2)
+        # xi^w K xi^cmb
+        def get_xiwKxicmb(i, j, id):
+            assert id in [1, 2]
+            ret = get_xiK(i, 0, id, _cls_weights) * get_unlPmat_ij(_type, self.lib_datalm, _cls_cmb, 0, j)
+            for _k in range(1, len(_type)):
+                ret += get_xiK(i, _k, id, _cls_weights) * get_unlPmat_ij(_type, self.lib_datalm, _cls_cmb, _k, j)
+            return ret
+
+        ikx = self.lib_datalm.get_ikx
+        iky = self.lib_datalm.get_iky
+        t.checkpoint("  inverse %s Pmats" % ({True: 'len', False: 'unl'}[use_cls_len]))
+        F = np.zeros(self.lib_datalm.ell_mat.shape, dtype=float)
+
+        # Calculation of (xi^cmb,b K) (xi^w,a K)
+        for i in range(len(_type)):
+            for j in range(i, len(_type)):
+                # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.
+                F += (2 - (i == j)) * self.lib_datalm.alm2map(ikx() * get_xiK(i, j, 1, _cls_cmb)) \
+                     * self.lib_datalm.alm2map(ikx() * get_xiK(j, i, 2, _cls_weights))
+        Fxx = lib_qlm.map2alm(F)
+        F *= 0
+        t.checkpoint("  Fxx , part 1")
+
+        for i in range(len(_type)):
+            for j in range(i, len(_type)):
+                # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.
+                F += (2 - (i == j)) * self.lib_datalm.alm2map(iky() * get_xiK(i, j, 1, _cls_cmb)) \
+                     * self.lib_datalm.alm2map(iky() * get_xiK(j, i, 2, _cls_weights))
+        Fyy = lib_qlm.map2alm(F)
+        F *= 0
+        t.checkpoint("  Fyy , part 1")
+
+        for i in range(len(_type)):
+            for j in range(len(_type)):
+                # ! BPBCovi Matrix not symmetric for TQU or non identical noises.
+                F += self.lib_datalm.alm2map(ikx() * get_xiK(i, j, 1, _cls_cmb)) \
+                     * self.lib_datalm.alm2map(iky() * get_xiK(j, i, 2, _cls_weights))
+        Fxy = lib_qlm.map2alm(F)
+        F *= 0
+        t.checkpoint("  Fxy , part 1")
+
+        # Adding to that (K)(z) (xi^w,a K xi^cmb,b)(z)
+        tmap = lambda i, j: self.lib_datalm.alm2map(
+            self.lib_datalm.almxfl(Pinv_obs1[:, i, j], (2 - (j == i)) * self.cl_transf ** 2))
+
+        for i in range(len(_type)):
+            for j in range(i, len(_type)):
+                F += tmap(i, j) * self.lib_datalm.alm2map(ikx() ** 2 * get_xiwKxicmb(i, j, 2))
+        Fxx += lib_qlm.map2alm(F)
+        F *= 0
+        t.checkpoint("  Fxx , part 2")
+
+        for i in range(len(_type)):
+            for j in range(i, len(_type)):
+                F += tmap(i, j) * self.lib_datalm.alm2map(iky() ** 2 * get_xiwKxicmb(i, j, 2))
+        Fyy += lib_qlm.map2alm(F)
+        F *= 0
+        t.checkpoint("  Fyy , part 2")
+
+        for i in range(len(_type)):
+            for j in range(i, len(_type)):
+                F += tmap(i, j) * self.lib_datalm.alm2map(iky() * ikx() * get_xiwKxicmb(i, j, 2))
+        Fxy += lib_qlm.map2alm(F)
+        t.checkpoint("  Fxy , part 2")
+
+        facunits = -1. / np.sqrt(np.prod(self.lsides))
+        return np.array([lib_qlm.bin_realpart_inell(r) for r in xylms_to_phiOmegalm(lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)])
 
     def get_qlm_curvature(self, _type, lib_qlm,
                           use_cls_len=True, cls_weights=None, cls_filt=None, cls_obs=None, cls_obs2=None):
