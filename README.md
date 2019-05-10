@@ -21,6 +21,8 @@ An ipython notebook 'demo_basics.ipynb' covers the simple aspects of building si
 
 (**New** Sept. 2018)  The notebook 'demo_lensit.ipynb' shows an example of iterative lensing map reconstruction for a configuration roughly in line with CMB Stage IV specifications.
 
+(**New** May 2019)  The notebook 'demo_lenscurv.ipynb' shows how to generate a lensed CMB temperature map.
+
 
 Other example and tests scripts might follow, or you may just write to me.
 
