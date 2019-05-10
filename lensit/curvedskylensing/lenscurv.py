@@ -1,90 +1,17 @@
 """
+parameters:
+
+lmax:  desired lmax of the lensed field.
+dlmax:  lmax of the unlensed fields is lmax + dlmax.  (some buffer is required for accurate lensing at lmax)
+nside_lens: The lensed tlm's are computed with healpy map2alm from a lensed map at resolution 'nside_lens'
+
+facres: The lensed map of resolution is computed from a default high-res grid with about 0.7 amin-resolution (311'427'072 grid points)
+        Setting facres to -1 cuts this by 2, -2 by four etc.
+
+lmax = 4096; lmax=1024; nside_lens=4096, facres=0 gives an lensed TT spectrum 1% accurate down to 4096.
+
 Accuracy is roughly homogeneous except a ring of ~8 pixels around the pole with ~10 times bigger errors (still small though, 0.2%)
 It does not matter, but might try fix that at some point.
-
-ist_lensalm stats  :
-
-lens_alm timings (seconds):
-    tms  0
-    def  107.468
-    ecp  72.3171
-    itp  30.7173
-    tot  212.794
-
-lens_vlm timings (seconds): pol
-    vms  0
-    def  100.093
-    ecp  256.494
-    itp  26.5123
-    tot  389.109
-
-This python script stats :
-STATS for lmax tlm 2048 lmax dlm 3072
-         vtm2filtmap: 13.76
-              interp: 2.22
-    dx,dy band split: 12.29
-    dx,dy (full sky): 43.66
-                 vtm: 24.42
-                 tot: 96 sec.
-excl. defl. angle calc.: 40 sec.
-      Tot. int. pix.: 314572800 = 17736.2^2
-
-# ==== Same using cos(t) symmetry (same accuracy) :
-STATS for lmax tlm 2048 lmax dlm 3072
-         vtm2filtmap: 12.69
-              interp: 3.42
-    dx,dy band split: 10.99
-    dx,dy (full sky): 41.01
-                 vtm: 16.19
-                 tot: 84 sec.
-excl. defl. angle calc.: 32 sec.
-      Tot. int. pix.: 311427072 = 17647.3^2
-#===== Same in pol :
-STATS for lmax glm 2048 lmax dlm 3072
-              interp: 7.14
-                 vtm: 39.50
-         vtm2filtmap: 11.85
-    dx,dy (full sky): 42.19
-           pol. rot.: 13.34
-    dx,dy band split: 11.06
-                 tot: 125 sec.
-excl. defl. angle calc.: 72 sec.
-      Tot. int. pix.: 311427072 = 17647.3^2
-
-MacBook-Pro-de-Julien:lenspix jcarron$ time mpirun -np 8 ./lensmap params.ini ../mllens/temp/test_curved_lensing/testtlm_2048.fits ../mllens/temp/test_curved_lensing/testplm_3072.fits ../mllens/temp/test_curved_lensing/test_lens_map.fits
- (interp 2.0) --> 18432.0 pix around the eq. (crashes for higher interp.)
-
- ALM2GRADIENTMAP: Sending to farm
- ALM2GRADIENTMAP Time:    39.573000907897949
- SCALALM2LENSEDMAPINTERPCYL: Sending to farm
- SCALALM2LENSEDMAPINTERPCYL Time:    68.965070009231567
-real	2m0.315s
-
-
-acc = lambda m1,m2 : (np.mean(np.abs(m1-m2))/np.std(m2),np.max(np.abs(m1-m2))/np.std(m2))
-
-acc(lenspixmap,lenmap)
-Out[71]: (8.0307321881247895e-05, 0.0021220560960932967)
-
-acc(istlenmap,lenmap)
-Out[72]: (3.8204375224999072e-06, 2.9529778885108624)
-
-acc(istlenmap,lenspixmap)
-Out[73]: (8.107202038382077e-05, 2.9528609003802373)
-
-
-# Stats for 4096 + 1024 :
-     [00:02:33]  (total [00:04:28]) Total exec. time  lenscurv 
-STATS for lmax tlm 5120 lmax dlm 5120
-              interp: 3.72
-                 vtm: 114.25
-         vtm2filtmap: 22.27
-    dx,dy (full sky): 115.70
-           pol. rot.: 0.00
-    dx,dy band split: 11.73
-                 tot: 268 sec.
-excl. defl. angle calc.: 140 sec.
-      Tot. int. pix.: 311427072 = 17647.3^2
 """
 
 from lensit import shts
@@ -286,7 +213,7 @@ def gclm2lensmap_symband_timed(spin, glm, th1, th2, Nt, (tnewN, phinewN), (tnewS
     vtm = shts.vlm2vtm_sym(spin, _th2colat(tgrid), shts.util.alm2vlm(glm, clm = clm))
     times['vtm'] = time.time() - t0
     t0 = time.time()
-    filtmapN = vtm2filtmap(spin, vtm[0:Nt], Nphi,phiflip=np.where((tgrid < 0))[0])
+    filtmapN = vtm2filtmap(spin, vtm[0:Nt], Nphi, phiflip=np.where((tgrid < 0))[0])
     filtmapS = vtm2filtmap(spin, vtm[slice(2 * Nt - 1, Nt - 1, -1)], Nphi,phiflip=np.where((np.pi - tgrid) > np.pi)[0])
     times['vtm2filtmap'] = time.time() - t0
     del vtm
@@ -352,7 +279,7 @@ def lensgclm_symband_timed(spin,glm, th1, th2, Nt, (tnewN, phinewN), (tnewS, phi
     return lenmapNR,lenmapNI,lenmapSR,lenmapSI,times
 
 
-def _buildangles((tht,phi),Red,Imd):
+def _buildangles((tht,phi), Red,Imd):
     """
     e.g.
         Redtot, Imdtot = hp.alm2map_spin([dlm, np.zeros_like(dlm)], nside, 1, hp.Alm.getlmax(dlm.size))
@@ -693,78 +620,3 @@ def _map2gclm(spin,lmax,_map,tht,wg,threads = 1):
     vtm = shts.map2vtm(spin,lmax,_map,pfftwthreads=threads)
     vlm = shts.vtm2vlm(spin,tht, vtm * np.outer(wg, np.ones(vtm.shape[1])))
     return shts.util.vlm2alm(vlm)
-
-
-
-"""
-                 vtm: 444.31
-            map2gclm: 72.41
-              interp: 2.37
-         vtm2filtmap: 24.86
-        vtm2defl2ang: 12.77
-           pol. rot.: 0.00
-GL points and weights: 28.04
-             vtmdefl: 314.82
-                 tot: 900 sec.
-      Tot. int. pix.: 311427072 = 17647.3^2
-lmax = 4096
-lmax_target = 4096
-dlmax = 1024
-facres = 0
-import lensit as li,jc_camb as camb
-pl.ion()
-clunltt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['tt'][:]
-cllentt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lensedCls.dat')['tt'][:]
-clunlpp = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['pp'][:]
-dlm = hp.synalm(clunlpp[:lmax + dlmax + 1],verbose = True)
-hp.almxfl(dlm,np.sqrt(np.arange(6001,dtype = float)*np.arange(1,6002)),inplace=True)
-unltlm = hp.synalm(clunltt[:lmax + dlmax  + 1],verbose = True)
-tlm2,glm,ret = li.curvedskylensing.lenscurv.lens_glm_GLth_sym_timed(0,dlm,-unltlm,lmax_target + dlmax,facres = facres)
-del clm
-pl.plot(hp.alm2cl(tlm2)[:lmax_target+ dlmax+ 1]/cllentt[:lmax_target+ dlmax+ 1])
-pl.ylim(0.9,1.1)
-pl.axhline(0.99,color = 'black')
-
-
-"""
-"""
-
-#Testing the thinned routine
-lmax = 4096
-lmax_target = 4096
-dlmax = 0
-facres = 0
-import lensit as li,jc_camb as camb
-pl.ion()
-clunltt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['tt'][:]
-cllentt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lensedCls.dat')['tt'][:]
-clunlpp = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['pp'][:]
-dlm = hp.synalm(clunlpp[:lmax + dlmax + 1],verbose = True)
-hp.almxfl(dlm,np.sqrt(np.arange(6001,dtype = float)*np.arange(1,6002)),inplace=True)
-dlm *= 0
-unltlm = hp.synalm(clunltt[:lmax + dlmax  + 1],verbose = True)
-%time tlm2,clm,ret = li.curvedskylensing.lenscurv.lens_glm_GLth_sym_timed(0,dlm,-unltlm,lmax_target,facres = facres)
-%time tlm3,clm,ret = li.curvedskylensing.lenscurv.lens_glm_GL_sym_timed(0,dlm,-unltlm,lmax_target,facres = facres)
-
-del clm
-pl.plot(hp.alm2cl(tlm2)[:lmax_target+ 1]/clunltt[:lmax_target+ 1])
-pl.axhline(0.99,color = 'black')
-"""
-
-
-"""
-
-import jc_camb as camb
-import lensit as li
-clunltt = camb.spectra_fromcambfile('/Users/jcarron/SpyderProjects/jpipe/inputs/FFP10/FFP10_lenspotentialCls.dat')['tt'][:]
-tlm = hp.synalm(clunltt[:200])
-from lensit import shts
-from lensit.misc import gausslegendre
-xg,wg = gausslegendre.get_xgwg(500)
-t = np.arccos(xg)[::-1]
-vlm = shts.util.alm2vlm(tlm)
-vtm = shts.vlm2vtm(0,t,vlm)
-alm2 = -shts.util.vlm2alm(shts.vtm2vlm(0,t,vtm))[0]
-alm3 = shts.vtm2tlm_sym(t,vtm)
-np.max(np.abs(alm2 - alm3))
-"""
