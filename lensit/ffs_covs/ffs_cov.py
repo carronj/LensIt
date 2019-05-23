@@ -863,7 +863,7 @@ class ffs_diagcov_alm(object):
 
         -(xi^cmb,b K )_{ab}(z) (xi^w,a K)^{ba}(z)
          - (K)(z) (xi^w,a K xi^cmb,b)(z)
-         
+
         """
         assert _type in _types, (_type, _types)
         t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
@@ -2090,6 +2090,11 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         ilms : inverse filtered maps (B^t F^t Cov^-1 dat_alms)
         Only lib_skyalms enter this.
         Sign is correct for pot. estimate, not gradient
+
+            NB: the output differs by a factor of two from the standard QE. This is because this was written initially
+            as gradient function of the CMB likelihood w.r.t. real and imaginary parts. So to use this as QE's,
+            the normalization is 1/2 the standard normalization the inverse response. The qlms.py module contains methods
+            of the QE's with standard normalizations which you may want to use instead.
         """
         assert iblms.shape == self._skyalms_shape(_type), (iblms.shape, self._skyalms_shape(_type))
         assert lib_qlm.ell_mat.lsides == self.lsides, (self.lsides, lib_qlm.ell_mat.lsides)
