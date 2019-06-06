@@ -657,8 +657,12 @@ class ffs_diagcov_alm(object):
         The sign is correct for the potential estimate ! (not for lik. gradient)
         Corresponds to \hat d_a =  (B F^t Cov^1 dat)(z)(d_a xi B F^t Cov^1 dat)(z).
         The rotation to phi is then \hat phi = - div \hat d
-        (Follows from d/dphi = sum_a d / da dda /dphi and dda/dphi = ddelta^D / dam integrating by parts brings a minus
-        sign)
+        (Follows from d/dphi = sum_a d / da dda /dphi and dda/dphi = ddelta^D / dam integrating by parts brings a minus sign)
+
+        NB: the output differs by a factor of two from the standard QE. This is because this was written initially
+            as gradient function of the CMB likelihood w.r.t. real and imaginary parts. So to use this as QE's,
+            the normalization is 1/2 the standard normalization the inverse response. The qlms.py module contains methods
+            of the QE's with standard normalizations which you may want to use instead.
         """
         assert iblms.shape == self._skyalms_shape(_type), (iblms.shape, self._skyalms_shape(_type))
         assert lib_qlm.lsides == self.lsides, (self.lsides, lib_qlm.lsides)
