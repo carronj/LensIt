@@ -835,7 +835,8 @@ class ffs_diagcov_alm(object):
                                                               lib_skyalm=self.lib_skyalm)
         except:
             print "hash check failed, removing ", new_libdir
-            shutil.rmtree(new_libdir)
+            if os.path.exists(new_libdir):
+                shutil.rmtree(new_libdir)
             new_cov = lensit.ffs_covs.ffs_cov.ffs_diagcov_alm(new_libdir, self.lib_datalm, self.cls_unl, cls_len,
                                                               self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
@@ -906,18 +907,18 @@ class ffs_diagcov_alm(object):
 
         # Calculation of (xi^cmb,b K) (xi^w,a K)
         for i in range(len(_type)):
-            for j in range(i, len(_type)):
-                # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.
-                F += (2 - (i == j)) * self.lib_datalm.alm2map(ikx() * get_xiK(i, j, 1, _cls_cmb)) \
+            for j in range(0, len(_type)):
+                # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.#(2 - (i == j)) *
+                F +=   self.lib_datalm.alm2map(ikx() * get_xiK(i, j, 1, _cls_cmb)) \
                      * self.lib_datalm.alm2map(ikx() * get_xiK(j, i, 2, _cls_weights))
         Fxx = lib_qlm.map2alm(F)
         F *= 0
         t.checkpoint("  Fxx , part 1")
 
         for i in range(len(_type)):
-            for j in range(i, len(_type)):
-                # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.
-                F += (2 - (i == j)) * self.lib_datalm.alm2map(iky() * get_xiK(i, j, 1, _cls_cmb)) \
+            for j in range(0, len(_type)):
+                # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.#(2 - (i == j)) *
+                F +=  self.lib_datalm.alm2map(iky() * get_xiK(i, j, 1, _cls_cmb)) \
                      * self.lib_datalm.alm2map(iky() * get_xiK(j, i, 2, _cls_weights))
         Fyy = lib_qlm.map2alm(F)
         F *= 0
