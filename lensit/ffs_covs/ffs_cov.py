@@ -935,24 +935,24 @@ class ffs_diagcov_alm(object):
 
         # Adding to that (K)(z) (xi^w,a K xi^cmb,b)(z)
         tmap = lambda i, j: self.lib_datalm.alm2map(
-            self.lib_datalm.almxfl(Pinv_obs1[:, i, j], (2 - (j == i)) * self.cl_transf ** 2))
+            self.lib_datalm.almxfl(Pinv_obs1[:, i, j], self.cl_transf ** 2))
 
         for i in range(len(_type)):
-            for j in range(i, len(_type)):
+            for j in range(0, len(_type)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(ikx() ** 2 * get_xiwKxicmb(i, j, 2))
         Fxx += lib_qlm.map2alm(F)
         F *= 0
         t.checkpoint("  Fxx , part 2")
 
         for i in range(len(_type)):
-            for j in range(i, len(_type)):
+            for j in range(0, len(_type)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(iky() ** 2 * get_xiwKxicmb(i, j, 2))
         Fyy += lib_qlm.map2alm(F)
         F *= 0
         t.checkpoint("  Fyy , part 2")
 
         for i in range(len(_type)):
-            for j in range(i, len(_type)):
+            for j in range(0, len(_type)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(iky() * ikx() * get_xiwKxicmb(i, j, 2))
         Fxy += lib_qlm.map2alm(F)
         t.checkpoint("  Fxy , part 2")
