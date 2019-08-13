@@ -83,7 +83,7 @@ class fwd_op():  # (P^-1 + B^t Ni B)^{-1} (skyalms)
     def __call__(self, TElms):
         # print "This is fwd_op w. no_lensing %s _type %s"%(self.no_lensing,_type)
         if _type == 'T':
-            TEBlms = TElms
+            TEBlms = TElms.copy()
         elif _type == 'QU':
             TEBlms = np.array([TElms[0], np.zeros_like(TElms[0])])
         elif _type == 'TQU':
