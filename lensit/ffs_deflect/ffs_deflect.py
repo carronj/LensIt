@@ -1,15 +1,16 @@
+#NB: suppressed pool option
+#FIXME: inverse operation to implement
+
+from __future__ import print_function
+
 import hashlib
 import os
-
 import numpy as np
+
+from lenspyx.bicubic import bicubic
 from scipy import interpolate
-try :
-    from scipy import weave
-except:
-    import weave
-import lensit as li
-import lensit.misc.map_spliter as map_spliter
-from lensit.ffs_deflect import ffs_pool
+
+from lensit.misc import map_spliter
 from lensit.misc import misc_utils as utils
 from lensit.misc import rfft2_utils
 from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq
@@ -104,7 +105,7 @@ class ffs_displacement(object):
         self.chk_shape = 2 ** np.array(self.LD_res) + 2 * np.array(self.buffers)  # shape of the chunks
         self.N_chks = np.prod(2 ** (np.array(self.HD_res) - np.array(self.LD_res)))  # Number of chunks on each side.
         if verbose:
-            print 'rank %s, ffs_deflect::buffers size, chk_shape' % pbs.rank, (buffer0, buffer1), self.chk_shape
+            print('rank %s, ffs_deflect::buffers size, chk_shape' % pbs.rank, (buffer0, buffer1), self.chk_shape)
 
         self.k = spline_order  # order of the spline for displacement interpolation
 
@@ -116,7 +117,7 @@ class ffs_displacement(object):
                 try:
                     os.makedirs(self.lib_dir)
                 except:
-                    print "ffs_displacement:: unable to create lib. dir.", self.lib_dir
+                    print("ffs_displacement:: unable to create lib. dir. " + self.lib_dir)
 
     def load_map(self, map):
         if isinstance(map, str):
@@ -141,12 +142,12 @@ class ffs_displacement(object):
         """
         Writes dx dy to disk and sets self.dx, self.dy to path names.
         """
-        if self.verbose: print "write_npy:: rank %s caching " % pbs.rank, fname + '_dx.npy'
+        if self.verbose: print("write_npy:: rank %s caching " % pbs.rank, fname + '_dx.npy')
         try:
             np.save(fname + '_dx.npy', self.get_dx())
         except:
             assert 0, 'could not write %s' % (fname + '_dx.npy')
-        if self.verbose: print "write_npy:: rank %s caching " % pbs.rank, fname + '_dy.npy'
+        if self.verbose: print("write_npy:: rank %s caching " % pbs.rank, fname + '_dy.npy')
         try:
             np.save(fname + '_dy.npy', self.get_dy())
         except:
@@ -176,8 +177,7 @@ class ffs_displacement(object):
         :return:
         """
         phi = self.get_phi()
-        return np.sqrt(PDP(phi, 1, h=self.rmin[1]) ** 2
-                       + PDP(phi, 0, h=self.rmin[0]) ** 2)
+        return np.sqrt(PDP(phi, 1, h=self.rmin[1]) ** 2  + PDP(phi, 0, h=self.rmin[0]) ** 2)
 
     def get_dnorm_Omega(self):
         """
@@ -185,8 +185,7 @@ class ffs_displacement(object):
         :return:
         """
         Omega = self.get_Omega()
-        return np.sqrt(PDP(Omega, 1, h=self.rmin[1]) ** 2
-                       + PDP(Omega, 0, h=self.rmin[0]) ** 2)
+        return np.sqrt(PDP(Omega, 1, h=self.rmin[1]) ** 2 + PDP(Omega, 0, h=self.rmin[0]) ** 2)
 
     def get_dx_ingridunits(self):
         return self.get_dx() / self.rmin[1]
@@ -271,10 +270,10 @@ class ffs_displacement(object):
             dy_N = np.empty((2 ** LD_res[0] + 2 * buffers[0], 2 ** LD_res[1] + 2 * buffers[1]))
             unl_CMBN = np.empty((2 ** LD_res[0] + 2 * buffers[0], 2 ** LD_res[1] + 2 * buffers[1]))
             if self.verbose:
-                print '++ lensing map :' \
-                      '   splitting map on GPU , chunk shape %s, buffers %s' % (dx_N.shape, buffers)
+                print('++ lensing map :' \
+                      '   splitting map on GPU , chunk shape %s, buffers %s' % (dx_N.shape, buffers))
             spliter_lib = map_spliter.periodicmap_spliter()  # library to split periodic maps.
-            for N in xrange(Nchunks):
+            for N in range(Nchunks):
                 sLDs, sHDs = spliter_lib.get_slices_chk_N(N, LD_res, self.HD_res, buffers)
                 for sLD, sHD in zip(sLDs, sHDs):
                     dx_N[sLD] = self.get_dx()[sHD] / self.rmin[1]
@@ -285,67 +284,18 @@ class ffs_displacement(object):
                     sLDs[0]]
             return lensed_map
 
-        elif use_Pool > 100:
-            if not isinstance(map, str):
-                assert self.has_lib_dir(), "Specify lib. dir. if you want to use Pool."
-                np.save(self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank, map)
-            if not self.is_dxdy_ondisk():
-                assert self.has_lib_dir(), "Specify lib. dir. if you want to use Pool."
-                print "lens_map::writing displacements on disk :"
-                self.write_npy(self.lib_dir + '/temp_displ' + str(pbs.rank))  # this turns dx and dy to the paths
-            path_to_map = map if isinstance(map, str) else self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank
-            ret = ffs_pool.get_lens_Pooled(self.mk_args(path_to_map, self.dx, self.dy),
-                                           root_Nthreads=use_Pool % 100, do_not_prefilter=do_not_prefilter)
-            if tidy:
-                if os.path.exists(self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank):
-                    os.remove(self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank)
-            return ret
-
-        elif use_Pool == 100 or use_Pool == 101:
-            assert self.load_map(map).shape == self.shape, self.load_map(map).shape
-            s = self.chk_shape
-            idc0, idc1 = np.indices(s)  # Two (256 * 256) maps
-            dx_gu = np.empty(s)  # will dx displ. in grid units of each chunk (typ. (256 * 256) )
-            dy_gu = np.empty(s)  # will dy displ. in grid units of each chunk (typ. (256 * 256) )
-            map_chk = np.empty(s)  # Will be map chunk
-            # (typ. (256 * 256) )
-            lensed_map = np.empty(self.shape)
-            spliter_lib = map_spliter.periodicmap_spliter()  # library to split periodic maps.
-            for N in xrange(self.N_chks):
-                # doing chunk N
-                sLDs, sHDs = spliter_lib.get_slices_chk_N(N, self.LD_res, self.HD_res, self.buffers)
-                for sLD, sHD in zip(sLDs, sHDs):
-                    # Displacements chunk in grid units, and map chunk to displace.
-                    dx_gu[sLD] = self.get_dx()[sHD] / self.rmin[1]
-                    dy_gu[sLD] = self.get_dy()[sHD] / self.rmin[0]
-                    map_chk[sLD] = self.load_map(map)[sHD]
-
-                if do_not_prefilter:
-                    # Undoing the prefiltering prior to apply bicubic interpolation
-                    map_chk = np.fft.rfft2(map_chk)
-                    w0 = 6. / (2. * np.cos(2. * np.pi * np.fft.fftfreq(s[0])) + 4.)
-                    map_chk /= np.outer(w0, w0[0:map_chk.shape[1]])
-                    map_chk = np.fft.irfft2(map_chk, s)
-
-                lx = (idc1 + dx_gu).flatten()  # No need to enforce periodicity here.
-                ly = (idc0 + dy_gu).flatten()  # No need to enforce periodicity here.
-                sLDs, sHDs = spliter_lib.get_slices_chk_N(N, self.LD_res, self.HD_res, self.buffers, inverse=True)
-                lensed_map[sHDs[0]] = interpolate.RectBivariateSpline(np.arange(s[0]), np.arange(s[1]),
-                                                                      map_chk, kx=self.k, ky=self.k).ev(ly, lx).reshape(
-                    self.chk_shape)[sLDs[0]]
-            return lensed_map
         elif use_Pool == 0 or use_Pool == 1:
             assert self.shape[0] == self.shape[1], self.shape
-            bicubicspline = r"\
-                           int i,j;\
-                          for( j= 0; j < width; j++ )\
-                              {\
-                              for( i = 0; i < width; i++)\
-                                  {\
-                                  lenmap[j * width + i] = bicubiclensKernel(filtmap,i + dx_gu[j * width + i],j + dy_gu[j * width + i],width);\
-                                  }\
-                              }"
-            header = r' "%s/lensit/gpu/bicubicspline.h" ' % li.LENSITDIR
+            #bicubicspline = r"\
+            #               int i,j;\
+            #              for( j= 0; j < width; j++ )\
+            #                  {\
+            #                  for( i = 0; i < width; i++)\
+            #                      {\
+            #                      lenmap[j * width + i] = bicubiclensKernel(filtmap,i + dx_gu[j * width + i],j + dy_gu[j * width + i],width);\
+            #                      }\
+            #                  }"
+            #header = r' "%s/lensit/gpu/bicubicspline.h" ' % li.LENSITDIR
             if do_not_prefilter:
                 filtmap = self.load_map(map).astype(np.float64)
             else:
@@ -355,33 +305,17 @@ class ffs_displacement(object):
                 filtmap *= np.outer(w0, w0[0:filtmap.shape[1]])
                 filtmap = np.fft.irfft2(filtmap, self.shape)
 
-            lenmap = np.empty(self.shape, dtype=np.float64)
-            dx_gu = self.get_dx_ingridunits().astype(np.float64)
-            dy_gu = self.get_dy_ingridunits().astype(np.float64)
-            width = int(self.shape[0])
-            assert self.shape[0] == self.shape[1]
-            weave.inline(bicubicspline, ['lenmap', 'filtmap', 'dx_gu', 'dy_gu', 'width'], headers=[header])
-            return lenmap
+            #lenmap = np.empty(self.shape, dtype=np.float64)
+            #dx_gu = self.get_dx_ingridunits().astype(np.float64)
+            #dy_gu = self.get_dy_ingridunits().astype(np.float64)
+            #width = int(self.shape[0])
+            #assert self.shape[0] == self.shape[1]
+            #weave.inline(bicubicspline, ['lenmap', 'filtmap', 'dx_gu', 'dy_gu', 'width'], headers=[header])
+            #return lenmap
 
-        elif use_Pool > 1 and use_Pool < 100:
-            # TODO : may want to add pyFFTW here as well
-            if not isinstance(map, str):
-                assert self.has_lib_dir(), "Specify lib. dir. if you want to use Pool."
-                np.save(self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank, map)
-            if not self.is_dxdy_ondisk():
-                assert self.has_lib_dir(), "Specify lib. dir. if you want to use Pool."
-                print "lens_map::writing displacements on disk :"
-                self.write_npy(self.lib_dir + '/temp_displ' + str(pbs.rank))  # this turns dx and dy to the paths
-            path_to_map = map if isinstance(map, str) else self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank
-            ret = ffs_pool.get_lens_Pooled_weave(self.mk_args(path_to_map, self.dx, self.dy),
-                                                 root_Nthreads=use_Pool, do_not_prefilter=do_not_prefilter)
-            if tidy:
-                if os.path.exists(self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank):
-                    os.remove(self.lib_dir + '/temp_maptolens_rank%s.npy' % pbs.rank)
-            return ret
-
-        else:
-            assert 0
+            dx_gu = np.require(self.get_dx_ingridunits().flatten(), float)
+            dy_gu = np.require(self.get_dy_ingridunits().flatten(), float)
+            return bicubic.deflect(np.require(filtmap, float), dx_gu, dy_gu).reshape(self.shape)
 
     def lens_alm(self, lib_alm, alm,
                  lib_alm_out=None, use_Pool=0, no_lensing=False, mult_magn=False):
@@ -397,8 +331,8 @@ class ffs_displacement(object):
             GPU_res = np.array(lens_GPU.GPU_HDres_max)
             if np.all(np.array(self.HD_res) <= GPU_res):
                 return lens_GPU.lens_alm_onGPU(lib_alm, lib_alm.bicubic_prefilter(alm),
-                                               self.get_dx_ingridunits(), self.get_dy_ingridunits()
-                                               , do_not_prefilter=True, mult_magn=mult_magn, lib_alm_out=lib_alm_out)
+                                               self.get_dx_ingridunits(), self.get_dy_ingridunits(),
+                                               do_not_prefilter=True, mult_magn=mult_magn, lib_alm_out=lib_alm_out)
         temp_map = self.alm2lenmap(lib_alm, alm, use_Pool=use_Pool)
         if mult_magn:
             self.mult_wmagn(temp_map, inplace=True)
@@ -426,10 +360,6 @@ class ffs_displacement(object):
                 return lens_GPU.alm2lenmap_onGPU(lib_alm, lib_alm.bicubic_prefilter(alm),
                                                  self.get_dx_ingridunits(), self.get_dy_ingridunits(),
                                                  do_not_prefilter=True)
-
-        if use_Pool >= 100:  # scipy RectBivariate. Slow.
-            unlmap = lib_alm.alm2map(alm)
-            return self.lens_map(unlmap, use_Pool=use_Pool, do_not_prefilter=False)
         else:
             return self.lens_map(lib_alm.alm2map(lib_alm.bicubic_prefilter(alm)),
                                  use_Pool=use_Pool, do_not_prefilter=True)
@@ -455,7 +385,7 @@ class ffs_displacement(object):
                       * (PDP(self.get_dy(), axis=0, h=self.rmin[0], rule=self.rule) + 1.)
                 det -= PDP(self.get_dy(), axis=1, h=self.rmin[1], rule=self.rule) * \
                        PDP(self.get_dx(), axis=0, h=self.rmin[0], rule=self.rule)
-                print "  ffs_displacement caching ", fname
+                print("  ffs_displacement caching ", fname)
                 np.save(fname, det)
                 del det
             # pbs.barrier()
@@ -586,22 +516,11 @@ class ffs_displacement(object):
 
         if NR_iter is None: NR_iter = self.NR_iter
 
-        if use_Pool > 0:
-            if not self.is_dxdy_ondisk():
-                assert self.has_lib_dir(), "Specify lib. dir. if you want to use Pool."
-                print "lens_map::writing displacements on disk :"
-                if not os.path.exists(self.lib_dir): os.makedirs(self.lib_dir)
-                self.write_npy(self.lib_dir + '/temp_displ' + str(pbs.rank))  # this turns dx and dy to the paths
-            dx_inv, dy_inv = ffs_pool.get_inverse_Pooled(self.mk_args('', self.dx, self.dy, NR_iter=NR_iter),
-                                                         root_Nthreads=abs(use_Pool))
-            return ffs_displacement(dx_inv, dy_inv, self.lsides, lib_dir=self.lib_dir,
-                                    LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k, NR_iter=self.NR_iter)
-
-        elif use_Pool == 0:
+        if use_Pool == 0:
             spliter_lib = map_spliter.periodicmap_spliter()  # library to split periodic maps.
             dx_inv, dy_inv = np.empty(self.shape), np.empty(self.shape)
             label = 'ffs_deflect::calculating inverse displ. field'
-            for i, N in utils.enumerate_progress(xrange(self.N_chks), label=label):
+            for i, N in utils.enumerate_progress(range(self.N_chks), label=label):
                 # Doing chunk N
                 dx_inv_N, dy_inv_N = self.get_inverse_chk_N(N, NR_iter=NR_iter)
                 sLDs, sHDs = spliter_lib.get_slices_chk_N(N, self.LD_res, self.HD_res, self.buffers, inverse=True)
@@ -627,11 +546,11 @@ class ffs_displacement(object):
                 dx_N = np.empty((2 ** LD_res[0] + 2 * buffers[0], 2 ** LD_res[1] + 2 * buffers[1]))
                 dy_N = np.empty((2 ** LD_res[0] + 2 * buffers[0], 2 ** LD_res[1] + 2 * buffers[1]))
                 if self.verbose:
-                    print '++ inverse displacement :' \
-                          '   splitting inverse on GPU , chunk shape %s, buffers %s' % (dx_N.shape, buffers)
+                    print('++ inverse displacement :' \
+                          '   splitting inverse on GPU , chunk shape %s, buffers %s' % (dx_N.shape, buffers))
                 spliter_lib = map_spliter.periodicmap_spliter()  # library to split periodic maps.
                 dx_inv, dy_inv = np.empty(self.shape), np.empty(self.shape)  # Outputs
-                for N in xrange(Nchunks):
+                for N in range(Nchunks):
                     sLDs, sHDs = spliter_lib.get_slices_chk_N(N, LD_res, self.HD_res, buffers)
                     for sLD, sHD in zip(sLDs, sHDs):
                         dx_N[sLD] = self.get_dx()[sHD]
@@ -650,19 +569,20 @@ class ffs_displacement(object):
             assert 0
 
     def get_inverse_chk_N(self, N, NR_iter=None):
-        """
-        Returns inverse displacement in chunk N
-        Uses periodic boundary conditions, which is not applicable to chunks, thus there
-        will be boudary effects on the edges (2 or 4 pixels depending on the rule). Make sure the buffer is large enough.
+        """Returns inverse displacement in chunk N
+
+            NB: Uses periodic boundary conditions, which is not applicable to chunks, thus there
+            will be boudary effects on the edges (2 or 4 pixels depending on the rule). Make sure the buffer is large enough.
+
         """
         if NR_iter is None: NR_iter = self.NR_iter
 
         # Inverse magn. elements. (with a minus sign) We may need to spline these later for further NR iterations :
-        extra_buff = np.array((5, 5)) * (
-            np.array(self.chk_shape) != np.array(self.shape))  # To avoid surprises with the periodic derivatives
+        extra_buff = np.array((5, 5)) * (np.array(self.chk_shape) != np.array(self.shape))
+        # :to avoid surprises with the periodic derivatives
         dx = np.zeros(self.chk_shape + 2 * extra_buff)  # will dx displ. in grid units of each chunk (typ. (256 * 256) )
         dy = np.zeros(self.chk_shape + 2 * extra_buff)  # will dy displ. in grid units of each chunk (typ. (256 * 256) )
-        sLDs, sHDs = map_spliter.periodicmap_spliter().get_slices_chk_N(N, self.LD_res, self.HD_res,
+        sLDs, sHDs = map_spliter.periodicmap_spliter.get_slices_chk_N(N, self.LD_res, self.HD_res,
                                                                         (self.buffers[0] + extra_buff[0],
                                                                          self.buffers[1] + extra_buff[1]))
 
@@ -684,7 +604,7 @@ class ffs_displacement(object):
         dy = dy[sl0, sl1]
 
         det = Minv_yy * Minv_xx - Minv_xy * Minv_yx
-        if not np.all(det > 0.): print "ffs_displ::Negative value in det k : something's weird, you'd better check that"
+        if not np.all(det > 0.): print("ffs_displ::Negative value in det k : something's weird, you'd better check that")
         # Inverse magn. elements. (with a minus sign) We may need to spline these later for further NR iterations :
         Minv_xx /= det
         Minv_yy /= det
@@ -756,7 +676,7 @@ class ffs_displacement(object):
         s = self.chk_shape
         M_mat = self.get_magn_mat_chk_N(N)
         if not np.all(M_mat['det'] > 0.):
-            print "ffs_displ::Negative value in det k : something's weird, you'd better check that"
+            print("ffs_displ::Negative value in det k : something's weird, you'd better check that")
 
         # Inverse magn. elements. (with a minus sign) We may need to spline these later for further NR iterations :
 
