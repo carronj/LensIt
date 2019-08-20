@@ -1,4 +1,5 @@
 # FIXME : might think about passing 2 sets of Cls, the correct one and the preconditioner.
+from __future__ import print_function
 import numpy as np
 import lensit as li
 
@@ -24,6 +25,14 @@ class ffs_ninv_filt(object):
 
     def hashdict(self):
         return {}
+
+    def set_cls(self, cls):
+        """Update the filter cmb cls
+
+        """
+        for k in self.cls.keys():
+            if k in cls.keys():
+                self.cls[k] = (cls[k][:self.lib_skyalm.ellmax + 1]).copy()
 
     def iNoiseCl(self, field):
         # FIXME : should I put zero after datalm ?
