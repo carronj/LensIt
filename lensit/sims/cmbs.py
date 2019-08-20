@@ -31,7 +31,7 @@ def get_fields(cls):
             if _f not in ret: ret.append(_f)
     return ret
 
-class sims_cmb_unl():
+class sims_cmb_unl:
     def __init__(self, cls_unl, lib_pha):
         lmax = lib_pha.lmax
         lmin = 0
@@ -106,7 +106,7 @@ class sims_cmb_unl():
             for _j in range(Nf):
                 ret[_i] += hp.almxfl(phases[_j], self.rmat[:, _i, _j])
 
-class sims_cmb_len():
+class sims_cmb_len:
     def __init__(self, lib_dir, lmax, cls_unl,dlmax = 1024,nside_lens = 2048,lib_pha=None):
         #FIXME : add aberration and modulation
         if not os.path.exists(lib_dir) and pbs.rank == 0:

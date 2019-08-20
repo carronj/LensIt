@@ -15,15 +15,15 @@ class _lib_phas(sims_generic.sim_lib):
         alm = (np.random.standard_normal(hp.Alm.getsize(self.lmax)) +
                1j * np.random.standard_normal(hp.Alm.getsize(self.lmax))) / np.sqrt(2.)
         if phas_only: return
-        m0 = hp.Alm.getidx(self.lmax,np.arange(self.lmax + 1,dtype = int),0)
+        m0 = hp.Alm.getidx(self.lmax, np.arange(self.lmax + 1,dtype = int),0)
         alm[m0] = np.sqrt(2.) * alm[m0].real
         return alm
 
     def hashdict(self):
         return {'lmax':self.lmax}
 
-class lib_phas():
-    def __init__(self, lib_dir, nfields,lmax, **kwargs):
+class lib_phas:
+    def __init__(self, lib_dir, nfields, lmax, **kwargs):
         self.lmax = lmax
         self.nfields = nfields
         self.lib_phas = {}
@@ -43,11 +43,11 @@ class lib_phas():
     def hashdict(self):
         return {'nfields': self.nfields, 'lmax':self.lmax}
 
-class lib_phas_lcut():
+class lib_phas_lcut:
     """
     Share same phases as above but with smaller lmax.
     """
-    def __init__(self,  lib_phas,lmax):
+    def __init__(self,  lib_phas, lmax):
         assert lmax <= lib_phas.lmax,(lmax,lib_phas.lmax)
         self.lmax = lmax
         self.lib_phas = lib_phas
@@ -62,7 +62,7 @@ class lib_phas_lcut():
         if self.lmax == alm_lmax:
             return alm
         ret = np.zeros(hp.Alm.getsize(self.lmax), dtype=np.complex)
-        for m in xrange(0, self.lmax + 1):
+        for m in range(0, self.lmax + 1):
             ret[((m * (2 * self.lmax + 1 - m) / 2) + m):(m * (2 * self.lmax + 1 - m) / 2 + self.lmax + 1)] \
             = alm[(m * (2 * alm_lmax + 1 - m) / 2 + m):(m * (2 * alm_lmax + 1 - m) / 2 + self.lmax + 1)]
         return ret
