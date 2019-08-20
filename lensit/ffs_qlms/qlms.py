@@ -9,10 +9,12 @@ Similarly the mean field can be written as the diagonal
 
 
 """
+from __future__ import print_function
 import healpy as hp
 import numpy as np
 
-import lensit as fs
+from lensit.misc.misc_utils import timer
+from lensit.ffs_deflect.ffs_deflect import ffs_id_displacement
 from lensit.ffs_covs import ffs_specmat as SM
 
 verbose = False
@@ -55,8 +57,8 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 
                            f = f,use_Pool=use_Pool,lib_sky2 = lib_sky2)
 
     assert len(TQU_Mlik) == len(_type) and len(ResTQU_Mlik) == len(_type)
-    t = fs.misc.misc_utils.timer(verbose, prefix=__name__)
-    if f is None: f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
+    t = timer(verbose, prefix=__name__)
+    if f is None: f = ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
 
     def left(id):
         assert id in range(len(_type)), (id, _type)
@@ -88,7 +90,7 @@ def _Mlik2ResTQUMlik_diag(field, ninv_filt, TQUMlik, data, f, fi):
     that is fed into the qlm estimator.
     """
     assert field in ['T', 'Q', 'U']
-    f_id = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(ninv_filt.lib_skyalm.shape, ninv_filt.lib_skyalm.lsides)
+    f_id = ffs_id_displacement(ninv_filt.lib_skyalm.shape, ninv_filt.lib_skyalm.lsides)
     ninv_filt.set_ffi(f, fi)
     _map = data - ninv_filt.apply_R(field, TQUMlik)
     ninv_filt.apply_map(f, _map, inplace=True)
@@ -186,7 +188,7 @@ def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
     return  np.array([fac * (retxx * ikx() ** 2 + retyy * iky() ** 2 + (retxy + retyx) * ikx() * iky()),
              fac * (retxx * iky() ** 2 + retyy * ikx() ** 2 - (retxy + retyx) * ikx() * iky()) ])
 
-class MFestimator():
+class MFestimator:
     def __init__(self, ninv_filt, opfilt, mchain, lib_qlm, pix_pha=None, cmb_pha=None, use_Pool=0):
 
         self.ninv_filt = ninv_filt
@@ -206,10 +208,10 @@ class MFestimator():
         assert lib_sky.lsides == lib_dat.lsides
         self.opfilt._type = _type
         if hasattr(self.ninv_filt, 'f'):
-            print "******* I am using displacement for ninvfilt in MFest"
+            print("******* I am using displacement for ninvfilt in MFest")
         else:
-            print "******* Using id displacement in MFest"
-        f = getattr(self.ninv_filt, 'f', fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides))
+            print("******* Using id displacement in MFest")
+        f = getattr(self.ninv_filt, 'f', ffs_id_displacement(lib_sky.shape, lib_sky.lsides))
         if MFkey == 12:
             # B^t M^t X (x) (D ika P D^t B^t Covi X )(x). Second term are just the deflected gradients of the recontructed
             assert self.pix_pha is not None
@@ -268,7 +270,7 @@ class MFestimator():
 
 def get_MFqlms(_type, MFkey, lib_dat, lib_sky, pix_phas, TQUMlik_pha, cl_transf, lib_qlm, f=None, use_Pool=0):
     assert lib_dat.lsides == lib_sky.lsides
-    if f is None: f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
+    if f is None: f = ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
     if MFkey == 12:
         # X unit variance random phases ! on the unmasked pixels !
         # B^t M^t X (x) (D ika P D^t B^t Covi X )(x). Second term are just the deflected gradients of the recontructed
@@ -359,9 +361,9 @@ def get_qlms(_type, lib_sky, Res_TEBlms, cls_unl, lib_qlm, Res_TEBlms2=None, f=N
     """
     _Res_TEBlms2 = Res_TEBlms if Res_TEBlms2 is None else Res_TEBlms2
     assert len(Res_TEBlms) == len(_type) and len(_Res_TEBlms2) == len(_type)
-    t = fs.misc.misc_utils.timer(verbose, prefix=__name__)
-    if f is not None: print " qlms.py :: consider using get_qlms_wl for qlms with lensing, to avoid lensing noisy maps"
-    if f is None: f = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
+    t = timer(verbose, prefix=__name__)
+    if f is not None: print(" qlms.py :: consider using get_qlms_wl for qlms with lensing, to avoid lensing noisy maps")
+    if f is None: f = ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
 
     TQUmlik = SM.TEB2TQUlms(_type, lib_sky, SM.apply_TEBmat(_type, lib_sky, cls_unl, _Res_TEBlms2))
 
