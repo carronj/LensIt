@@ -79,7 +79,7 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 
     t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (len(_type), 2 * len(_type) + 1))
 
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
-                     retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest
+                       retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest
 
 
 def _Mlik2ResTQUMlik_diag(field, ninv_filt, TQUMlik, data, f, fi):
