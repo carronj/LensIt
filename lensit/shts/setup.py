@@ -11,7 +11,10 @@ def configuration(parent_package='',top_path=None):
     config = Configuration('',parent_package,top_path)
     config.add_extension('fsht', ['shts.f90'],
                              libraries=['gomp'], f2py_options=[],
-                             extra_compile_args=['-fopenmp'], extra_link_args=[],)
+                             extra_f90_compile_args=['-fopenmp'], extra_link_args=[],)
+    # FIXME: It looks like the setup.py build does not always work properly with clang with openMP.
+    # FIXME: Instead this seems to work: f2py -c -m fsht shts.f90 --f90flags="-fopenmp" -lgomp
+    #                             extra_compile_args=['-Xpreprocessor, -fopenmp'], extra_link_args=[],)
 
     return config
 

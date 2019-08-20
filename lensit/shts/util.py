@@ -74,7 +74,7 @@ def alm2vlm(glm, clm=None):
     with ret[l * l + l - m] = -i(-1)^m clm^*
     """
     lmax = nlm2lmax(len(glm))
-    ret = np.zeros((lmax + 1) ** 2, dtype=np.complex)
+    ret = np.zeros((lmax + 1) ** 2, dtype=complex)
     for l in xrange(0, lmax + 1):
         ms = np.arange(1, l + 1)
         ret[l * l + l] = -glm[l]
