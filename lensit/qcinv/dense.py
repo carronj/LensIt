@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from utils import ffs_converter
-import cPickle as pk
+import pickle as pk
 
 
 class pre_op_dense():
@@ -57,7 +57,15 @@ class pre_op_dense():
 
             self.minv = np.dot(np.dot(eigw, np.diag(eigv_inv)), np.transpose(eigw))
         else:
-            self.minv = np.linalg.inv(tmat)
+            eigv, eigw = np.linalg.eigh(tmat)
+            if not np.all(eigv > 0.):
+                print " ! --- negative eigenvalues in dense covariance --- "
+            eigv_inv = np.zeros_like(eigv)
+            eigv_inv[np.where(eigv > 0.)] = 1. / eigv[np.where(eigv > 0.)]
+
+            self.minv = np.dot(np.dot(eigw, np.diag(eigv_inv)), np.transpose(eigw))
+
+            #self.minv = np.linalg.inv(tmat)
         if cache_fname != None:
             assert cache_fname[-3:] == '.pk'
             pk.dump([self.cov.lib_skyalm.ellmax, self.hashdict()], open(cache_fname, 'w'))
