@@ -2,12 +2,11 @@ from __future__ import print_function
 
 import numpy as np
 import sqlite3
-import os, io
+import os
 import pickle as pk
 import operator
 
-from lensit import pbs
-from lensit.misc.misc_utils import npy_hash
+from lensit.pbs import pbs
 
 class rng_db:
     """
@@ -162,7 +161,7 @@ class sim_lib_shuffle:
         return {'sim_lib': self.sim_lib.hashdict(), 'shuffle': hash}
 
 
-class sim_lib_sum():
+class sim_lib_sum:
     """
     return sums of sim_libs, with weights if provided.
     Change operator.iadd to operator.something_else to change the operation, e.g. a multiplication.
@@ -195,208 +194,10 @@ class sim_lib_sum():
         return self.weights is not None
 
     def hashdict(self):
-        hash = {'weights': self.weights}
+        h = {'weights': self.weights}
         for i, sim_lib in enumerate(self.sim_lib_list):
-            hash['sim_lib_%s' % i] = sim_lib.hashdict()
-        return hash
-
-
-class Gauss_sim_generic(sim_lib):
-    """
-    Class for simple Gaussian sims in Euclidean space of any dimension.
-    The input pk (cl) array is simply interpolated on the frequency grid, make sure to include
-    all ingredients you want. You can add a keyword to include a pixwin fct.
-    Derives from sim_lib and links to a sqlite3 db containing the rng states of each sim.
-
-    Ex :
-    res = 9
-    shape = (2**res,2**res)
-    lside = 10.*np.pi/180.*np.ones(2)
-
-    lib_cmb_unl = sims.Gauss_sim_generic(lib_dir,cl_unl,shape,lside)
-    sim = lib_cmb_unl.get_sim(0)
-    """
-
-    def __init__(self, lib_dir, cl, shape, lsides, with_pixwin=False, **kwargs):
-        self.lib_dir = lib_dir
-        assert (cl >= 0.).all()
-        self.cl = cl
-        self.shape = shape
-        self._with_pixwin = with_pixwin
-        assert (len(shape) == len(lsides))
-        self.lsides = tuple(lsides)
-        super(Gauss_sim_generic, self).__init__(lib_dir, **kwargs)
-        if self.is_empty() and len(cl) - 1 <= self.kmax_scal():
-            print("Gauss_sim_generic::Warning, grid kmax larger than kmax provided. These will be set to zero.")
-            print(round(self.kmax_scal()), len(cl) - 1)
-
-    def ndim(self):
-        return len(self.shape)
-
-    def kmin(self):
-        return (2 * np.pi) / np.array(self.lsides)
-
-    def kmax(self):
-        return np.pi * np.array(self.shape) / np.array(self.lsides)
-
-    def kmax_scal(self):
-        return np.sqrt(np.sum(self.kmax() ** 2))
-
-    def has_pixwin(self):
-        return self._with_pixwin
-
-    def _rfftreals(self):
-        # TODO : for any dim.
-        assert len(self.shape) == 2
-        N0, N1 = self.shape
-        fx = [0];
-        fy = [0]
-        if N0 % 2 == 0: fx.append(N0 / 2); fy.append(0)
-        if N1 % 2 == 0: fx.append(0); fy.append(N1 / 2)
-        if N1 % 2 == 0 and N0 % 2 == 0: fx.append(N0 / 2); fy.append(N1 / 2)
-        return np.array(fx), np.array(fy)
-
-    def _Freq(self, i, N):
-        """
-        Outputs the absolute integers frequencies [0,1,...,N/2,N/2-1,...,1]
-        in numpy fft convention as integer i runs from 0 to N-1.
-        Inputs can be numpy arrays e.g. i (i1,i2,i3) with N (N1,N2,N3)
-                                  or i (i1,i2,...) with N
-        Both inputs must be integers.
-        All entries of N must be even.
-        """
-        assert (np.all(N % 2 == 0)), "This routine only for even numbers of points"
-        return i - 2 * (i >= (N / 2)) * (i % (N / 2))
-
-    def _outerproducts(self, vs):
-        """
-        vs is a list of 1d numpy arrays, not necessarily of the same size.
-        Return a matrix A_i1_i2..i_ndim = vi1_vi2_..v_indim.
-        Use np.outer recursively on flattened arrays.
-         """
-
-        # check input and infer new shape  :
-        assert (isinstance(vs, list)), "Want list of 1d arrays"
-        ndim = len(vs)
-        if ndim == 1: return vs[0]
-        shape = ()
-        for i in range(ndim):
-            assert (vs[i].ndim == 1), "Want list of 1d arrays"
-            shape += (vs[i].size,)
-
-        B = vs[ndim - 1]
-
-        for i in range(1, ndim): B = np.outer(vs[ndim - 1 - i], B).flatten()
-        return B.reshape(shape)
-
-    def _square_pixwin_map(self, shape):
-        """
-        pixel window function of square top hat for any dimenson
-        """
-        vs = []
-        for ax in range(len(shape)):
-            lcell_ka = 0.5 * self._Freq(np.arange(shape[ax]), shape[ax]) * (2. * np.pi / shape[ax])
-            vs.append(np.insert(np.sin(lcell_ka[1:]) / lcell_ka[1:], 0, 1.))
-        return self._outerproducts(vs)
-
-    def _sqd_freqmap(self):
-        """
-        Returns the array of squared frequencies, in grid units.
-        """
-        kmin2 = self.kmin() ** 2
-        s = self.shape
-        # First we check if the cube is regular
-        if len(np.unique(s)) == 1 and len(np.unique(self.lsides)) == 1:
-            # regular hypercube simplifies matters.
-            l02 = self._Freq(np.arange(s[0]), s[0]) ** 2 * kmin2[0]
-            ones = np.ones(s[0])
-            if self.ndim == 1: return l02
-            vec = [l02]
-            for i in range(1, self.ndim()):
-                vec.append(ones)
-            l0x2 = self._outerproducts(vec)
-            sqd_freq = np.zeros(s)
-            for i in range(0, self.ndim()):
-                sqd_freq += np.swapaxes(l0x2, 0, i)
-            return sqd_freq
-        # Ok, that's fine, let's use a different dumb method.
-        idc = np.indices(s)
-        mapk = self._Freq(idc[0, :], s[0]) ** 2 * kmin2[0]
-        for j in range(1, self.ndim()):
-            mapk += self._Freq(idc[j, :], s[j]) ** 2 * kmin2[j]
-        return mapk
-
-    def hashdict(self):
-        return {'lib_dir': self.lib_dir, 'shape': self.shape, 'lsides': self.lsides,
-                'has_pixwin': self.has_pixwin(), 'cl': npy_hash(self.cl)}
-
-    def _build_sim_from_rng_2(self, rng_state):
-        """
-        Returns one realisations of a G. field with the input cl.
-        The code actually calculates two and throws away one for pure laziness. But these things look so cheap for 2d.
-        As a technicality, the keyword right = 0 is important, in order not to add unwanted white noise to the sim.
-        """
-        N_rootV = np.prod(self.shape / np.sqrt(self.lsides))
-        root_spec_map = np.interp(self._sqd_freqmap().flatten(), np.arange(len(self.cl)) ** 2,
-                                  np.sqrt(self.cl) * N_rootV, right=0., left=0.)
-        if self.has_pixwin(): root_spec_map *= np.sqrt(self._square_pixwin_map(self.shape)).flatten()
-        np.random.set_state(rng_state)
-        sims = (1j * np.random.normal(size=np.prod(self.shape)) + np.random.normal(size=np.prod(self.shape))) \
-               * root_spec_map
-        return np.fft.ifft2(sims.reshape(self.shape)).real
-
-    def _build_sim_from_rng(self, rng_state):
-        """
-        Returns one realisation of a G. field with the input cl.
-        As a technicality, the keyword right = 0 is important, in order not to add unwanted white noise to the sim.
-        """
-        N_rootV = np.prod(self.shape / np.sqrt(self.lsides))
-        last_axis = len(self.shape) - 1
-        sims = np.take(self._sqd_freqmap(), np.arange(self.shape[-1] / 2 + 1), axis=last_axis)
-        sims = np.interp(sims, np.arange(len(self.cl)) ** 2, np.sqrt(self.cl / 2) * N_rootV, right=0., left=0.)
-        if self.has_pixwin():
-            sims *= np.sqrt(
-                np.take(self._square_pixwin_map(self.shape), np.arange(self.shape[-1] / 2 + 1), axis=last_axis))
-        np.random.set_state(rng_state)
-        rfft_shape = np.array(self.shape)
-        rfft_shape[-1] = self.shape[-1] / 2 + 1
-        sims = (1j * np.random.normal(size=rfft_shape) + np.random.normal(size=rfft_shape)) * sims
-        # Corrects for pure real frequencies and redundant frequencies :
-        sla = slice(self.shape[0] / 2 + 1, self.shape[0], 1)
-        slb = slice(self.shape[0] / 2 - 1, 0, -1)
-
-        sims.real[sla, [-1, 0]] = sims.real[slb, [-1, 0]]
-        sims.imag[sla, [-1, 0]] = -sims.imag[slb, [-1, 0]]
-
-        sims.imag[self._rfftreals()] = 0.
-        sims.real[self._rfftreals()] *= np.sqrt(2.)
-        return np.fft.irfft2(sims, self.shape)
-
-
-class apply_sim_lib:
-    """
-    Generic class returning sim_b.apply(sim_a).
-    Sims of the apply_sim_lib must a have .apply(map) callable.
-
-    For instance, the following lines :
-
-    lib_cmb_unl = sims.Gauss_sim_generic('./testtemp/cl_unl',cl_unl,shape,lside,with_pixwin=True)
-    lib_displ = sims.Gauss_displ_2dsim('./testtemp/displ',cl_pp,shape,lside)
-    lib_cmb_len = sims.apply_sim_lib(lib_cmb_unl,lib_displ)
-
-    gives a library for lensed CMB's
-    """
-
-    def __init__(self, base_sim_lib, apply_sim_lib):
-        self.base_sims = base_sim_lib
-        self.apply_sims = apply_sim_lib
-
-    def hashdict(self):
-        return {'base_sim_lib': self.base_sims.hashdict(), 'apply_sim_lib': self.apply_sims.hashdict()}
-
-    def get_sim(self, idx):
-        disp = self.apply_sims.get_sim(idx)
-        return disp.apply(self.base_sims.get_sim(idx))
+            h['sim_lib_%s' % i] = sim_lib.hashdict()
+        return h
 
 
 def hash_check(hash1, hash2, ignore=None, keychain=None):
