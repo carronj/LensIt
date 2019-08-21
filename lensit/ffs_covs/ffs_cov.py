@@ -89,7 +89,7 @@ class ffs_diagcov_alm(object):
         if not os.path.exists(fn) and init_rank == 0:
             pk.dump(self.hashdict(), open(fn, 'wb'), protocol=2)
         init_barrier()
-        hash_check(pk.load(open(fn, 'r')), self.hashdict())
+        hash_check(pk.load(open(fn, 'rb')), self.hashdict())
 
         self.barrier = pbs.barrier if _runtimebarriers else lambda: -1
         self.pbsrank = 0 if _runtimerankzero else pbs.rank

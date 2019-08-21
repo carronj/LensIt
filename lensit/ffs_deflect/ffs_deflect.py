@@ -102,7 +102,7 @@ class ffs_displacement(object):
         self.buffers = (max(buffer0, buffer1) * (self.LD_res[0] < self.HD_res[0]),
                         max(buffer0, buffer1) * (self.LD_res[1] < self.HD_res[1]))
         self.chk_shape = 2 ** np.array(self.LD_res) + 2 * np.array(self.buffers)  # shape of the chunks
-        self.N_chks = np.prod(2 ** (np.array(self.HD_res) - np.array(self.LD_res)))  # Number of chunks on each side.
+        self.N_chks = int(np.prod(2 ** (np.array(self.HD_res) - np.array(self.LD_res))))  # Number of chunks on each side.
         if verbose:
             print('rank %s, ffs_deflect::buffers size, chk_shape' % pbs.rank, (buffer0, buffer1), self.chk_shape)
 
@@ -286,16 +286,6 @@ class ffs_displacement(object):
 
         elif use_Pool == 0 or use_Pool == 1:
             assert self.shape[0] == self.shape[1], self.shape
-            #bicubicspline = r"\
-            #               int i,j;\
-            #              for( j= 0; j < width; j++ )\
-            #                  {\
-            #                  for( i = 0; i < width; i++)\
-            #                      {\
-            #                      lenmap[j * width + i] = bicubiclensKernel(filtmap,i + dx_gu[j * width + i],j + dy_gu[j * width + i],width);\
-            #                      }\
-            #                  }"
-            #header = r' "%s/lensit/gpu/bicubicspline.h" ' % li.LENSITDIR
             if do_not_prefilter:
                 filtmap = self.load_map(map).astype(np.float64)
             else:
@@ -305,19 +295,12 @@ class ffs_displacement(object):
                 filtmap *= np.outer(w0, w0[0:filtmap.shape[1]])
                 filtmap = np.fft.irfft2(filtmap, self.shape)
 
-            #lenmap = np.empty(self.shape, dtype=np.float64)
-            #dx_gu = self.get_dx_ingridunits().astype(np.float64)
-            #dy_gu = self.get_dy_ingridunits().astype(np.float64)
-            #width = int(self.shape[0])
-            #assert self.shape[0] == self.shape[1]
-            #weave.inline(bicubicspline, ['lenmap', 'filtmap', 'dx_gu', 'dy_gu', 'width'], headers=[header])
-            #return lenmap
             i = np.arange(int(np.prod(self.shape)), dtype=int)
             # new coordinates in grid units:
-            x_gu = np.require(self.get_dx_ingridunits().flatten(), float) + i % self.shape[1]
-            y_gu = np.require(self.get_dy_ingridunits().flatten(), float) + i // self.shape[1]
+            x_gu = self.get_dx_ingridunits().flatten() + i % self.shape[1]
+            y_gu = self.get_dy_ingridunits().flatten() + i // self.shape[1]
             del i
-            return bicubic.deflect(np.require(filtmap, float), x_gu , y_gu).reshape(self.shape)
+            return bicubic.deflect(filtmap, y_gu , x_gu).reshape(self.shape)
 
     def lens_alm(self, lib_alm, alm,
                  lib_alm_out=None, use_Pool=0, no_lensing=False, mult_magn=False):

@@ -8,7 +8,8 @@ class periodicmap_spliter:
     @staticmethod
     def get_slices_chk_N(N, LD_res, HD_res, buffers, inverse=False):
         """
-        This lengthy irritating piece of code returns the slice idcs for subcube (i,j)
+
+        This lengthy, irritating piece of code returns the slice idcs for subcube (i,j)
         in a decomposition of an original map of shape (2**HD_res[0],2**HD_res[1]) with chunks of 2**LD_res per sides,
         together with buffers[0],[1] buffers pixel on each side, fixed by the periodicity condition of the HD map.
         Nothing very subtle for the map interior, but the edges and corners require a little bit of care.
@@ -28,6 +29,7 @@ class periodicmap_spliter:
                 newmap[sHDs[0]] =  cubes[i*2 ** (HD_res[1] - LD_res[1]) + j][sLDs[0]]
 
         does patch together the cubes sequence to build the bigger cube.
+
         """
         assert len(LD_res) == 2 and len(HD_res) == 2
         if np.all(LD_res == HD_res):

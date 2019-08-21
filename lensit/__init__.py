@@ -123,7 +123,7 @@ def get_ellmat(LD_res, HD_res=14):
     return ell_mat.ell_mat(lib_dir, shape, lsides)
 
 
-def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
+def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))):
     """
     Default simulation library of 120 lensed CMB sims.
     Lensing is always performed at lcell 0.745 amin or so, and lensed CMB are generated on a square with sides lcell 2 ** res
@@ -145,7 +145,8 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
     return ffs_cmbs.sims_cmb_len(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims)
 
 
-def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4):
+def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
+                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))):
     """
     Default simulation library of 120 full flat sky sims for exp 'exp' at resolution LDres.
     Different exp at same resolution share the same random phases both in CMB and noise
@@ -177,7 +178,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsi
                                       pix_pha=pixpha, cache_sims=cache_maps)
 
 
-def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=4):
+def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1))):
     """
     Set HD_res to 14 for full sky sampled at res LD.
     """
@@ -193,5 +194,5 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=4):
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                         filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
 
-    lib_dir = os.path.join(LENSITDIR, 'temp', 'Covs', '%s'%exp, 'LD%sHD%s'%(exp, LD_res, HD_res))
+    lib_dir = os.path.join(LENSITDIR, 'temp', 'Covs', '%s'%exp, 'LD%sHD%s'%(LD_res, HD_res))
     return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)
