@@ -1,12 +1,15 @@
+from __future__ import print_function
+
 import numpy as np
 import sqlite3
 import os, io
 import pickle as pk
 import operator
+
 from lensit import pbs
 from lensit.misc.misc_utils import npy_hash
 
-class rng_db():
+class rng_db:
     """
     Class to save and read random number generators states in a .db file.
     """
@@ -29,7 +32,7 @@ class rng_db():
                              (id, state[0], state[2], state[3], state[4], state[1].reshape(1, len(state[1]))))
             self.con.commit()
         except:
-            print "rng_db::rngdb add failed!"
+            print("rng_db::rngdb add failed!")
 
     def get(self, id):
         cur = self.con.cursor()
@@ -51,7 +54,7 @@ class rng_db():
             self.con.execute("DELETE FROM rngdb WHERE id=?", (id,))
             self.con.commit()
         except:
-            print "rng_db::rngdb delete %s failed!" % id
+            print("rng_db::rngdb delete %s failed!" % id)
 
 
 class sim_lib(object):
@@ -71,12 +74,12 @@ class sim_lib(object):
         if not os.path.exists(lib_dir) and pbs.rank == 0:
             os.makedirs(lib_dir)
         self.nmax = nsims_max
-        if pbs.rank == 0 and not os.path.exists(lib_dir + '/sim_hash.pk'):
-            pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+        fn = os.path.join(lib_dir, 'sim_hash.pk')
+        if pbs.rank == 0 and not os.path.exists(fn):
+            pk.dump(self.hashdict(), open(fn, 'wb'), protocol=2)
         pbs.barrier()
 
-        hash = pk.load(open(lib_dir + '/sim_hash.pk', 'r'))
-        hash_check(hash, self.hashdict(), ignore=['lib_dir'])
+        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'])
 
         self._rng_db = rng_db(lib_dir + '/rngdb.db', idtype='INTEGER')
         self._get_rng_state = get_state_func
@@ -101,14 +104,14 @@ class sim_lib(object):
     def is_full(self):
         """ Checks whether all sims are stored or not. Boolean output. """
         if not self.has_nmax(): return False
-        for idx in xrange(self.nmax):
+        for idx in range(self.nmax):
             if not self.is_stored(idx): return False
         return True
 
     def is_empty(self):
         """ Checks whether any sims is stored. Boolean output. """
         assert self.nmax is not None
-        for i in xrange(self.nmax):
+        for i in range(self.nmax):
             if self.is_stored(i): return False
         return True
 
@@ -134,7 +137,7 @@ class sim_lib_dat():
         return {'sim_lib': self.sim_lib.hashdict(), 'type': 'library_dat'}
 
 
-class sim_lib_shuffle():
+class sim_lib_shuffle:
     """
     A sim_lib with remapped indices. sim(i) = input_sim_lib(j(i)).
     E.g. sim_lib_shuffle(sim_lib,shuffle = lambda idx : 0)
@@ -153,9 +156,9 @@ class sim_lib_shuffle():
     def get_shuffle_func(self): return self._shuffle
 
     def hashdict(self):
-        # TODO : how to hash a function ?
+        #FIXME:
         hash = {}
-        for i in xrange(100): hash[i] = self._shuffle(i)
+        for i in range(100): hash[i] = self._shuffle(i)
         return {'sim_lib': self.sim_lib.hashdict(), 'shuffle': hash}
 
 
@@ -224,8 +227,8 @@ class Gauss_sim_generic(sim_lib):
         self.lsides = tuple(lsides)
         super(Gauss_sim_generic, self).__init__(lib_dir, **kwargs)
         if self.is_empty() and len(cl) - 1 <= self.kmax_scal():
-            print "Gauss_sim_generic::Warning, grid kmax larger than kmax provided. These will be set to zero."
-            print round(self.kmax_scal()), len(cl) - 1
+            print("Gauss_sim_generic::Warning, grid kmax larger than kmax provided. These will be set to zero.")
+            print(round(self.kmax_scal()), len(cl) - 1)
 
     def ndim(self):
         return len(self.shape)
@@ -277,13 +280,13 @@ class Gauss_sim_generic(sim_lib):
         ndim = len(vs)
         if ndim == 1: return vs[0]
         shape = ()
-        for i in xrange(ndim):
+        for i in range(ndim):
             assert (vs[i].ndim == 1), "Want list of 1d arrays"
             shape += (vs[i].size,)
 
         B = vs[ndim - 1]
 
-        for i in xrange(1, ndim): B = np.outer(vs[ndim - 1 - i], B).flatten()
+        for i in range(1, ndim): B = np.outer(vs[ndim - 1 - i], B).flatten()
         return B.reshape(shape)
 
     def _square_pixwin_map(self, shape):
@@ -303,23 +306,23 @@ class Gauss_sim_generic(sim_lib):
         kmin2 = self.kmin() ** 2
         s = self.shape
         # First we check if the cube is regular
-        if (len(np.unique(s)) == 1 and len(np.unique(self.lsides)) == 1):
+        if len(np.unique(s)) == 1 and len(np.unique(self.lsides)) == 1:
             # regular hypercube simplifies matters.
             l02 = self._Freq(np.arange(s[0]), s[0]) ** 2 * kmin2[0]
             ones = np.ones(s[0])
             if self.ndim == 1: return l02
             vec = [l02]
-            for i in xrange(1, self.ndim()):
+            for i in range(1, self.ndim()):
                 vec.append(ones)
             l0x2 = self._outerproducts(vec)
             sqd_freq = np.zeros(s)
-            for i in xrange(0, self.ndim()):
+            for i in range(0, self.ndim()):
                 sqd_freq += np.swapaxes(l0x2, 0, i)
             return sqd_freq
         # Ok, that's fine, let's use a different dumb method.
         idc = np.indices(s)
         mapk = self._Freq(idc[0, :], s[0]) ** 2 * kmin2[0]
-        for j in xrange(1, self.ndim()):
+        for j in range(1, self.ndim()):
             mapk += self._Freq(idc[j, :], s[j]) ** 2 * kmin2[j]
         return mapk
 
@@ -370,7 +373,7 @@ class Gauss_sim_generic(sim_lib):
         return np.fft.irfft2(sims, self.shape)
 
 
-class apply_sim_lib():
+class apply_sim_lib:
     """
     Generic class returning sim_b.apply(sim_a).
     Sims of the apply_sim_lib must a have .apply(map) callable.
@@ -396,8 +399,10 @@ class apply_sim_lib():
         return disp.apply(self.base_sims.get_sim(idx))
 
 
-def hash_check(hash1, hash2, ignore=[], keychain=[]):
+def hash_check(hash1, hash2, ignore=None, keychain=None):
     """ from Mr. DH """
+    if ignore is None: ignore = []
+    if keychain is None: keychain = []
     keys1 = hash1.keys()
     keys2 = hash2.keys()
 
@@ -410,12 +415,12 @@ def hash_check(hash1, hash2, ignore=[], keychain=[]):
         v2 = hash2[key]
 
         def hashfail(msg=None):
-            print "ERROR: HASHCHECK FAIL AT KEY = " + ':'.join(keychain + [key])
-            if msg != None:
-                print "   ", msg
-            print "   ", "V1 = ", v1
-            print "   ", "V2 = ", v2
-            assert (0)
+            print("ERROR: HASHCHECK FAIL AT KEY = " + ':'.join(keychain + [key]))
+            if msg is not None:
+                print("   ", msg)
+            print("   ", "V1 = ", v1)
+            print("   ", "V2 = ", v2)
+            assert 0
 
         if type(v1) != type(v2):
             hashfail('UNEQUAL TYPES')
@@ -430,8 +435,8 @@ def hash_check(hash1, hash2, ignore=[], keychain=[]):
 
 
 def adapt_array(arr):
-    out = io.BytesIO();
-    np.save(out, arr);
+    out = io.BytesIO()
+    np.save(out, arr)
     out.seek(0);
     return buffer(out.read())
 
@@ -440,8 +445,8 @@ sqlite3.register_adapter(np.ndarray, adapt_array)
 
 
 def convert_array(text):
-    out = io.BytesIO(text);
-    out.seek(0);
+    out = io.BytesIO(text)
+    out.seek(0)
     return np.load(out)
 
 

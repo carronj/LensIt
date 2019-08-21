@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 
 
-class ffs_converter():
+class ffs_converter:
     # FIXME : what a mess !!
     # converts ffs_alm arrays to non-redundant rlm etc.
     def __init__(self, lib_alm):

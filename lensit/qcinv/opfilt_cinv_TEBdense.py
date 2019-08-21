@@ -103,7 +103,7 @@ class fwd_op:  # (P^-1 + R^t Ni R)^{-1} (skyalms)
         return filtTEBlms( SM.apply_pinvTEBmat(_type, self.lib_alm, self.cov.cls, TEBlms) +  self.cov.apply_alms(_type, TEBlms,inplace=False),self.cov)
 
 # =====================
-class pre_op_diag():
+class pre_op_diag:
     # (1/P + bl G Ni Gt bl)^-1
     def __init__(self, cov, *args):
         inv_cls = SM.get_pinvTEBcls(_type, cov.cls)
