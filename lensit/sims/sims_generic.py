@@ -124,7 +124,7 @@ class sim_lib(object):
         assert 0
 
 
-class sim_lib_dat():
+class sim_lib_dat:
     def __init__(self, sim_lib):
         self.sim_lib = sim_lib
         assert hasattr(sim_lib, 'get_dat')
@@ -432,22 +432,3 @@ def hash_check(hash1, hash2, ignore=None, keychain=None):
         else:
             if not (v1 == v2):
                 hashfail('UNEQUAL VALUES')
-
-
-def adapt_array(arr):
-    out = io.BytesIO()
-    np.save(out, arr)
-    out.seek(0);
-    return buffer(out.read())
-
-
-sqlite3.register_adapter(np.ndarray, adapt_array)
-
-
-def convert_array(text):
-    out = io.BytesIO(text)
-    out.seek(0)
-    return np.load(out)
-
-
-sqlite3.register_converter("array", convert_array)
