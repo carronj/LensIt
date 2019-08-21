@@ -1,4 +1,3 @@
-#NB: suppressed pool option
 #FIXME: inverse operation to implement
 
 from __future__ import print_function
@@ -14,7 +13,7 @@ from lensit.misc import map_spliter
 from lensit.misc import misc_utils as utils
 from lensit.misc import rfft2_utils
 from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq
-from lensit import pbs
+from lensit.pbs import pbs
 
 
 def get_GPUbuffers(GPU_res):
@@ -377,9 +376,9 @@ class ffs_displacement(object):
             return det
         else:
             assert self.has_lib_dir(), 'Specify lib_dir if you want to cache magn'
-            fname = self.lib_dir + '/det_magn_%s_%s_rank%s.npy' % \
+            fname = os.path.join(self.lib_dir, 'det_magn_%s_%s_rank%s.npy' % \
                                    (hashlib.sha1(self.get_dx()[0, 0:100]).hexdigest(),
-                                    hashlib.sha1(self.get_dy()[0, 0:100]).hexdigest(), pbs.rank)
+                                    hashlib.sha1(self.get_dy()[0, 0:100]).hexdigest(), pbs.rank))
             if not os.path.exists(fname):  # and pbs.rank == 0:
                 det = (PDP(self.get_dx(), axis=1, h=self.rmin[1], rule=self.rule) + 1.) \
                       * (PDP(self.get_dy(), axis=0, h=self.rmin[0], rule=self.rule) + 1.)
