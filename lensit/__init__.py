@@ -1,28 +1,19 @@
 """
 Contains some pure convenience functions for quick startup.
 """
+from __future__ import print_function
+
 import numpy as np
 import healpy as hp
-import os,sys
-import shts
+import os
 
-#try:
-#    import gpu
-#except:
-#    print "NB : import of GPU module unsuccessful"
-
-import ffs_covs
-import ffs_iterators
-import ffs_deflect
-import curvedskylensing
-import ffs_qlms
-import misc
-import pbs
-import qcinv
-import sims
-import pseudocls
+from lensit.ffs_covs import ffs_cov, ell_mat
+from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
+from lensit.pbs import pbs
+from lensit.misc.misc_utils import enumerate_progress, camb_clfile
 
 LENSITDIR = os.environ.get('LENSIT', './')
+CLSPATH = os.path.join(LENSITDIR, 'inputs', 'cls')
 
 ellmax_sky = 6000
 
@@ -96,36 +87,22 @@ def get_config(exp):
 
 def get_fidcls(ellmax_sky=ellmax_sky):
     cls_unl = {}
-    for key, cl in misc.jc_camb.spectra_fromcambfile(
-                    LENSITDIR + '/inputs/cls/fiducial_flatsky_lenspotentialCls.dat').iteritems():
-        cls_unl[key] = cl[0:ellmax_sky + 1]
-        if key == 'pp': cls_unl[key] = cl[:]  # might need this one
+    cls_unlr = camb_clfile(os.path.join(CLSPATH, 'fiducial_flatsky_lenspotentialCls.dat'))
+    for key in cls_unlr.keys():
+        cls_unl[key] = cls_unlr[key][0:ellmax_sky + 1]
+        if key == 'pp': cls_unl[key] = cls_unlr[key][:]  # might need this one to higher lmax
     cls_len = {}
-    for key, cl in misc.jc_camb.spectra_fromcambfile(
-                    LENSITDIR + '/inputs/cls/fiducial_flatsky_lensedCls.dat').iteritems():
-        cls_len[key] = cl[0:ellmax_sky + 1]
+    cls_lenr = camb_clfile(os.path.join(CLSPATH, 'fiducial_flatsky_lensedCls.dat'))
+    for key in cls_lenr.keys():
+        cls_len[key] = cls_lenr[0:ellmax_sky + 1]
     return cls_unl, cls_len
-
-def get_partiallylenfidcls(w,ellmax_sky=ellmax_sky):
-    # Produces spectra lensed with w_L * cpp_L
-    params = misc.jc_camb.read_params(LENSITDIR + '/inputs/cls/fiducial_flatsky_params.ini')
-    params['lensing_method'] = 4
-    #FIXME : this would anyway not work in MPI mode beacause lensing method 4 does not.
-    params['output_root'] = os.path.abspath(LENSITDIR + '/temp/camb_rank%s' % pbs.rank)
-    ell = np.arange(len(w),dtype = int)
-    np.savetxt(misc.jc_camb.PathToCamb + '/cpp_weights.txt', np.array([ell, w]).transpose(), fmt=['%i', '%10.5f'])
-    misc.jc_camb.run_camb_fromparams(params)
-    cllen = misc.jc_camb.spectra_fromcambfile(params['output_root'] + '_' + params['lensed_output_file'])
-    ret = {}
-    for key, cl in cllen.iteritems():
-        ret[key] = cl[0:ellmax_sky + 1]
-    return ret
 
 
 def get_fidtenscls(ellmax_sky=ellmax_sky):
     cls = {}
-    for key, cl in misc.jc_camb.spectra_fromcambfile(LENSITDIR + '/inputs/cls/fiducial_tensCls.dat').iteritems():
-        cls[key] = cl[0:ellmax_sky + 1]
+    cls_tens = camb_clfile(os.path.join(CLSPATH, 'fiducial_tensCls.dat'))
+    for key in cls_tens.keys():
+        cls[key] = cls_tens[key][0:ellmax_sky + 1]
     return cls
 
 def get_ellmat(LD_res, HD_res=14):
@@ -142,7 +119,8 @@ def get_ellmat(LD_res, HD_res=14):
     lcell_rad = (np.sqrt(4. * np.pi) / 2 ** 14) * (2 ** (HD_res - LD_res))
     shape = (2 ** LD_res, 2 ** LD_res)
     lsides = (lcell_rad * 2 ** LD_res, lcell_rad * 2 ** LD_res)
-    return ffs_covs.ell_mat.ell_mat(LENSITDIR + '/temp/ellmats/ellmat_%s_%s' % (HD_res, LD_res), shape, lsides)
+    lib_dir = os.path.join(LENSITDIR, 'temp', 'ellmats', 'ellmat_%s_%s' % (HD_res, LD_res))
+    return ffs_covs.ell_mat.ell_mat(lib_dir, shape, lsides)
 
 
 def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
@@ -156,17 +134,15 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
     fsky = int(np.round(np.prod(HD_ellmat.lsides) / 4. / np.pi * 1000.))
     lib_skyalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(HD_ellmat, num_threads=num_threads,
                                                  filt_func=lambda ell: ell <= ellmax_sky)
-    skypha = sims.ffs_phas.ffs_lib_phas(LENSITDIR + '/temp/%s_sims/fsky%04d/len_alms/skypha' % (nsims, fsky), 4,
-                                        lib_skyalm,
-                                        nsims_max=nsims)
+    skypha_libdir = os.path.join(LENSITDIR, 'temp', '%s_sims'%nsims, 'fsky%04d'%fsky, 'len_alms', 'skypha')
+    skypha = sims.ffs_phas.ffs_lib_phas(skypha_libdir, 4, lib_skyalm, nsims_max=nsims)
     if not skypha.is_full() and pbs.rank == 0:
-        for _i, idx in misc.misc_utils.enumerate_progress(np.arange(nsims), label='Generating CMB phases'):
+        for i, idx in enumerate_progress(np.arange(nsims), label='Generating CMB phases'):
             skypha.get_sim(idx)
     pbs.barrier()
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
-    return sims.ffs_cmbs.sims_cmb_len(LENSITDIR + '/temp/%s_sims/fsky%04d/len_alms' % (nsims, fsky), lib_skyalm,
-                                      cls_unl,
-                                      lib_pha=skypha, cache_lens=cache_sims)
+    sims_libdir = os.path.join(LENSITDIR, 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'len_alms')
+    return sims.ffs_cmbs.sims_cmb_len(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims)
 
 
 def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4):
@@ -189,14 +165,15 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsi
     nTpix = sN_uKamin / np.sqrt(vcell_amin2)
     nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
 
-    pixpha = sims.ffs_phas.pix_lib_phas(LENSITDIR + '/temp/%s_sims/fsky%04d/res%s/pixpha' % (nsims, fsky, LDres), 3,
-                                        lib_datalm.ell_mat.shape, nsims_max=nsims)
+    pixpha_libdir = os.path.join(LENSITDIR, 'temp', '%s_sims'%nsims, 'fsky%04d'%fsky, 'res%s'%LDres, 'pixpha')
+    pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+
     if not pixpha.is_full() and pbs.rank == 0:
-        for _i, idx in misc.misc_utils.enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
+        for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
             pixpha.get_sim(idx)
     pbs.barrier()
-    lib_dir = LENSITDIR + '/temp/%s_sims/fsky%04d/res%s/%s/maps' % (nsims, fsky, LDres, exp)
-    return sims.ffs_maps.lib_noisemap(lib_dir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
+    sims_libdir = os.path.join(LENSITDIR, 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
+    return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps)
 
 
@@ -207,17 +184,14 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=4):
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
 
-    cls_noise = {}
-    cls_noise['t'] = (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)  # simple flat noise Cls
-    cls_noise['q'] = (sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)  # simple flat noise Cls
-    cls_noise['u'] = (sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)  # simple flat noise Cls
+    cls_noise = {'t': (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
+                 'q':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
+                 'u':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)}  # simple flat noise Cls
     cl_transf = hp.gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=ellmax_sky)
-    lib_alm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
-                                              filt_func=lambda ell: (ell >= ellmin) & (ell <= ellmax),
-                                              num_threads=pyFFTWthreads)
-    lib_skyalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
-                                                 filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
+    lib_alm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
+                        filt_func=lambda ell: (ell >= ellmin) & (ell <= ellmax), num_threads=pyFFTWthreads)
+    lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
+                        filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
 
-    lib_dir = LENSITDIR + '/temp/Covs/%s/LD%sHD%s' % (exp, LD_res, HD_res)
-    return ffs_covs.ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise,
-                                            lib_skyalm=lib_skyalm)
+    lib_dir = os.path.join(LENSITDIR, 'temp', 'Covs', '%s'%exp, 'LD%sHD%s'%(exp, LD_res, HD_res))
+    return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)

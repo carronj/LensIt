@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import numpy as np
 
 
@@ -10,17 +12,16 @@ def IsPowerOfTwo(i):
 
 
 def Log2ofPowerof2(shape):
+    """ Returns powers of two exponent for each element of shape
+
     """
-    Returns powers of two exponent for each element of shape
-    """
-    # There must be a better way, such as the first non zero byte.
     res = np.array(shape)
-    for i in xrange(res.size):
+    for i in range(res.size):
         n = shape[i]
         assert (IsPowerOfTwo(n)), "Invalid input"
         ix = 0
         while n > 1:
-            n /= 2
+            n //= 2
             ix += 1
         res[i] = ix
     return res

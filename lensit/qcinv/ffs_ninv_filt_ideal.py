@@ -1,12 +1,13 @@
 # FIXME : might think about passing 2 sets of Cls, the correct one and the preconditioner.
 from __future__ import print_function
-import numpy as np
-import lensit as li
 
+import numpy as np
+
+from lensit.ffs_covs import ffs_specmat
 
 class ffs_ninv_filt(object):
-    """
-    B^t C B + N where everyting is ideal and projected onto subset of modes set by lib_datalm.
+    """B^t C B + N where everyting is ideal and projected onto subset of modes set by lib_datalm.
+
     """
 
     def __init__(self, lib_datalm, lib_skyalm, len_cls, cl_transf, nlev_t, nlev_p, verbose=False):
@@ -15,8 +16,8 @@ class ffs_ninv_filt(object):
         self.lib_skyalm = lib_skyalm
         self.cl_transf = (cl_transf[:lib_skyalm.ellmax + 1]).copy()
         self.cls = {}
-        for _k, _cls in len_cls.iteritems():
-            self.cls[_k] = (_cls[:lib_skyalm.ellmax + 1]).copy()
+        for k in len_cls.keys():
+            self.cls[k] = (len_cls[k][:lib_skyalm.ellmax + 1]).copy()
         self.nlevs = {'t': nlev_t, 'q': nlev_p, 'u': nlev_p}
         self._nlevs_rad2 = {'t': (nlev_t / 180 / 60. * np.pi) ** 2,
                             'q': (nlev_p / 180 / 60. * np.pi) ** 2,
@@ -71,7 +72,7 @@ class ffs_ninv_filt(object):
         Apply transfer function, T E B skyalm to T Q U map.
         """
         assert len(TQUtype) == len(TEBlms),(len(TQUtype),len(TEBlms))
-        return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype,li.ffs_covs.ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
+        return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype, ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
 
     def apply_Rt(self, field, _map):
         """
@@ -89,7 +90,7 @@ class ffs_ninv_filt(object):
         """
         assert TQUtype in ['T','QU','TQU']
         assert _maps.shape == (len(TQUtype),self.lib_datalm.alm_size), (self.lib_datalm.alm_size,_maps.shape, len(TQUtype))
-        return li.ffs_covs.ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
+        return ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
 
     def apply_alms(self,TQUtype, TEBalms, inplace=True):
         """

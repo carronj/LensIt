@@ -1,5 +1,9 @@
-import lensit as li
+from __future__ import print_function
+
 import numpy as np
+
+from lensit.ffs_covs import ell_mat
+from lensit.misc.misc_utils import enumerate_progress
 
 def get_dcllendclunl_pert(_type, ell_mat,lmaxlen,lmaxunl,clpp):
     """
@@ -20,10 +24,10 @@ def get_dcllendclunl_pert(_type, ell_mat,lmaxlen,lmaxunl,clpp):
     :returns dC_llen / dCl_unl
     """
     if lmaxlen > lmaxunl:
-        print " this routine best for lmaxlen <= lmaxunl"
+        print(" this routine best for lmaxlen <= lmaxunl")
     assert _type in ['T', 'QU', 'TQU'], _type
     #FIXME: lmax ?
-    libalm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(ell_mat, filt_func=lambda ell: ell >= 0)
+    libalm = ell_mat.ffs_alm_pyFFTW(ell_mat, filt_func=lambda ell: ell >= 0)
     _clpp = np.zeros(libalm.ellmax + 1)
     _clpp[:min(len(clpp),len(_clpp))]= clpp[:min(len(clpp),len(_clpp))]
 
@@ -45,7 +49,7 @@ def get_dcllendclunl_pert(_type, ell_mat,lmaxlen,lmaxunl,clpp):
     if _type == 'T': # returns dC_llen^TT / dC_lunl^TT (tranposed)
         M = np.zeros((len(elllen), len(ellunl)), dtype=float)
         cl = np.zeros(libalm.ellmax + 1, dtype=float)
-        for i, l in li.misc.misc_utils.enumerate_progress(elllen, label='filling %s der. matrix up to %s' % (_type, lmaxlen)):
+        for i, l in enumerate_progress(elllen, label='filling %s der. matrix up to %s' % (_type, lmaxlen)):
             cl[l] = 1. / Nell[l]
             ones = libalm.alm2map(libalm.almxfl(np.ones(libalm.alm_size,dtype = complex),cl))
             alm = ikx2 * libalm.map2alm(sigxx * ones) \
@@ -60,7 +64,7 @@ def get_dcllendclunl_pert(_type, ell_mat,lmaxlen,lmaxunl,clpp):
         XYlms = np.zeros((2, 2, libalm.alm_size), dtype=complex)
         M = np.zeros((3 * len(elllen), 3 * len(ellunl)), dtype=float)
         c, s = libalm.get_cossin_2iphi()
-        for i, l in li.misc.misc_utils.enumerate_progress(elllen, label='filling %s der. matrix up to %s' % (_type, lmaxlen)):
+        for i, l in enumerate_progress(elllen, label='filling %s der. matrix up to %s' % (_type, lmaxlen)):
             for iA, ab in enumerate([(0, 0), (1, 1), (0, 1)]):
                 a, b = ab
                 clmat[a, b, l] =  1. / Nell[l]  # EE, BB or EB part
@@ -81,16 +85,16 @@ def get_dcllendclunl_pert(_type, ell_mat,lmaxlen,lmaxunl,clpp):
         assert 0, '%s not implemented' % _type
     return M * fac
 
-def get_dcllendclphi_pert(_type, ell_mat,lmaxlen,lmaxunl,cl_unl,BBonly = False):
+def get_dcllendclphi_pert(_type, ell_mat, lmaxlen, lmaxunl, cl_unl, BBonly = False):
     """
     It seems to work OK even if again thigs are not smooth, presumably because of non-smooth Nell beahvior.
     """
     #FIXME: disgusting piece of code.
     if lmaxlen > lmaxunl:
-        print " this routine best for lmaxlen <= lmaxunl"
+        print(" this routine best for lmaxlen <= lmaxunl")
     assert _type in ['T', 'QU', 'TQU'], _type
     #FIXME: lmax ?
-    libalm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(ell_mat, filt_func=lambda ell: ell >= 0)
+    libalm = ell_mat.ffs_alm_pyFFTW(ell_mat, filt_func=lambda ell: ell >= 0)
 
     fac = 1. / np.sqrt(np.prod(libalm.lsides))
     Nell = libalm.get_Nell()[:max(lmaxlen,lmaxunl) + 1]
@@ -140,7 +144,7 @@ def get_dcllendclphi_pert(_type, ell_mat,lmaxlen,lmaxunl,cl_unl,BBonly = False):
             Cyy[iX, jX] = libalm.alm2map(iky2 * _EBcls2QUPmatij(libalm, TEBcls, iX, jX))
             Cxy[iX, jX] = libalm.alm2map(ikx() * iky() * _EBcls2QUPmatij(libalm, TEBcls, iX, jX))
         clmat = np.zeros((2, 2, libalm.ellmax + 1), dtype=float)
-        for i, l in li.misc.misc_utils.enumerate_progress(elllen, label='filling %s der. matrix up to %s' % (_type, lmaxlen)):
+        for i, l in enumerate_progress(elllen, label='filling %s der. matrix up to %s' % (_type, lmaxlen)):
             for iA, (a,b) in enumerate([(0, 0), (1, 1), (0, 1)] if not BBonly else [(1,1)]):
                 clmat[a, b, l] =  1. / Nell[l]  # EE, BB or EB part
                 clmat[b, a, l] =  1. / Nell[l]
@@ -163,7 +167,7 @@ def get_dcllendclphi_pert(_type, ell_mat,lmaxlen,lmaxunl,cl_unl,BBonly = False):
         assert 0, '%s not implemented' % _type
     return M * fac
 
-def build_BBcov_pert(ellmat,lmaxBB,cl_unl,clBBobs,lmax_unl = 6000):
+def build_BBcov_pert(ellmat, lmaxBB, cl_unl, clBBobs, lmax_unl = 6000):
     """
     Approximation to the BB covariance.
     :param ellmat:
@@ -182,7 +186,7 @@ def build_BBcov_pert(ellmat,lmaxBB,cl_unl,clBBobs,lmax_unl = 6000):
     dBdp = get_dcllendclphi_pert('QU',ellmat,lmaxBB,lmax_unl,cl_unl,BBonly=True)
     covp = np.zeros( (len(elllen),len(elllen)),dtype = float)
     covpG = 2. * cl_unl['pp'][ellunl] ** 2 / Nell[ellunl]
-    for i,l1 in li.misc.misc_utils.enumerate_progress(elllen,label = 'filling dBdphi part of Cov matrix'):
+    for i,l1 in enumerate_progress(elllen,label = 'filling dBdphi part of Cov matrix'):
         for j,l2 in enumerate(elllen):
             covp[i,j] = np.sum(covpG * dBdp[i] * dBdp[j])
     del dBdp
@@ -191,7 +195,7 @@ def build_BBcov_pert(ellmat,lmaxBB,cl_unl,clBBobs,lmax_unl = 6000):
     dBdE = dBdE[dBdE.shape[0]/3:2 * dBdE.shape[0]/3,0:dBdE.shape[1]/3]
     covE = np.zeros( (len(elllen),len(elllen)),dtype = float)
     covEG = 2. * cl_unl['ee'][ellunl] ** 2 / Nell[ellunl]
-    for i,l1 in li.misc.misc_utils.enumerate_progress(elllen,label = 'filling dBdE part of Cov matrix'):
+    for i,l1 in enumerate_progress(elllen,label = 'filling dBdE part of Cov matrix'):
         for j,l2 in enumerate(elllen):
             covE[i,j] = np.sum(covEG * dBdE[i] * dBdE[j])
     del dBdE
@@ -225,7 +229,7 @@ def _QUPmats2EBcls(lib_alm, QUpmat, c=None, s=None):
         E = cos Q + sin U
         B = -sin Q + cos U
     """
-    assert QUpmat.shape == ((2, 2, lib_alm.alm_size)), ((2, 2, lib_alm.alm_size), QUpmat.shape)
+    assert QUpmat.shape == (2, 2, lib_alm.alm_size), ((2, 2, lib_alm.alm_size), QUpmat.shape)
     ret = np.zeros((2, 2, lib_alm.ellmax + 1), dtype=float)
     bin2cl = lambda _alm: lib_alm.bin_realpart_inell(_alm)[0:lib_alm.ellmax + 1]
     if c is None or s is None: c, s = lib_alm.get_cossin_2iphi()

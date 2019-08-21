@@ -12,7 +12,7 @@ This should work with and without lensing, in which case contains beam and defle
 
 import numpy  as np
 
-import dense
+from lensit.qcinv import dense
 from lensit.ffs_covs import ffs_specmat as SM
 
 _type = 'T'  # in ['T','QU','TQU']
@@ -44,7 +44,7 @@ def calc_prep(maps, cov, *args, **kwargs):
     Pre operation for primordial CMB modes.
     R^t Ni data projected onto T E alms
     """
-    print "This is calc prep for %s W. Filtering" % _type, _prefix
+    print("This is calc prep for %s W. Filtering" % _type, _prefix)
     return filtTEBlms(cov.apply_Rts(_type,cov.apply_maps(_type, maps, inplace=False)),cov)
 
 def apply_fini_BINV(soltn, cov, maps, **kwargs):

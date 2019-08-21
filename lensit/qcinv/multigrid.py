@@ -3,7 +3,7 @@ from __future__ import print_function
 import sys, re, copy
 import numpy as np
 import time
-import cd_solve, cd_monitors
+from lensit.qcinv import cd_solve, cd_monitors
 
 
 # ===

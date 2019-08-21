@@ -1,12 +1,39 @@
 # Convenience functions :
+from __future__ import print_function
 import sys
 import time
 
 import numpy as np
 import os
 import hashlib
-from .. import pbs
+from lensit.pbs import pbs
 
+def camb_clfile(fname, lmax=None):
+    """CAMB spectra (lenspotentialCls, lensedCls or tensCls types) returned as a dict of numpy arrays.
+
+    Args:
+        fname (str): path to CAMB output file
+        lmax (int, optional): outputs cls truncated at this multipole.
+
+    """
+    cols = np.loadtxt(fname).transpose()
+    ell = np.int_(cols[0])
+    if lmax is None: lmax = ell[-1]
+    assert ell[-1] >= lmax, (ell[-1], lmax)
+    cls = {k : np.zeros(lmax + 1, dtype=float) for k in ['tt', 'ee', 'bb', 'te']}
+    w = ell * (ell + 1) / (2. * np.pi)  # weights in output file
+    idc = np.where(ell <= lmax) if lmax is not None else np.arange(len(ell), dtype=int)
+    for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
+        cls[k][ell[idc]] = cols[i + 1][idc] / w[idc]
+    if len(cols) > 5:
+        wpp = lambda ell : ell ** 2 * (ell + 1) ** 2 / (2. * np.pi)
+        wptpe = lambda ell : np.sqrt(ell.astype(float) ** 3 * (ell + 1.) ** 3) / (2. * np.pi)
+        for i, k in enumerate(['pp', 'pt', 'pe']):
+            cls[k] = np.zeros(lmax + 1, dtype=float)
+        cls['pp'][ell[idc]] = cols[5][idc] / wpp(ell[idc])
+        cls['pt'][ell[idc]] = cols[6][idc] / wptpe(ell[idc])
+        cls['pe'][ell[idc]] = cols[7][idc] / wptpe(ell[idc])
+    return cls
 
 def cls_hash(cls, lmax=None, astype=np.float32):
     if lmax is None:
@@ -18,7 +45,7 @@ def cls_hash(cls, lmax=None, astype=np.float32):
 def npy_hash(npy_array, astype=np.float32):
     return hashlib.sha1(np.copy(npy_array.astype(astype), order='C')).hexdigest()
 
-class timer():
+class timer:
     def __init__(self, verbose, prefix='', suffix=''):
         self.t0 = time.time()
         self.ti = np.copy(self.t0)
@@ -53,40 +80,6 @@ def read_params(paramfile):
             (key, equal, val) = line.split()
             params[key] = val
     return params
-
-
-def legendreP(N, x):
-    """
-    returns the values of the Legendre polynomials
-               up to order N, at the argument x
-    """
-    x = np.array(x)
-    Pn = np.ones(x.size)
-    if N == 0: return Pn
-    res = np.zeros((N + 1, x.size))
-    Pn1 = x
-    res[0, :] = Pn
-    res[1, :] = Pn1
-    if N == 1: return res
-    for I in xrange(1, N):
-        res[I + 1L, :] = 2. * x * res[I, :] - res[I - 1, :] - (x * res[I, :] - res[I - 1, :]) / (I + 1.)
-    return res
-
-
-def C0_box(Cl, fsky):
-    """
-    Returns the zero mode variance expected in a cap of the sky of volume fsky.
-    """
-    assert fsky > 0. and fsky <= 1.
-    lmax = len(Cl)
-    x = 1. - 2 * fsky
-    facl = 0.5 / np.sqrt(4. * np.pi) / fsky / np.sqrt(2 * np.arange(lmax + 1) + 1)
-    Pl = legendreP(lmax + 1, x)[:, 0]
-    W0 = facl[0] * (1. - x)
-    Wl = -Pl[2: len(Pl)] + Pl[0:len(Pl) - 2]
-    Wl = np.insert(Wl * facl[1:], 0, W0)
-    return np.sum(Cl * Wl[0:lmax] ** 2)
-
 
 def enumerate_progress(list, label=''):
     # Taken boldly from Duncan Hanson lpipe :
@@ -127,7 +120,7 @@ def Log2ofPowerof2(shape):
     """
     # There must be a better way, such as the first non zero byte.
     res = np.array(shape)
-    for i in xrange(res.size):
+    for i in range(res.size):
         n = shape[i]
         assert (IsPowerOfTwo(n)), "Invalid input"
         ix = 0
@@ -144,7 +137,7 @@ def int_tabulated(x, y, **kwargs):
     return simps(y, x=x, **kwargs)
 
 
-class stats():
+class stats:
     """
     Simple minded routines for means and averages of sims .
     Calculates means as 1/N sum()
@@ -257,7 +250,7 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
     err = np.zeros(Nbins)
     # This should work for ist.cl and arrays
     arr[0: min(len(Cl), ellmax + 1)] *= Cl[0:min(len(Cl), ellmax + 1)]
-    for i in xrange(Nbins):
+    for i in range(Nbins):
         if (bins_u[i] < arr.size) and (len(arr[bins_l[i]:bins_u[i] + 1]) >= 1):
             ii = np.where((nzell >= bins_l[i]) & (nzell <= bins_u[i]))
             ret[i] = sumfunc(arr[nzell[ii]])
@@ -290,7 +283,7 @@ class binner():
         if weights is None: weights = np.ones(len(x), dtype=float)
         assert (len(x) == len(y) and len(x) == len(weights)), "inconsistent inputs"
         err = np.zeros(self.Nbins())
-        for i, bin_l, bin_r in zip(xrange(self.Nbins()), self.bins_l, self.bins_r):
+        for i, bin_l, bin_r in zip(range(self.Nbins()), self.bins_l, self.bins_r):
             idc = np.array(np.where((x >= bin_l) & (x <= bin_r)))
             if idc.size > 0.:
                 ret[i] = np.sum(y[idc] * weights[idc]) / idc.size
@@ -299,32 +292,6 @@ class binner():
             return ret
         else:
             return ret, err
-
-
-def mk_session_seed(verbose=False):
-    """
-    Tries to create a reasonable seed from hostname and time and initialize the
-    nump.random rng.
-    """
-    from decimal import Decimal
-    import socket
-    import time
-    from lensit import pbs
-    from hashlib import sha1
-    rank = pbs.rank
-    hostname = socket.gethostname()
-    # if not os.path.exists(fname) :
-    time_str = str(Decimal(time.time()))
-    if verbose: print 'building seed with Hostname, pbs 111 * rank and 111 * time :', hostname, 111 * rank, time_str
-    hash_hex = sha1(hostname + str(111 * rank) + 111 * time_str).hexdigest()  # 160 bits hexadecimal hash string
-    seed = np.array([int(hash_hex[i:i + 8], 16) for i in [0, 8, 16, 24, 32]])
-    # seed must a array like of 32 bit integers
-    np.random.seed(seed)
-    # moves the seed by 10^6
-    if verbose: print "moving seed 10^6 times:"
-    for i in xrange(1000000): a = np.random.random()
-    if verbose: print "done"
-    return np.random.get_state()
 
 
 def rfft2_sum(rfft_map):
@@ -370,13 +337,13 @@ def outerproducts(vs):
     ndim = len(vs)
     if ndim == 1: return vs[0]
     shape = ()
-    for i in xrange(ndim):
+    for i in range(ndim):
         assert (vs[i].ndim == 1), "Want list of 1d arrays"
         shape += (vs[i].size,)
 
     B = vs[ndim - 1]
 
-    for i in xrange(1, ndim): B = np.outer(vs[ndim - 1 - i], B).flatten()
+    for i in range(1, ndim): B = np.outer(vs[ndim - 1 - i], B).flatten()
     return B.reshape(shape)
 
 
@@ -405,194 +372,6 @@ def Freq(i, N):
     assert (np.all(N % 2 == 0)), "This routine only for even numbers of points"
     return i - 2 * (i >= (N / 2)) * (i % (N / 2))
 
-
-def DirichletKernel(n, dim, d=1.):
-    """
-    Returns the Dirichlet kernel associated to the fft frequencies.
-    dim is the 1d fft dimension, d the real space spacing, int n the width
-    of the top-hat. Has value 2n + 1 at 0
-    """
-    freqs = Freq(np.arange(1, dim), dim) * (2 * np.pi / dim / d)
-    return np.insert(np.sin(freqs * (n + 0.5)) / np.sin(freqs * 0.5), 0, (2. * n + 1))
-
-
-class library_datacube():
-    """
-        Library for fields represented by numpy arrays
-        meant to for Fourier analysis etc, where
-        each side may have a different physical length and grid resolution.
-        Recall numpy fft  conventions :
-        fft(f(x)) (np) = \sum_m a_m e^(-i2\pi m k /N)
-            ---> (Npix/V) \int dx f(x) e^(-ikx)
-        ifft(fft) = 1 = 1/Npix \sum a_k e^(i 2\pi m k /N)
-            ---> (V / Npix) \int dk /(2pi) \tilde a(k) e^(ikx)
-    """
-
-    def __init__(self, resolution, lside, verbose=True):
-
-        self.resolution = np.array(resolution)  # the number of points in each side is 2**res
-        self.lside = np.array(lside)  # Physical total lengths of the box
-        self.ndim = len(self.lside)
-        self.verbose = verbose
-        assert (len(lside) == len(resolution)), "Inconsistent input"
-
-    def vol(self):
-        """
-        Returns volume in physical units
-        """
-        return np.prod(self.lside)
-
-    def cell_vol(self):
-        return np.prod(self.rmin())
-
-    def npix(self):
-        """
-        Returns the number of resolution elements
-        """
-        return np.prod(self.shape())
-
-    def rmin(self):
-        """
-        Returns physical cell lengths along each dimensions
-        """
-        return self.lside / self.shape()
-
-    def rmax(self):
-        """
-        Returns physical cell lengths along each dimensions
-        """
-        return self.lside / 2.
-
-    def kmin(self):
-        """
-        Returns minimal frequencies along each dimension
-        """
-        return 2. * np.pi / self.lside
-
-    def kmax(self):
-        """
-        Returns maximal frequencies along each dimension
-        """
-        return np.pi * self.shape() / self.lside
-
-    def shape(self):
-        """
-        Numpy shape of the jc_datacube
-        """
-        return 2 ** self.resolution
-
-    def sqd_uniqfreq(self, return_inverse=False, return_counts=False):
-        """
-        Returns the sorted array of unique frequencies k**2 = sum_i k_i^2
-        together with the counts.
-        Output is that of np.unique with the corresponding keywords.
-        """
-        return np.unique(self.sqd_freqmap(), return_inverse=return_inverse, return_counts=return_counts)
-
-    def sqd_freqmap(self, verbose=None):
-        """
-        Returns the array of squared frequencies, in physical units.
-        Same shape than the datacube.
-        """
-        s = self.shape()
-        # First we check if the cube is regular
-        if (len(np.unique(s)) == 1 and len(np.unique(self.lside)) == 1):  # regular hypercube
-            l02 = Freq(np.arange(s[0]), s[0]) ** 2 * self.kmin()[0] ** 2
-            ones = np.ones(s[0])
-            if self.ndim == 1: return l02
-            vec = [l02]
-            for i in xrange(1, self.ndim):
-                vec.append(ones)
-            l0x2 = outerproducts(vec)
-            sqd_freq = np.zeros(s)
-            for i in xrange(0, self.ndim):
-                sqd_freq += np.swapaxes(l0x2, 0, i)
-            return sqd_freq
-        # Ok, let's use a different dumb method.
-        idc = np.indices(s)
-        kmin2 = self.kmin() ** 2
-        mapk = kmin2[0] * Freq(idc[0, :], s[0]) ** 2
-        for j in xrange(1, self.ndim):
-            mapk += kmin2[j] * Freq(idc[j, :], s[j]) ** 2
-        return mapk
-
-    def sqd_int_freqmap(self, verbose=None):
-        """
-        Returns the array of squared frequencies, in physical units.
-        Same shape than the datacube.
-        """
-        s = self.shape()
-        # First we check if the cube is regular
-        if (len(np.unique(s)) == 1 and len(np.unique(self.lside)) == 1):  # regular hypercube
-            l02 = Freq(np.arange(s[0]), s[0]) ** 2
-            ones = np.ones(s[0])
-            if self.ndim == 1: return l02
-            vec = [l02]
-            for i in xrange(1, self.ndim):
-                vec.append(ones)
-            l0x2 = outerproducts(vec)
-            sqd_freq = np.zeros(s)
-            for i in xrange(0, self.ndim):
-                sqd_freq += np.swapaxes(l0x2, 0, i)
-            return sqd_freq
-        # Ok, let's use a different dumb method.
-        idc = np.indices(s)
-        mapk = Freq(idc[0, :], s[0]) ** 2
-        for j in xrange(1, self.ndim):
-            mapk += Freq(idc[j, :], s[j]) ** 2
-        return mapk
-
-    def sqd_distmap(self):
-        """
-        Returns the array of squared distances, in physical units.
-        Same shape than the datacube.
-        """
-        s = self.shape()
-        idc = np.indices(s)
-        rmin2 = self.rmin() ** 2
-        mapk = rmin2[0] * Freq(idc[0, :], s[0]) ** 2
-        for j in xrange(1, len(s)): mapk += rmin2[j] * Freq(idc[j, :], s[j]) ** 2
-        return mapk
-
-    def fftTH_filter(self, n):
-        """
-        Returns the rectangular top-hat filter in Fourier space.
-        n is an array of int with the same dimension than shape.
-        The top hat filter has width 2*n_i + 1 along dimension i.
-        At zero has entry Prod_dimensions (2 n_i + 1)
-        """
-        assert (len(n) == self.ndim), "Inconsistent input"
-        vs = []
-        shape = self.shape()
-        rmin = self.rmin()
-        for i in xrange(self.ndim): vs.append(DirichletKernel(n[i], shape[i], d=rmin[i]))
-        return outerproducts(vs)
-
-    def fftGauss_filter(self, sR):
-        """
-        Returns the Gaussian filter in Fourier space. exp(-1/2 \sum k_i^2s2R_i )
-        Equal to unity at zero frequency
-        """
-        assert (len(sR) == self.ndim), "Want one dispersion per dimension"
-        vs = []
-        shape = self.shape()
-        kmin2 = self.kmin() ** 2
-        for i in xrange(self.ndim):
-            sqdfreqs = kmin2[i] * Freq(np.arange(shape[i]), shape[i]) ** 2
-            vs.append(np.exp(-sqdfreqs * (sR[i] ** 2 * 0.5)))
-        return outerproducts(vs)
-
-
-def check_attributes(par, required_attrs):
-    attr_ok = [hasattr(par, attr) for attr in required_attrs]
-    if not np.all(attr_ok):
-        print "# !! required attributes not found :"
-        for attr in required_attrs:
-            if not hasattr(par, attr):
-                print "  ", attr
-        assert 0
-    return np.all(attr_ok)
-
 # --------------------------
 # Some simple-minded utils for verbose mode on :
 # --------------------------
@@ -603,15 +382,15 @@ def LevelUp(verbose):
 
 def Offset(verbose):
     offset = ' '
-    for i in xrange(verbose - 1):
+    for i in range(verbose - 1):
         offset += '  .../'
     return offset
 
 
 def PrtAndRstTime(verbose, t0):
-    print Offset(verbose), "--- %0.2fs ---" % (time.time() - t0)
+    print(Offset(verbose) + "--- %0.2fs ---" % (time.time() - t0))
     return time.time()
 
 
 def PrtMsg(msg, verbose):
-    print Offset(verbose), msg
+    print(Offset(verbose) + msg)

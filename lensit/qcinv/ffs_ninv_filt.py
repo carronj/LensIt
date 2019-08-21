@@ -1,8 +1,11 @@
+from __future__ import print_function
+
 import numpy as np
-import lensit as fs
+
 from lensit.qcinv import template_removal
 from lensit.misc.misc_utils import cls_hash, npy_hash
-import hashlib
+from lensit.ffs_covs import ffs_specmat
+from lensit.misc.rfft2_utils import degrade_mask
 
 load_map = lambda _map: np.load(_map) if type(_map) is str else _map
 
@@ -32,63 +35,64 @@ class ffs_ninv_filt(object):
         self.lib_skyalm = lib_skyalm
         self.cl_transf = cl_transf[:lib_skyalm.ellmax + 1]
         self.cls = {}
-        for _k, _cls in len_cls.iteritems():
-            self.cls[_k] = _cls[:lib_skyalm.ellmax + 1]
+        for key in len_cls.keys():
+            self.cls[key] = len_cls[key][:lib_skyalm.ellmax + 1]
         self.npix = np.prod(lib_datalm.shape)
         # Build mean noise level :
         self._iNoiseCl = {}
-        for _k, _ni in ninv_rad.iteritems():
-            if _k not in cls_noise.keys():
-                _noiseCl = np.mean(1. / _ni[np.where(_ni > 0)])
-                self._iNoiseCl[_k] = 1. / _noiseCl * np.ones(lib_skyalm.ellmax + 1, dtype=float)
+        for key in ninv_rad.keys():
+            if key not in cls_noise.keys():
+                _noiseCl = np.mean(1. / ninv_rad[key][np.where(ninv_rad[key] > 0)])
+                self._iNoiseCl[key] = 1. / _noiseCl * np.ones(lib_skyalm.ellmax + 1, dtype=float)
                 if verbose:
-                    print "ninv_filt::Nlev (%s) in uKamin  %.3f" % (
-                        _k.upper(), np.sqrt(1. / self._iNoiseCl[_k][0]) / np.pi * 180. * 60.)
-                    print "      ellsky range (%s - %s)" % (lib_skyalm.ellmin, lib_skyalm.ellmax)
+                    print("ninv_filt::Nlev (%s) in uKamin  %.3f" % (
+                        key.upper(), np.sqrt(1. / self._iNoiseCl[key][0]) / np.pi * 180. * 60.))
+                    print("      ellsky range (%s - %s)" % (lib_skyalm.ellmin, lib_skyalm.ellmax))
             else:
                 # This does not appear to generically improve
-                self._iNoiseCl[_k] = cl_inv(cls_noise[_k][:lib_skyalm.ellmax + 1])
+                self._iNoiseCl[key] = cl_inv(cls_noise[key][:lib_skyalm.ellmax + 1])
 
-        templates = {_k: [] for _k in self.ninv_rad.keys()}
-        for _f in marge_maps.iterkeys():
-            if _f not in templates.keys(): templates[_f] = []
-            for tmap in [load_map(m) for m in marge_maps[_f]]:
+        templates = {key: [] for key in self.ninv_rad.keys()}
+        for f in marge_maps.keys():
+            if f not in templates.keys(): templates[f] = []
+            for tmap in [load_map(m) for m in marge_maps[f]]:
                 assert (self.npix == len(tmap))
-                templates[_f].append(template_removal.template_map(tmap))
+                templates[f].append(template_removal.template_map(tmap))
 
-        for _f in marge_uptolmin.iterkeys():
-            if marge_uptolmin[_f] >= 0:
-                if _f not in templates.keys(): templates[_f] = []
-                templates[_f].append(template_removal.template_uptolmin(lib_datalm.ell_mat, marge_uptolmin[_f]))
+        for f in marge_uptolmin.keys():
+            if marge_uptolmin[f] >= 0:
+                if f not in templates.keys(): templates[f] = []
+                templates[f].append(template_removal.template_uptolmin(lib_datalm.ell_mat, marge_uptolmin[f]))
 
-        for _f in marge_ells.iterkeys():
-            if marge_ells[_f] >= 0:
-                if _f not in templates.keys(): templates[_f] = []
-                templates[_f].append(template_removal.template_ellfilt(lib_datalm.ell_mat, marge_ells[_f]))
+        for f in marge_ells.keys():
+            if marge_ells[f] >= 0:
+                if f not in templates.keys(): templates[f] = []
+                templates[f].append(template_removal.template_ellfilt(lib_datalm.ell_mat, marge_ells[f]))
 
 
-        assert np.all([_f in ninv_rad.keys() for _f in templates.keys()]), (ninv_rad.keys(), templates.keys())
+        assert np.all([f in ninv_rad.keys() for f in templates.keys()]), (ninv_rad.keys(), templates.keys())
         self.Pt_Nn1_P_inv = {}
-        for _f, _templates in templates.iteritems():
-            if (len(_templates) != 0):
-                nmodes = np.sum([t.nmodes for t in _templates])
-                modes_idx_t = np.concatenate(([t.nmodes * [int(im)] for im, t in enumerate(_templates)]))
-                modes_idx_i = np.concatenate(([range(0, t.nmodes) for t in _templates]))
-                print "   Building %s - %s template projection matrix" % (nmodes, nmodes)
+        for key in templates.keys():
+            templs = templates[key]
+            if len(templs) > 0:
+                nmodes = int(np.sum([t.nmodes for t in templs]))
+                modes_idx_t = np.concatenate(([t.nmodes * [int(im)] for im, t in enumerate(templs)]))
+                modes_idx_i = np.concatenate(([range(0, t.nmodes) for t in templs]))
+                print("   Building %s - %s template projection matrix" % (nmodes, nmodes))
                 Pt_Nn1_P = np.zeros((nmodes, nmodes))
                 for ir in range(0, nmodes):
-                    if np.mod(ir, int(0.1 * nmodes)) == 0: print ("   filling TNiT: %4.1f" % (100. * ir / nmodes)), "%"
-                    tmap = np.copy(ninv_rad[_f])
-                    _templates[modes_idx_t[ir]].apply_mode(tmap, int(modes_idx_i[ir]))
+                    if np.mod(ir, int(0.1 * nmodes)) == 0: print("   filling TNiT: %4.1f" % (100. * ir / nmodes)), "%"
+                    tmap = np.copy(ninv_rad[key])
+                    templs[modes_idx_t[ir]].apply_mode(tmap, int(modes_idx_i[ir]))
                     ic = 0
-                    for tc in _templates[0:modes_idx_t[ir] + 1]:
+                    for tc in templs[0:modes_idx_t[ir] + 1]:
                         Pt_Nn1_P[ir, ic:(ic + tc.nmodes)] = tc.dot(tmap)
                         Pt_Nn1_P[ic:(ic + tc.nmodes), ir] = Pt_Nn1_P[ir, ic:(ic + tc.nmodes)]
                         ic += tc.nmodes
                 eigv, eigw = np.linalg.eigh(Pt_Nn1_P)
                 eigv_inv = np.where(eigv <= np.max(eigv) * eigv_thres,np.zeros_like(eigv),1.0 / eigv)
-                if eigv_thres > 0: print "Kept %.2f percent of the modes"%( (100. * len(eigv_inv.nonzero())) / len(eigv))
-                self.Pt_Nn1_P_inv[_f] = np.dot(np.dot(eigw, np.diag(eigv_inv)), np.transpose(eigw))
+                if eigv_thres > 0: print("Kept %.2f percent of the modes"%( (100. * len(eigv_inv.nonzero())) / len(eigv)))
+                self.Pt_Nn1_P_inv[key] = np.dot(np.dot(eigw, np.diag(eigv_inv)), np.transpose(eigw))
         self.templates = templates
         self.marge_uptolmin = marge_uptolmin
         self.cls_noise = cls_noise
@@ -154,7 +158,7 @@ class ffs_ninv_filt(object):
         Apply transfer function, T E B skyalm to T Q U map.
         """
         assert len(TQUtype) == len(TEBlms),(len(TQUtype),len(TEBlms))
-        return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype,fs.ffs_covs.ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
+        return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype,ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
 
     def apply_Rt(self, field, _map):
         """
@@ -172,7 +176,7 @@ class ffs_ninv_filt(object):
         """
         assert TQUtype in ['T','QU','TQU']
         assert _maps.shape == (len(TQUtype),self.lib_datalm.shape[0],self.lib_datalm.shape[1]), (self.npix, TQUtype,_maps.shape)
-        return fs.ffs_covs.ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
+        return ffs_specmat.TQU2TEBlms(TQUtype,self.lib_skyalm,np.array([self.apply_Rt(f.lower(),_map) for f,_map in zip(TQUtype,_maps)]))
 
     def apply_alm(self, field, alm, inplace=True):
         """
@@ -206,31 +210,31 @@ class ffs_ninv_filt(object):
         """
         assert _map.size == self.npix, (self.npix, _map.shape)
         assert field.lower() in ['t', 'q', 'u'], field
-        _f = field.lower()
+        f = field.lower()
         if inplace:
-            _map *= self.ninv_rad[_f]
-            if (len(self.templates[_f]) != 0):
-                coeffs = np.concatenate(([t.dot(_map) for t in self.templates[_f]]))
-                coeffs = np.dot(self.Pt_Nn1_P_inv[_f], coeffs)
-                pmodes = np.zeros(self.ninv_rad[_f].shape)
+            _map *= self.ninv_rad[f]
+            if len(self.templates[f]) > 0:
+                coeffs = np.concatenate(([t.dot(_map) for t in self.templates[f]]))
+                coeffs = np.dot(self.Pt_Nn1_P_inv[f], coeffs)
+                pmodes = np.zeros(self.ninv_rad[f].shape)
                 im = 0
-                for t in self.templates[_f]:
+                for t in self.templates[f]:
                     t.accum(pmodes, coeffs[im:(im + t.nmodes)])
                     im += t.nmodes
-                pmodes *= self.ninv_rad[_f]
+                pmodes *= self.ninv_rad[f]
                 _map -= pmodes
             return
         else:
-            nmap = _map * self.ninv_rad[_f]
-            if (len(self.templates[_f]) != 0):
-                coeffs = np.concatenate(([t.dot(nmap) for t in self.templates[_f]]))
-                coeffs = np.dot(self.Pt_Nn1_P_inv[_f], coeffs)
-                pmodes = np.zeros(self.ninv_rad[_f].shape)
+            nmap = _map * self.ninv_rad[f]
+            if len(self.templates[f]) > 0:
+                coeffs = np.concatenate(([t.dot(nmap) for t in self.templates[f]]))
+                coeffs = np.dot(self.Pt_Nn1_P_inv[f], coeffs)
+                pmodes = np.zeros(self.ninv_rad[f].shape)
                 im = 0
-                for t in self.templates[_f]:
+                for t in self.templates[f]:
                     t.accum(pmodes, coeffs[im:(im + t.nmodes)])
                     im += t.nmodes
-                pmodes *= self.ninv_rad[_f]
+                pmodes *= self.ninv_rad[f]
                 nmap -= pmodes
             return nmap
 
@@ -241,32 +245,32 @@ class ffs_ninv_filt(object):
         assert _maps.shape == (len(TQUtype),self.lib_datalm.shape[0],self.lib_datalm.shape[1]), (self.npix, TQUtype,_maps.shape)
         assert TQUtype in ['T','QU','TQU']
         if inplace:
-            for i, _f in enumerate(TQUtype.lower()):
-                _maps[i] *= self.ninv_rad[_f]
-                if (len(self.templates[_f]) != 0):
-                    coeffs = np.concatenate(([t.dot(_maps[i]) for t in self.templates[_f]]))
-                    coeffs = np.dot(self.Pt_Nn1_P_inv[_f], coeffs)
-                    pmodes = np.zeros(self.ninv_rad[_f].shape)
+            for i, f in enumerate(TQUtype.lower()):
+                _maps[i] *= self.ninv_rad[f]
+                if len(self.templates[f]) > 0:
+                    coeffs = np.concatenate(([t.dot(_maps[i]) for t in self.templates[f]]))
+                    coeffs = np.dot(self.Pt_Nn1_P_inv[f], coeffs)
+                    pmodes = np.zeros(self.ninv_rad[f].shape)
                     im = 0
-                    for t in self.templates[_f]:
+                    for t in self.templates[f]:
                         t.accum(pmodes, coeffs[im:(im + t.nmodes)])
                         im += t.nmodesx
-                    pmodes *= self.ninv_rad[_f]
+                    pmodes *= self.ninv_rad[f]
                     _maps[i] -= pmodes
             return
         else:
             nmaps = np.zeros_like(_maps)
-            for i, _f in enumerate(TQUtype.lower()):
-                nmaps[i] = _maps[i] * self.ninv_rad[_f]
-                if (len(self.templates[_f]) != 0):
-                    coeffs = np.concatenate(([t.dot(nmaps[i]) for t in self.templates[_f]]))
-                    coeffs = np.dot(self.Pt_Nn1_P_inv[_f], coeffs)
-                    pmodes = np.zeros(self.ninv_rad[_f].shape)
+            for i, f in enumerate(TQUtype.lower()):
+                nmaps[i] = _maps[i] * self.ninv_rad[f]
+                if len(self.templates[f]) > 0:
+                    coeffs = np.concatenate(([t.dot(nmaps[i]) for t in self.templates[f]]))
+                    coeffs = np.dot(self.Pt_Nn1_P_inv[f], coeffs)
+                    pmodes = np.zeros(self.ninv_rad[f].shape)
                     im = 0
-                    for t in self.templates[_f]:
+                    for t in self.templates[f]:
                         t.accum(pmodes, coeffs[im:(im + t.nmodes)])
                         im += t.nmodes
-                    pmodes *= self.ninv_rad[_f]
+                    pmodes *= self.ninv_rad[f]
                     nmaps[i] -= pmodes
             return nmaps
 
@@ -277,9 +281,8 @@ class ffs_ninv_filt(object):
         lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         lib_almdat = self.lib_datalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         ninvLD = {}
-        for _k, _ni in self.ninv_rad.iteritems():
-            ninvLD[_k] = fs.misc.rfft2_utils.degrade_mask(_ni, shape)
-        # print "NO TEMPLATES in degrading"
+        for key in self.ninv_rad.keys():
+            ninvLD[key] = degrade_mask(self.ninv_rad[key], shape)
         return ffs_ninv_filt(lib_almdat, lib_almsky, self.cls, self.cl_transf, ninvLD,
                              marge_uptolmin=self.marge_uptolmin, cls_noise=self.cls_noise)
 
@@ -289,15 +292,12 @@ class ffs_ninv_filt(object):
                                 cls_noise=self.cls_noise)
 
     def turn2isofilt(self):
+        """Returns an isotropic (no mask, homog. noise) filter built from the average noise levels.
+
         """
-        Returns an isotropic (no mask, homog. noise) filter built from the average noise levels.
-        """
-        # lib_datalm, lib_skyalm, len_cls, cl_transf, ninv_rad,
-        # marge_maps = {}, marge_uptolmin = {}, cls_noise = {}
         ninv_rad = {}
-        for _k, ninv in self.ninv_rad.iteritems():
-            ninv_rad[_k] = np.ones(self.lib_datalm.shape, dtype=float) * (
-                1. / (self.Nlev_uKamin(_k) / 60 / 180. * np.pi) ** 2)
+        for key in self.ninv_rad.keys():
+            ninv_rad[key] = np.ones(self.lib_datalm.shape, dtype=float) * (1. / (self.Nlev_uKamin(key) / 60 / 180. * np.pi) ** 2)
         return ffs_ninv_filt(self.lib_datalm, self.lib_skyalm, self.cls, self.cl_transf, ninv_rad,
                              marge_maps=self.marge_maps, marge_uptolmin=self.marge_uptolmin)
 
@@ -310,8 +310,7 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
         Note that the degradation will kill the lensing.
         """
         super(ffs_ninv_filt_wl, self).__init__(lib_datalm, lib_skyalm, unl_cls, cl_transf, ninv_rad,
-                                               marge_maps=marge_maps, marge_uptolmin=marge_uptolmin,
-                                               cls_noise=cls_noise)
+                                    marge_maps=marge_maps, marge_uptolmin=marge_uptolmin, cls_noise=cls_noise)
         # Forward and inverse displacement instances :
         assert self.lib_skyalm.shape == f.shape and self.lib_skyalm.lsides == f.lsides
         assert self.lib_skyalm.shape == fi.shape and self.lib_skyalm.lsides == fi.lsides
@@ -366,9 +365,9 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
         lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         lib_almdat = self.lib_datalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         ninvLD = {}
-        for _k, _ni in self.ninv_rad.iteritems():
-            ninvLD[_k] = fs.misc.rfft2_utils.degrade_mask(_ni, shape)
-        print "DEGRADING WITH NO MARGE MAPS"
+        for key in self.ninv_rad.keys():
+            ninvLD[key] = degrade_mask(self.ninv_rad[key], shape)
+        print("DEGRADING WITH NO MARGE MAPS")
         if no_lensing:
             return ffs_ninv_filt(lib_almdat, lib_almsky, self.cls, self.cl_transf, ninvLD,
                                  marge_uptolmin=self.marge_uptolmin, cls_noise=self.cls_noise)

@@ -67,7 +67,7 @@ class ffs_displacement(object):
     def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=False, spline_order=3, rule_for_derivative='4pts',
                  NR_iter=3, lib_dir=None, cache_magn=False):
         """
-         dx and dy path to .npy array, x and y displacements. (displaced map(x) = map(x + d(x))
+         dx and dy arrays or path to .npy arrays, x and y displacements. (displaced map(x) = map(x + d(x))
          Note that the first index is 'y' and the second 'x'
         """
         if not hasattr(dx, 'shape'): assert os.path.exists(dx), (pbs.rank, dx)
@@ -118,11 +118,12 @@ class ffs_displacement(object):
                 except:
                     print("ffs_displacement:: unable to create lib. dir. " + self.lib_dir)
 
-    def load_map(self, map):
-        if isinstance(map, str):
-            return np.load(map)
+    @staticmethod
+    def load_map(m):
+        if isinstance(m, str):
+            return np.load(m)
         else:
-            return map
+            return m
 
     def is_dxdy_ondisk(self):
         """ Checks whether the displacements are on disk or in memory. Bool."""
