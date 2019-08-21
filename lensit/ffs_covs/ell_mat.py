@@ -38,7 +38,7 @@ class ell_mat:
         assert shape[0] % 2 == 0 and shape[1] % 2 == 0
         assert shape[0] < 2 ** 16 and shape[1] < 2 ** 16
         self.shape = tuple(shape)
-        self.rshape = (shape[0], shape[1] / 2 + 1)
+        self.rshape = (shape[0], shape[1] // 2 + 1)
         self.lsides = tuple(lsides)
         self.lib_dir = lib_dir
         self.mmap_mode = mmap_mode
@@ -180,7 +180,7 @@ class ell_mat:
         Corresponds roughly to ell + 1/2.
         """
         counts = np.bincount(self.get_ellmat()[:, 1:self.rshape[1] - 1].flatten(), minlength=self.ellmax + 1)
-        s_counts = np.bincount(self.get_ellmat()[0:self.shape[0] / 2 + 1, [-1, 0]].flatten())
+        s_counts = np.bincount(self.get_ellmat()[0:self.shape[0] // 2 + 1, [-1, 0]].flatten())
         counts[0:len(s_counts)] += s_counts
         return counts
 
@@ -221,8 +221,8 @@ class ell_mat:
         weights = rfftmap.real ** 2 + rfftmap.imag ** 2 if rfftmap2 is None else (rfftmap * np.conjugate(rfftmap2)).real
         Cl = np.bincount(self.get_ellmat()[:, 1:self.rshape[1] - 1].flatten(),
                          weights=weights[:, 1:self.rshape[1] - 1].flatten(), minlength=self.ellmax + 1)
-        Cl += np.bincount(self.get_ellmat()[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(),
-                          weights=weights[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(), minlength=self.ellmax + 1)
+        Cl += np.bincount(self.get_ellmat()[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(),
+                          weights=weights[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(), minlength=self.ellmax + 1)
         Cl[self._nz_counts] *= (np.prod(self.lsides) / np.prod(self.shape) ** 2) / self._ell_counts[self._nz_counts]
         return Cl
 
@@ -235,15 +235,15 @@ class ell_mat:
         weights = rfftmap
         Cl = np.bincount(self.get_ellmat()[:, 1:self.rshape[1] - 1].flatten(),
                          weights=weights[:, 1:self.rshape[1] - 1].flatten(), minlength=self.ellmax + 1)
-        Cl += np.bincount(self.get_ellmat()[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(),
-                          weights=weights[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(), minlength=self.ellmax + 1)
+        Cl += np.bincount(self.get_ellmat()[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(),
+                          weights=weights[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(), minlength=self.ellmax + 1)
         Cl[self._nz_counts] /= self._ell_counts[self._nz_counts]
         return Cl
 
     def get_rx_mat(self):
         rx_min = self.lsides[1] / self.shape[1]
         rx = rx_min * Freq(np.arange(self.shape[1]), self.shape[1])
-        rx[self.shape[1] / 2:] *= -1.
+        rx[self.shape[1] // 2:] *= -1.
         return np.outer(np.ones(self.shape[0]), rx)
 
     def get_kx_mat(self):
@@ -254,13 +254,13 @@ class ell_mat:
     def get_ry_mat(self):
         ry_min = self.lsides[0] / self.shape[0]
         ry = ry_min * Freq(np.arange(self.shape[0]), self.shape[0])
-        ry[self.shape[0] / 2:] *= -1.
+        ry[self.shape[0] // 2:] *= -1.
         return np.outer(ry, np.ones(self.shape[1]))
 
     def get_ky_mat(self):
         ky_min = (2. * np.pi) / self.lsides[0]
         ky = ky_min * Freq(np.arange(self.shape[0]), self.shape[0])
-        ky[self.shape[0] / 2:] *= -1.
+        ky[self.shape[0] // 2:] *= -1.
         return np.outer(ky, np.ones(self.rshape[1]))
 
     def get_ikx_mat(self):
@@ -298,9 +298,15 @@ class ell_mat:
         N0, N1 = self.shape
         fx = [0]
         fy = [0]
-        if N1 % 2 == 0: fx.append(0); fy.append(N1 / 2)
-        if N0 % 2 == 0: fx.append(N0 / 2); fy.append(0)
-        if N1 % 2 == 0 and N0 % 2 == 0: fx.append(N0 / 2); fy.append(N1 / 2)
+        if N1 % 2 == 0:
+            fx.append(0)
+            fy.append(N1 // 2)
+        if N0 % 2 == 0:
+            fx.append(N0 // 2)
+            fy.append(0)
+        if N1 % 2 == 0 and N0 % 2 == 0:
+            fx.append(N0 // 2)
+            fy.append(N1 // 2)
         return np.array(fx), np.array(fy)
 
     def QU2EBrfft(self, QUmap):

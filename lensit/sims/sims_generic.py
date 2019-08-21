@@ -2,15 +2,30 @@ from __future__ import print_function
 
 import numpy as np
 import sqlite3
-import os
+import six
+import os, io
 import pickle as pk
 import operator
 
 from lensit.pbs import pbs
 
+def adapt_array(arr):
+    out = io.BytesIO(); np.save(out, arr)
+    out.seek(0)
+    return buffer(out.read()) if six.PY2 else memoryview(out.read())
+
+def convert_array(text):
+    out = io.BytesIO(text)
+    out.seek(0)
+    return np.load(out)
+
+
+sqlite3.register_adapter(np.ndarray, adapt_array)
+sqlite3.register_converter("ARRAY", convert_array)
+
 class rng_db:
-    """
-    Class to save and read random number generators states in a .db file.
+    """ Class to save and read random number generators states in a sqlite database file.
+
     """
 
     def __init__(self, fname, idtype="INTEGER"):
@@ -18,43 +33,43 @@ class rng_db:
             con = sqlite3.connect(fname, detect_types=sqlite3.PARSE_DECLTYPES, timeout=3600)
             cur = con.cursor()
             cur.execute("create table rngdb (id %s PRIMARY KEY, "
-                        "type STRING, pos INTEGER, has_gauss INTEGER,cached_gaussian REAL, keys array)" % idtype)
+                        "type STRING, pos INTEGER, has_gauss INTEGER,cached_gaussian REAL, keys STRING)" % idtype)
             con.commit()
         pbs.barrier()
 
         self.con = sqlite3.connect(fname, timeout=3600., detect_types=sqlite3.PARSE_DECLTYPES)
 
-    def add(self, id, state):
+    def add(self, idx, state):
         try:
-            assert (self.get(id) is None)
+            assert (self.get(idx) is None)
+            keys_string = '_'.join(str(s) for s in state[1])
             self.con.execute("INSERT INTO rngdb (id, type, pos, has_gauss, cached_gaussian, keys) VALUES (?,?,?,?,?,?)",
-                             (id, state[0], state[2], state[3], state[4], state[1].reshape(1, len(state[1]))))
+                             (idx, state[0], state[2], state[3], state[4], keys_string))
             self.con.commit()
         except:
             print("rng_db::rngdb add failed!")
 
-    def get(self, id):
+    def get(self, idx):
         cur = self.con.cursor()
-        cur.execute("SELECT type, pos, has_gauss, cached_gaussian, keys FROM rngdb WHERE id=?", (id,))
+        cur.execute("SELECT type, pos, has_gauss, cached_gaussian, keys FROM rngdb WHERE id=?", (idx,))
         data = cur.fetchone()
         cur.close()
         if data is None:
             return None
         else:
             assert (len(data) == 5)
-            type, pos, has_gauss, cached_gaussian, keys = data
-            keys = keys[0]
-            return [type, keys, pos, has_gauss, cached_gaussian]
+            typ, pos, has_gauss, cached_gaussian, keys = data
+            keys = np.array([int(a) for a in keys.split('_')], dtype=np.uint32)
+            return [typ, keys, pos, has_gauss, cached_gaussian]
 
-    def delete(self, id):
+    def delete(self, idx):
         try:
-            if self.get(id) is None:
+            if self.get(idx) is None:
                 return
-            self.con.execute("DELETE FROM rngdb WHERE id=?", (id,))
+            self.con.execute("DELETE FROM rngdb WHERE id=?", (idx,))
             self.con.commit()
         except:
-            print("rng_db::rngdb delete %s failed!" % id)
-
+            print("rng_db::rngdb delete %s failed!" % idx)
 
 class sim_lib(object):
     """
@@ -80,7 +95,7 @@ class sim_lib(object):
 
         hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'])
 
-        self._rng_db = rng_db(lib_dir + '/rngdb.db', idtype='INTEGER')
+        self._rng_db = rng_db(os.path.join(lib_dir, 'rngdb.db'), idtype='INTEGER')
         self._get_rng_state = get_state_func
 
     def get_sim(self, idx, **kwargs):
