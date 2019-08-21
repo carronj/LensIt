@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import glob
 import os
 import shutil
@@ -5,11 +7,14 @@ import time
 
 import numpy as np
 
-import lensit as fs
-from lensit import pbs
+from lensit.pbs import pbs
 from lensit.ffs_deflect import ffs_deflect
 from lensit.ffs_qlms import qlms as ql
+from lensit.ffs_covs import ffs_specmat, ffs_cov
 from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP
+from lensit.ffs_iterators import bfgs
+from lensit.qcinv import multigrid, chain_samples
+from lensit.sims import ffs_phas
 
 _types = ['T', 'QU', 'TQU']
 
@@ -24,7 +29,7 @@ def prt_time(dt, label=''):
     dh = np.floor(dt / 3600.)
     dm = np.floor(np.mod(dt, 3600.) / 60.)
     ds = np.floor(np.mod(dt, 60))
-    print "\r [" + ('%02d:%02d:%02d' % (dh, dm, ds)) + "] " + label
+    print("\r [" + ('%02d:%02d:%02d' % (dh, dm, ds)) + "] " + label)
     return
 
 
@@ -74,13 +79,13 @@ class ffs_iterator(object):
 
         self.nodeglensing = no_deglensing
         if self.verbose:
-            print " I see t", cov.Nlev_uKamin('t')
-            print " I see q", cov.Nlev_uKamin('q')
-            print " I see u", cov.Nlev_uKamin('u')
+            print(" I see t", cov.Nlev_uKamin('t'))
+            print(" I see q", cov.Nlev_uKamin('q'))
+            print(" I see u", cov.Nlev_uKamin('u'))
 
             # Defining a trial newton step length :
 
-        def newton_step_length(iter, norm_incr):  # FIXME
+        def newton_step_length(it, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
             if cov.Nlev_uKamin('t') > 2.1: return 1.0
             if cov.Nlev_uKamin('t') <= 2.1 and norm_incr >= 0.5:
@@ -89,13 +94,13 @@ class ffs_iterator(object):
 
         self.newton_step_length = newton_step_length
         self.soltn0 = soltn0
-        # Default tolerance function(iter,key)
-        # FIXME Put tolerance and maxiter in chain descrt
-        # def tol_func(iter, key, **kwargs):
+        # Default tolerance function(it,key)
+        # FIXME Put tolerance and maxit in chain descrt
+        # def tol_func(it, key, **kwargs):
         #    return 1e-3
 
         # self.tol_func = tol_func
-        f_id = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(cov.lib_skyalm.shape, cov.lib_skyalm.lsides)
+        f_id = ffs_deflect.ffs_id_displacement(cov.lib_skyalm.shape, cov.lib_skyalm.lsides)
         if not hasattr(cov, 'f') or not hasattr(cov, 'fi'):
             self.cov = cov.turn2wlfilt(f_id, f_id)
         else:
@@ -107,7 +112,7 @@ class ffs_iterator(object):
         #FIXME: even this does not work on small patches !!:
         #self.soltn_cond = np.all([np.all(self.cov.get_mask(_t) == 1.) for _t in self.type])
         self.soltn_cond = False
-        print 'ffs iterator : This is %s trying to setup %s' % (self.PBSRANK, lib_dir)
+        print('ffs iterator : This is %s trying to setup %s' % (self.PBSRANK, lib_dir))
         # Lensed covariance matrix library :
         # We will redefine the displacement at each iteration step
         self.use_Pool = use_Pool_lens
@@ -125,7 +130,7 @@ class ffs_iterator(object):
         if self.PBSRANK == 0 and \
                 (not os.path.exists(self.lib_dir + '/qlm_%s_H0.dat' % ('P'))
                  or not os.path.exists(self.lib_dir + '/%shi_plm_it%03d.npy' % ('P', 0))):
-            print '++ ffs_%s_iterator: Caching qlm_norms and N0s' % type, self.lib_dir
+            print('++ ffs_%s_iterator: Caching qlm_norms and N0s' % type + self.lib_dir)
 
             # Caching qlm norm that we will use as zeroth order curvature : (with lensed weights)
             # Prior curvature :
@@ -135,7 +140,7 @@ class ffs_iterator(object):
 
             curv_pp = H0 + prior_pp  # isotropic estimate of the posterior curvature at the starting point
             self.cache_cl(self.lib_dir + '/qlm_%s_H0.dat' % ('P'), cl_inverse(curv_pp))
-            print "     cached %s" % self.lib_dir + '/qlm_%s_H0.dat' % ('P')
+            print("     cached %s" % self.lib_dir + '/qlm_%s_H0.dat' % 'P')
             fname_P = self.lib_dir + '/%shi_plm_it%03d.npy' % ('P', 0)
             self.cache_qlm(fname_P, self.load_qlm(Plm0))
         self.barrier()
@@ -156,7 +161,7 @@ class ffs_iterator(object):
                            '# Newton step length\n')
                 file.close()
 
-        if self.PBSRANK == 0: print '++ ffs_%s masked iterator : setup OK' % type
+        if self.PBSRANK == 0: print('++ ffs_%s masked iterator : setup OK' % type)
         self.barrier()
 
     def get_mask(self):
@@ -180,12 +185,12 @@ class ffs_iterator(object):
             return
         else:
             assert self.load_qlm(alm).ndim == 1 and self.load_qlm(alm).size == self.lib_qlm.alm_size
-            print 'rank %s caching ' % self.PBSRANK, fname
+            print('rank %s caching ' % self.PBSRANK + fname)
             self.lib_qlm.write_alm(fname, self.load_qlm(alm))
             return
 
     def load_qlm(self, fname):
-        return (self.lib_qlm.read_alm(fname) if isinstance(fname, str) else fname)
+        return self.lib_qlm.read_alm(fname) if isinstance(fname, str) else fname
 
     def cache_rlm(self, fname, rlm):
         """
@@ -195,7 +200,7 @@ class ffs_iterator(object):
         :return:
         """
         assert rlm.ndim == 1 and rlm.size == 2 * self.lib_qlm.alm_size, (rlm.ndim, rlm.size)
-        print 'rank %s caching ' % self.PBSRANK, fname
+        print('rank %s caching ' % self.PBSRANK, fname)
         np.save(fname, rlm)
 
     def load_rlm(self, fname):
@@ -213,15 +218,15 @@ class ffs_iterator(object):
 
     def get_H0(self, key):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname = self.lib_dir + '/qlm_%s_H0.dat' % key.upper()
+        fname = os.path.join(self.lib_dir, 'qlm_%s_H0.dat' % key.upper())
         assert os.path.exists(fname), fname
         return self.load_cl(fname)
 
-    def is_previous_iter_done(self, iter, key):
-        if iter == 0: return True
+    def is_previous_iter_done(self, it, key):
+        if it == 0: return True
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        return os.path.exists(
-            self.lib_dir + '/%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], iter - 1))
+        fn = os.path.join(self.lib_dir, '%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], it - 1))
+        return os.path.exists(fn)
 
 
     def how_many_iter_done(self, key):
@@ -229,54 +234,54 @@ class ffs_iterator(object):
         Returns the number of points already calculated. Zeroth is the qest.
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        files = glob.glob(self.lib_dir + '/%s_plm_it*.npy' % {'p': 'Phi', 'o': 'Om'}[key.lower()])
-        return len(files)
+        fn = os.path.join(self.lib_dir, '%s_plm_it*.npy' % {'p': 'Phi', 'o': 'Om'}[key.lower()])
+        return len( glob.glob(fn))
 
-    def get_Plm(self, iter, key):
-        if iter < 0:
+    def get_Plm(self, it, key):
+        if it < 0:
             return np.zeros(self.lib_qlm.alm_size, dtype=complex)
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname = self.lib_dir + '/%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], iter)
-        assert os.path.exists(fname), fname
-        return self.load_qlm(fname)
+        fn = os.path.join(self.lib_dir,'%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], it))
+        assert os.path.exists(fn), fn
+        return self.load_qlm(fn)
 
-    def get_Phimap(self, iter, key):
+    def get_Phimap(self, it, key):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        return self.lib_qlm.alm2map(self.get_Plm(iter, key))
+        return self.lib_qlm.alm2map(self.get_Plm(it, key))
 
-    def getfnames_f(self, key, iter):
+    def getfnames_f(self, key, it):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_dx = self.lib_dir + '/f_%s_it%03d_dx.npy' % (key.lower(), iter)
-        fname_dy = self.lib_dir + '/f_%s_it%03d_dy.npy' % (key.lower(), iter)
+        fname_dx = os.path.join(self.lib_dir, 'f_%s_it%03d_dx.npy' % (key.lower(), it))
+        fname_dy = os.path.join(self.lib_dir, 'f_%s_it%03d_dy.npy' % (key.lower(), it))
         return fname_dx, fname_dy
 
-    def getfnames_finv(self, key, iter):
+    def getfnames_finv(self, key, it):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_dx = self.lib_dir + '/finv_%s_it%03d_dx.npy' % (key.lower(), iter)
-        fname_dy = self.lib_dir + '/finv_%s_it%03d_dy.npy' % (key.lower(), iter)
+        fname_dx = os.path.join(self.lib_dir,  'finv_%s_it%03d_dx.npy' % (key.lower(), it))
+        fname_dy = os.path.join(self.lib_dir,  'finv_%s_it%03d_dy.npy' % (key.lower(), it))
         return fname_dx, fname_dy
 
-    def calc_ffinv(self, iter, key):
+    def calc_ffinv(self, it, key):
         """
         Calculate displacement at iter and its inverse. Only pbs rank 0 can do this.
-        :param iter:
+        :param it:
         :param key:
         :return:
         """
-        assert self.PBSRANK == 0, 'SINGLE MPI METHOD'
-        if iter < 0: return
+        assert self.PBSRANK == 0, 'NO MPI METHOD'
+        if it < 0: return
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_dx, fname_dy = self.getfnames_f(key, iter)
+        fname_dx, fname_dy = self.getfnames_f(key, it)
 
         if not os.path.exists(fname_dx) or not os.path.exists(fname_dy):
             # FIXME : does this from plm
-            assert self.is_previous_iter_done(iter, key)
-            Phi_est_WF = self.get_Phimap(iter, key)
+            assert self.is_previous_iter_done(it, key)
+            Phi_est_WF = self.get_Phimap(it, key)
             assert self.cov.lib_skyalm.shape == Phi_est_WF.shape
             assert self.cov.lib_skyalm.shape == self.lib_qlm.shape
             assert self.cov.lib_skyalm.lsides == self.lib_qlm.lsides
             rmin = np.array(self.cov.lib_skyalm.lsides) / np.array(self.cov.lib_skyalm.shape)
-            print 'rank %s caching displacement comp. for it. %s for key %s' % (self.PBSRANK, iter, key)
+            print('rank %s caching displacement comp. for it. %s for key %s' % (self.PBSRANK, it, key))
             if key.lower() == 'p':
                 dx = PDP(Phi_est_WF, axis=1, h=rmin[1])
                 dy = PDP(Phi_est_WF, axis=0, h=rmin[0])
@@ -287,132 +292,133 @@ class ffs_iterator(object):
                 np.save(fname_dx, dx)
                 np.save(fname_dy, dy)
             del dx, dy
-        lib_dir = self.lib_dir + '/f_%04d_libdir' % iter
+        lib_dir = os.path.join(self.lib_dir, 'f_%04d_libdir' % it)
         if not os.path.exists(lib_dir): os.makedirs(lib_dir)
-        fname_invdx, fname_invdy = self.getfnames_finv(key, iter)
+        fname_invdx, fname_invdy = self.getfnames_finv(key, it)
         if not os.path.exists(fname_invdx) or not os.path.exists(fname_invdy):
-            f = self.load_f(iter, key)
-            print 'rank %s inverting displacement it. %s for key %s' % (self.PBSRANK, iter, key)
+            f = self.load_f(it, key)
+            print('rank %s inverting displacement it. %s for key %s' % (self.PBSRANK, it, key))
             f_inv = f.get_inverse(use_Pool=self.use_Pool_inverse)
             np.save(fname_invdx, f_inv.get_dx())
             np.save(fname_invdy, f_inv.get_dy())
-        lib_dir = self.lib_dir + '/finv_%04d_libdir' % iter
+        lib_dir = os.path.join(self.lib_dir, 'finv_%04d_libdir' % it)
         if not os.path.exists(lib_dir): os.makedirs(lib_dir)
         assert os.path.exists(fname_invdx), fname_invdx
         assert os.path.exists(fname_invdy), fname_invdy
         return
 
-    def load_f(self, iter, key):
+    def load_f(self, it, key):
         """
         Loads current displacement solution at iteration iter
         """
-        fname_dx, fname_dy = self.getfnames_f(key, iter)
-        lib_dir = self.lib_dir + '/f_%04d_libdir' % iter
+        fname_dx, fname_dy = self.getfnames_f(key, it)
+        lib_dir = os.path.join(self.lib_dir,  'f_%04d_libdir' % it)
         assert os.path.exists(fname_dx), fname_dx
         assert os.path.exists(fname_dx), fname_dy
         assert os.path.exists(lib_dir), lib_dir
         return ffs_deflect.ffs_displacement(fname_dx, fname_dy, self.lsides,
                                             verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
 
-    def load_finv(self, iter, key):
+    def load_finv(self, it, key):
         """
         Loads current inverse displacement solution at iteration iter.
         """
-        fname_invdx, fname_invdy = self.getfnames_finv(key, iter)
-        lib_dir = self.lib_dir + '/finv_%04d_libdir' % iter
+        fname_invdx, fname_invdy = self.getfnames_finv(key, it)
+        lib_dir = os.path.join(self.lib_dir, 'finv_%04d_libdir' % it)
         assert os.path.exists(fname_invdx), fname_invdx
         assert os.path.exists(fname_invdx), fname_invdy
         assert os.path.exists(lib_dir), lib_dir
         return ffs_deflect.ffs_displacement(fname_invdx, fname_invdy, self.lsides,
                                             verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
 
-    def load_soltn(self, iter, key):
+    def load_soltn(self, it, key):
         """
         Load starting point for the conjugate gradient inversion, by looking for file on disk from the previous
         iteration point.
         """
         assert key.lower() in ['p', 'o']
-        for i in np.arange(iter, -1, -1):
-            fname = self.lib_dir + '/MAPlms/Mlik_%s_it%s.npy' % (key.lower(), i)
+        for i in np.arange(it, -1, -1):
+            fname = os.path.join(self.lib_dir, 'MAPlms/Mlik_%s_it%s.npy' % (key.lower(), i))
             if os.path.exists(fname):
-                print "rank %s loading " % pbs.rank, fname
+                print("rank %s loading " % pbs.rank + fname)
                 return np.load(fname)
         if self.soltn0 is not None: return np.load(self.soltn0)[:self.opfilt.TEBlen(self.type)]
         return np.zeros((self.opfilt.TEBlen(self.type), self.cov.lib_skyalm.alm_size), dtype=complex)
 
-    def cache_TEBmap(self, TEBMAP, iter, key):
+    def cache_TEBmap(self, TEBMAP, it, key):
         assert key.lower() in ['p', 'o']
-        fname = self.lib_dir + '/MAPlms/Mlik_%s_it%s.npy' % (key.lower(), iter)
-        print "rank %s caching " % pbs.rank, fname
+        fname = os.path.join(self.lib_dir,  'MAPlms/Mlik_%s_it%s.npy' % (key.lower(), it))
+        print("rank %s caching " % pbs.rank + fname)
         np.save(fname, TEBMAP)
 
-    def get_gradPpri(self, iter, key, cache_only=False):
+    def get_gradPpri(self, it, key, cache_only=False):
         """
         Calculates and returns the gradient from Gaussian prior with cl_pp (or cl_OO) at iteration 'iter'.
         ! Does not consider purely real frequencies.
-        :param iter:
+        :param it:
         :param key: 'p' or 'o'
         :param cache_only:
         :return:
         """
-        assert self.PBSRANK == 0, 'single MPI method!'
+        assert self.PBSRANK == 0, 'NO MPI method!'
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        assert iter > 0, iter
-        fname = self.lib_dir + '/qlm_grad%spri_it%03d.npy' % (key.upper(), iter - 1)
+        assert it > 0, it
+        fname = os.path.join(self.lib_dir, 'qlm_grad%spri_it%03d.npy' % (key.upper(), it - 1))
         if os.path.exists(fname):
             return None if cache_only else self.load_qlm(fname)
-        assert self.is_previous_iter_done(iter, key)
-        grad = self.lib_qlm.almxfl(self.get_Plm(iter - 1, key),
+        assert self.is_previous_iter_done(it, key)
+        grad = self.lib_qlm.almxfl(self.get_Plm(it - 1, key),
                                    cl_inverse(self.cl_pp if key.lower() == 'p' else self.cl_oo))
         self.cache_qlm(fname, grad, pbs_rank=0)
         return None if cache_only else self.load_qlm(fname)
 
-    def Mlik2ResTQUMlik(self, TQUMlik, iter, key):
+    def Mlik2ResTQUMlik(self, TQUMlik, it, key):
         """
         Produces B^t Ni (data - B D Mlik) in TQU space,
         that is fed into the qlm estimator.
         """
-        f_id = fs.ffs_deflect.ffs_deflect.ffs_id_displacement(self.cov.lib_skyalm.shape, self.cov.lib_skyalm.lsides)
-        self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
-        temp = fs.ffs_covs.ffs_specmat.TQU2TEBlms(self.type, self.cov.lib_skyalm, TQUMlik)
+        f_id = ffs_deflect.ffs_id_displacement(self.cov.lib_skyalm.shape, self.cov.lib_skyalm.lsides)
+        self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+        temp = ffs_specmat.TQU2TEBlms(self.type, self.cov.lib_skyalm, TQUMlik)
         maps = self.get_datmaps() - self.cov.apply_Rs(self.type, temp)
         self.cov.apply_maps(self.type, maps, inplace=True)
         self.cov.set_ffi(f_id, f_id)
         temp = self.cov.apply_Rts(self.type, maps)
-        return fs.ffs_covs.ffs_specmat.TEB2TQUlms(self.type, self.cov.lib_skyalm, temp)
+        return ffs_specmat.TEB2TQUlms(self.type, self.cov.lib_skyalm, temp)
 
-    def calc_gradPlikPdet(self, iter, key):
-        """
-        Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
+    def calc_gradPlikPdet(self, it, key):
+        """Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
+
         """
         assert 0, 'subclass this'
 
     def load_graddet(self, k, key):
-        fname_detterm = self.lib_dir + '/qlm_grad%sdet_it%03d.npy' % (key.upper(), k)
+        fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), k))
         assert os.path.exists(fname_detterm), fname_detterm
         return self.load_qlm(fname_detterm)
 
     def load_gradpri(self, k, key):
-        fname_prior = self.lib_dir + '/qlm_grad%spri_it%03d.npy' % (key.upper(), k)
+        fname_prior = os.path.join(self.lib_dir, 'qlm_grad%spri_it%03d.npy' % (key.upper(), k))
         assert os.path.exists(fname_prior), fname_prior
         return self.load_qlm(fname_prior)
 
     def load_gradquad(self, k, key):
-        fname_likterm = self.lib_dir + '/qlm_grad%slik_it%03d.npy' % (key.upper(), k)
+        fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), k))
         assert os.path.exists(fname_likterm), fname_likterm
         return self.load_qlm(fname_likterm)
 
     def load_total_grad(self, k, key):
-        """
-        Load the total gradient at iteration iter.
-        All maps must be previously cached on disk.
-        """
+        """Load the total gradient at iteration iter.
+
+            All maps must be previously cached on disk.
+
+         """
         return self.load_gradpri(k, key) + self.load_gradquad(k, key) + self.load_graddet(k, key)
 
     def calc_norm(self,qlm):
         return np.sqrt(np.sum(self.lib_qlm.alm2rlm(qlm) ** 2))
 
-    def apply_curv(self,k,key,alphak,plm):
+    def apply_curv(self,k, key, alphak, plm):
         """
         Apply curvature matrix making use of information incuding sk and yk.
 
@@ -463,7 +469,7 @@ class ffs_iterator(object):
 
         alm_0 = self.lib_qlm.almxfl(plm_noisephas, np.sqrt(self.get_H0(key)))
         ret = self.get_Hessian(max(k,0), key).sample_Gaussian(k, self.lib_qlm.alm2rlm(alm_0))
-        return (self.lib_qlm.alm2map(self.lib_qlm.rlm2alm(ret)) if real_space else self.lib_qlm.rlm2alm(ret))
+        return self.lib_qlm.alm2map(self.lib_qlm.rlm2alm(ret)) if real_space else self.lib_qlm.rlm2alm(ret)
 
 
     def get_Hessian(self, k, key):
@@ -473,22 +479,22 @@ class ffs_iterator(object):
         # Zeroth order inverse Hessian :
         apply_H0k = lambda rlm, k: \
             self.lib_qlm.alm2rlm(self.lib_qlm.almxfl(self.lib_qlm.rlm2alm(rlm), self.get_H0(key)))
-        apply_B0k = lambda rlm,k: \
+        apply_B0k = lambda rlm, k: \
             self.lib_qlm.alm2rlm(self.lib_qlm.almxfl(self.lib_qlm.rlm2alm(rlm), cl_inverse(self.get_H0(key))))
-        BFGS_H = fs.ffs_iterators.bfgs.BFGS_Hessian(self.lib_dir + '/Hessian', apply_H0k, {}, {}, L=self.NR_method,
+        BFGS_H = bfgs.BFGS_Hessian(os.path.join(self.lib_dir,  'Hessian'), apply_H0k, {}, {}, L=self.NR_method,
                                              verbose=self.verbose,apply_B0k=apply_B0k)
         # Adding the required y and s vectors :
-        for _k in xrange(np.max([0, k - BFGS_H.L]), k):
-            BFGS_H.add_ys(self.lib_dir + '/Hessian/rlm_yn_%s_%s.npy' % (_k, key),
-                          self.lib_dir + '/Hessian/rlm_sn_%s_%s.npy' % (_k, key), _k)
+        for _k in range(np.max([0, k - BFGS_H.L]), k):
+            BFGS_H.add_ys(os.path.join(self.lib_dir,  'Hessian', 'rlm_yn_%s_%s.npy' % (_k, key)),
+                          os.path.join(self.lib_dir,  'Hessian', 'rlm_sn_%s_%s.npy' % (_k, key)), _k)
         return BFGS_H
 
-    def build_incr(self, iter, key, gradn):
+    def build_incr(self, it, key, gradn):
         """
         Search direction :    BGFS method with 'self.NR method' BFGS updates to the Hessian.
         Initial Hessian are built from N0s.
         It must be rank 0 here.
-        :param iter: current iteration level. Will produce the increment to phi_{k-1}, from gradient est. g_{k-1}
+        :param it: current iteration level. Will produce the increment to phi_{k-1}, from gradient est. g_{k-1}
                       phi_{k_1} + output = phi_k
         :param key: 'p' or 'o'
         :param gradn: current estimate of the gradient (alm array)
@@ -497,79 +503,79 @@ class ffs_iterator(object):
         y_k = g_k+1 - g_k
         """
         assert self.PBSRANK == 0, 'single MPI process method !'
-        assert iter > 0, iter
-        k = iter - 2
-        yk_fname = self.lib_dir + '/Hessian/rlm_yn_%s_%s.npy' % (k, key)
+        assert it > 0, it
+        k = it - 2
+        yk_fname = os.path.join(self.lib_dir, 'Hessian', 'rlm_yn_%s_%s.npy' % (k, key))
         if k >= 0 and not os.path.exists(yk_fname):  # Caching Hessian BFGS yk update :
             yk = self.lib_qlm.alm2rlm(gradn - self.load_total_grad(k, key))
             self.cache_rlm(yk_fname, yk)
-        k = iter - 1
+        k = it - 1
         BFGS = self.get_Hessian(k, key)  # Constructing L-BFGS Hessian
         # get descent direction sk = - H_k gk : (rlm array). Will be cached directly
-        sk_fname = self.lib_dir + '/Hessian/rlm_sn_%s_%s.npy' % (k, key)
+        sk_fname = os.path.join(self.lib_dir, 'Hessian', 'rlm_sn_%s_%s.npy' % (k, key))
         step = 0.
         if not os.path.exists(sk_fname):
-            print "rank %s calculating descent direction" % self.PBSRANK
+            print("rank %s calculating descent direction" % self.PBSRANK)
             t0 = time.time()
             incr = BFGS.get_mHkgk(self.lib_qlm.alm2rlm(gradn), k)
             norm_inc = self.calc_norm(self.lib_qlm.rlm2alm(incr)) / self.calc_norm(self.get_Plm(0, key))
-            step = self.newton_step_length(iter, norm_inc)
+            step = self.newton_step_length(it, norm_inc)
             self.cache_rlm(sk_fname,incr * step)
             prt_time(time.time() - t0, label=' Exec. time for descent direction calculation')
         assert os.path.exists(sk_fname), sk_fname
         return self.lib_qlm.rlm2alm(self.load_rlm(sk_fname)),step
 
-    def iterate(self, iter, key, cache_only=False, callback='default_callback'):
+    def iterate(self, it, key, cache_only=False, callback='default_callback'):
         """
         Performs an iteration, by collecting the gradients at level iter, and the lower level potential,
         saving then the iter + 1 potential map.
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        plm_fname = self.lib_dir + '/%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], iter)
+        plm_fname = os.path.join(self.lib_dir, '%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], it))
         if os.path.exists(plm_fname): return None if cache_only else self.load_qlm(plm_fname)
 
-        assert self.is_previous_iter_done(iter, key), 'previous iteration not done'
+        assert self.is_previous_iter_done(it, key), 'previous iteration not done'
         # Calculation in // of lik and det term :
         ti = time.time()
         if self.PBSRANK == 0:  # Single processes routines :
-            self.calc_ffinv(iter - 1, key)
-            self.get_gradPpri(iter, key, cache_only=True)
+            self.calc_ffinv(it - 1, key)
+            self.get_gradPpri(it, key, cache_only=True)
         self.barrier()
         # Calculation of the likelihood term, involving the det term over MCs :
-        irrelevant = self.calc_gradPlikPdet(iter, key)
+        irrelevant = self.calc_gradPlikPdet(it, key)
         self.barrier()  # Everything should be on disk now.
         if self.PBSRANK == 0:
-            incr,steplength = self.build_incr(iter, key, self.load_total_grad(iter - 1, key))
-            self.cache_qlm(plm_fname, self.get_Plm(iter - 1, key) + incr, pbs_rank=0)
+            incr,steplength = self.build_incr(it, key, self.load_total_grad(it - 1, key))
+            self.cache_qlm(plm_fname, self.get_Plm(it - 1, key) + incr, pbs_rank=0)
 
             # Saves some info about increment norm and exec. time :
             norm_inc = self.calc_norm(incr) / self.calc_norm(self.get_Plm(0, key))
-            norms = [self.calc_norm(self.load_gradquad(iter - 1, key))]
-            norms.append(self.calc_norm(self.load_graddet(iter - 1, key)))
-            norms.append(self.calc_norm(self.load_gradpri(iter - 1, key)))
-            norm_grad = self.calc_norm(self.load_total_grad(iter - 1, key))
+            norms = [self.calc_norm(self.load_gradquad(it - 1, key))]
+            norms.append(self.calc_norm(self.load_graddet(it - 1, key)))
+            norms.append(self.calc_norm(self.load_gradpri(it - 1, key)))
+            norm_grad = self.calc_norm(self.load_total_grad(it - 1, key))
             norm_grad_0 = self.calc_norm(self.load_total_grad(0, key))
             for i in [0, 1, 2]: norms[i] = norms[i] / norm_grad_0
 
-            with open(self.lib_dir + '/history_increment.txt', 'a') as file:
+            with open(os.path.join(self.lib_dir, 'history_increment.txt'), 'a') as file:
                 file.write('%03d %.1f %.6f %.6f %.6f %.6f %.6f %.12f \n'
-                           % (iter, time.time() - ti, norm_inc, norm_grad / norm_grad_0, norms[0], norms[1], norms[2],
+                           % (it, time.time() - ti, norm_inc, norm_grad / norm_grad_0, norms[0], norms[1], norms[2],
                               steplength))
                 file.close()
 
             if self.tidy > 2:  # Erasing dx,dy and det magn (12GB for full sky at 0.74 amin per iteration)
-                f1, f2 = self.getfnames_f(key, iter - 1)
-                f3, f4 = self.getfnames_finv(key, iter - 1)
+                f1, f2 = self.getfnames_f(key, it - 1)
+                f3, f4 = self.getfnames_finv(key, it - 1)
                 for _f in [f1, f2, f3, f4]:
                     if os.path.exists(_f):
                         os.remove(_f)
-                        if self.verbose: print "     removed :", _f
-                if os.path.exists(self.lib_dir + '/f_%04d_libdir' % (iter - 1)):
-                    shutil.rmtree(self.lib_dir + '/f_%04d_libdir' % (iter - 1))
-                    if self.verbose: print "Removed :", self.lib_dir + '/f_%04d_libdir' % (iter - 1)
-                if os.path.exists(self.lib_dir + '/finv_%04d_libdir' % (iter - 1)):
-                    shutil.rmtree(self.lib_dir + '/finv_%04d_libdir' % (iter - 1))
-                    if self.verbose: print "Removed :", self.lib_dir + '/finv_%04d_libdir' % (iter - 1)
+                        if self.verbose: print("     removed :", _f)
+                if os.path.exists(os.path.join(self.lib_dir, 'f_%04d_libdir' % (it - 1))):
+                    shutil.rmtree(os.path.join(self.lib_dir, 'f_%04d_libdir' % (it - 1)))
+                    if self.verbose: print("Removed :", os.path.join(self.lib_dir, 'f_%04d_libdir' % (it - 1)))
+                if os.path.exists(os.path.join(self.lib_dir, 'finv_%04d_libdir' % (it - 1))):
+                    shutil.rmtree(os.path.join(self.lib_dir, 'finv_%04d_libdir' % (it - 1)))
+                    if self.verbose: print("Removed :", os.path.join(self.lib_dir, 'finv_%04d_libdir' % (it - 1)))
 
         self.barrier()
         return None if cache_only else self.load_qlm(plm_fname)
@@ -586,37 +592,37 @@ class ffs_iterator_cstMF(ffs_iterator):
                                                  **kwargs)
         self.MF_qlms = MF_qlms
 
-    def calc_gradPlikPdet(self, iter, key):
+    def calc_gradPlikPdet(self, it, key):
         """
         Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_likterm = self.lib_dir + '/qlm_grad%slik_it%03d.npy' % (key.upper(), iter - 1)
-        fname_detterm = self.lib_dir + '/qlm_grad%sdet_it%03d.npy' % (key.upper(), iter - 1)
-        assert iter > 0, iter
+        fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
+        fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
+        assert it > 0, it
         if os.path.exists(fname_likterm) and os.path.exists(fname_detterm):
             return 0
 
-        assert self.is_previous_iter_done(iter, key)
+        assert self.is_previous_iter_done(it, key)
 
         # Identical MF here
         self.cache_qlm(fname_detterm, self.load_qlm(self.MF_qlms))
-        self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
-        mchain = fs.qcinv.multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
+        self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+        mchain = multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
                                                     no_deglensing=self.nodeglensing)
         # FIXME : The solution input is not working properly sometimes. We give it up for now.
         # FIXME  don't manage to find the right d0 to input for a given sol ?!!
-        soltn = self.load_soltn(iter, key).copy() * self.soltn_cond
+        soltn = self.load_soltn(it, key).copy() * self.soltn_cond
         self.opfilt._type = self.type
         mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
-        self.cache_TEBmap(soltn, iter - 1, key)
+        self.cache_TEBmap(soltn, it - 1, key)
         # soltn = self.opfilt.MLIK2BINV(soltn,self.cov,self.get_datmaps())
         # grad = - ql.get_qlms(self.type, self.cov.lib_skyalm, soltn, self.cov.cls, self.lib_qlm,
         #                     use_Pool=self.use_Pool, f=self.cov.f)[{'p': 0, 'o': 1}[key.lower()]]
         TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)
-        ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, iter, key)
+        ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, it, key)
         grad = - ql.get_qlms_wl(self.type, self.cov.lib_skyalm, TQUMlik, ResTQUMlik, self.lib_qlm,
-                                use_Pool=self.use_Pool, f=self.load_f(iter - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
+                                use_Pool=self.use_Pool, f=self.load_f(it - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
 
         self.cache_qlm(fname_likterm, grad, pbs_rank=self.PBSRANK)
         # It does not help to cache both grad_O and grad_P as they do not follow the trajectory in plm space.
@@ -638,7 +644,7 @@ class ffs_iterator_pertMF(ffs_iterator):
                      'q': (cov.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
                      'u': (cov.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
 
-        self.isocov = fs.ffs_covs.ffs_cov.ffs_diagcov_alm(lib_dir + '/isocov',
+        self.isocov = ffs_cov.ffs_diagcov_alm(os.path.join(lib_dir, 'isocov'),
                                                           cov.lib_skyalm, cov.cls, cov.cls, cov.cl_transf, cls_noise,
                                                           lib_skyalm=cov.lib_skyalm, init_rank=init_rank,
                                                           init_barrier=init_barrier)
@@ -647,36 +653,33 @@ class ffs_iterator_pertMF(ffs_iterator):
     def get_MFresp(self, key):
         return self.isocov.get_MFresplms(self.type, self.lib_qlm, use_cls_len=False)[{'p': 0, 'o': 1}[key.lower()]]
 
-    def calc_gradPlikPdet(self, iter, key):
+    def calc_gradPlikPdet(self, it, key):
         """
-        Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
+        Caches the det term for it via MC sims, together with the data one, for maximal //isation.
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_likterm = self.lib_dir + '/qlm_grad%slik_it%03d.npy' % (key.upper(), iter - 1)
-        fname_detterm = self.lib_dir + '/qlm_grad%sdet_it%03d.npy' % (key.upper(), iter - 1)
-        assert iter > 0, iter
+        fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
+        fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
+        assert it > 0, it
         if os.path.exists(fname_likterm) and os.path.exists(fname_detterm):
             return 0
 
-        assert self.is_previous_iter_done(iter, key)
+        assert self.is_previous_iter_done(it, key)
         # Identical MF here
-        self.cache_qlm(fname_detterm, self.load_qlm(self.get_MFresp(key.lower()) * self.get_Plm(iter - 1, key.lower())))
-        self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
-        mchain = fs.qcinv.multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
-                                                    no_deglensing=self.nodeglensing)
+        self.cache_qlm(fname_detterm, self.load_qlm(self.get_MFresp(key.lower()) * self.get_Plm(it - 1, key.lower())))
+        self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+        mchain = multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
+                                           no_deglensing=self.nodeglensing)
         # FIXME : The solution input is not working properly sometimes. We give it up for now.
         # FIXME  don't manage to find the right d0 to input for a given sol ?!!
-        soltn = self.load_soltn(iter, key).copy() * self.soltn_cond
+        soltn = self.load_soltn(it, key).copy() * self.soltn_cond
         self.opfilt._type = self.type
         mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
-        self.cache_TEBmap(soltn, iter - 1, key)
-        # soltn = self.opfilt.MLIK2BINV(soltn,self.cov,self.get_datmaps())
-        # grad = - ql.get_qlms(self.type, self.cov.lib_skyalm, soltn, self.cov.cls, self.lib_qlm,
-        #                     use_Pool=self.use_Pool, f=self.cov.f)[{'p': 0, 'o': 1}[key.lower()]]
+        self.cache_TEBmap(soltn, it - 1, key)
         TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)
-        ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, iter, key)
+        ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, it, key)
         grad = - ql.get_qlms_wl(self.type, self.cov.lib_skyalm, TQUMlik, ResTQUMlik, self.lib_qlm,
-                                use_Pool=self.use_Pool, f=self.load_f(iter - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
+                                use_Pool=self.use_Pool, f=self.load_f(it - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
 
         self.cache_qlm(fname_likterm, grad, pbs_rank=self.PBSRANK)
         # It does not help to cache both grad_O and grad_P as they do not follow the trajectory in plm space.
@@ -692,51 +695,48 @@ class ffs_iterator_simMF(ffs_iterator):
     """
 
     def __init__(self, lib_dir, _type, MFkey, nsims, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior, **kwargs):
-        # lib_dir, type, cov, dat_maps, lib_qlm, Plm0, MF_qlms, H0, cpp_prior,
-        # use_Pool_lens = 0, use_Pool_inverse = 0, chain_descr = None, opfilt = None, soltn0 = None,
-        # no_deglensing = False, NR_method = 100, tidy = 10, verbose = True, maxcgiter = 150, PBSSIZE = None, PBSRANK = None
         super(ffs_iterator_simMF, self).__init__(lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                                                  **kwargs)
-        print '++ ffs_%s simMF iterator (PBSSIZE %s pbs.size %s) : setup OK' % (self.type, self.PBSSIZE, pbs.size)
+        print('++ ffs_%s simMF iterator (PBSSIZE %s pbs.size %s) : setup OK' % (self.type, self.PBSSIZE, pbs.size))
         self.MFkey = MFkey
         self.nsims = nsims
         self.same_seeds = kwargs.pop('same_seeds', False)
         self.subtract_phi0 = kwargs.pop('subtract_phi0', True)
         self.barrier()
 
-    def build_pha(self, iter):
+    def build_pha(self, it):
         """
         Sets up sim libraries for the MF evaluation
-        :param iter:
+        :param it:
         :return:
         """
         if self.nsims == 0: return None
-        phas_pix = fs.sims.ffs_phas.pix_lib_phas(
-            self.lib_dir + '/%s_sky_noise_iter%s' % (self.type, iter * (not self.same_seeds)),
+        phas_pix = ffs_phas.pix_lib_phas(
+            os.path.join(self.lib_dir,  '%s_sky_noise_iter%s' % (self.type, it * (not self.same_seeds))),
             len(self.type), self.cov.lib_datalm.shape, nsims_max=self.nsims)
         phas_cmb = None  # dont need it so far
         if self.PBSRANK == 0:
             for lib, lab in zip([phas_pix, phas_cmb], ['phas pix', 'phas_cmb']):
                 if not lib is None and not lib.is_full():
-                    print "++ run iterator regenerating %s phases mf_sims rank %s..." % (lab, self.PBSRANK)
+                    print("++ run iterator regenerating %s phases mf_sims rank %s..." % (lab, self.PBSRANK))
                     for idx in np.arange(self.nsims): lib.get_sim(idx, phas_only=True)
         self.barrier()
         return phas_pix, phas_cmb
 
-    def calc_gradPlikPdet(self, iter, key, callback='default_callback'):
+    def calc_gradPlikPdet(self, it, key, callback='default_callback'):
         """
         Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_detterm = self.lib_dir + '/qlm_grad%sdet_it%03d.npy' % (key.upper(), iter - 1)
-        fname_likterm = self.lib_dir + '/qlm_grad%slik_it%03d.npy' % (key.upper(), iter - 1)
+        fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
+        fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
         if os.path.exists(fname_detterm) and os.path.exists(fname_likterm):
             return 0
-        assert self.is_previous_iter_done(iter, key)
+        assert self.is_previous_iter_done(it, key)
 
-        pix_pha, cmb_pha = self.build_pha(iter)
-        if self.PBSRANK == 0 and not os.path.exists(self.lib_dir + '/mf_it%03d' % (iter - 1)):
-            os.makedirs(self.lib_dir + '/mf_it%03d' % (iter - 1))
+        pix_pha, cmb_pha = self.build_pha(it)
+        if self.PBSRANK == 0 and not os.path.exists(os.path.join(self.lib_dir,  'mf_it%03d' % (it - 1))):
+            os.makedirs(os.path.join(self.lib_dir,  'mf_it%03d' % (it - 1)))
         self.barrier()
 
         # Caching gradients for the mc_sims_mf sims , plus the dat map.
@@ -748,35 +748,35 @@ class ffs_iterator_simMF(ffs_iterator):
         except:
             jobs.append(-1)  # data map
         for idx in range(self.nsims):  # sims
-            if not os.path.exists(self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), idx)):
+            if not os.path.exists(os.path.join(self.lib_dir, 'mf_it%03d/g%s_%04d.npy' % (it - 1, key.lower(), idx))):
                 jobs.append(idx)
             else:
                 try:  # just checking if file is OK.
-                    self.load_qlm(self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), idx))
+                    self.load_qlm(os.path.join(self.lib_dir, 'mf_it%03d/g%s_%04d.npy' % (it - 1, key.lower(), idx)))
                 except:
                     jobs.append(idx)
         self.opfilt._type = self.type
         # By setting the chain outside the main loop we avoid potential MPI barriers
         # in degrading the lib_alm libraries:
-        mchain = fs.qcinv.multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
+        mchain = multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
                                                     no_deglensing=self.nodeglensing)
         for i in range(self.PBSRANK, len(jobs), self.PBSSIZE):
             idx = jobs[i]
-            print "rank %s, doing mc det. gradients idx %s, job %s in %s at iter level %s:" \
-                  % (self.PBSRANK, idx, i, len(jobs), iter)
+            print("rank %s, doing mc det. gradients idx %s, job %s in %s at iter level %s:" \
+                  % (self.PBSRANK, idx, i, len(jobs), it))
             ti = time.time()
 
             if idx >= 0:  # sim
-                grad_fname = self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), idx)
-                self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
+                grad_fname = os.path.join(self.lib_dir, 'mf_it%03d/g%s_%04d.npy' % (it - 1, key.lower(), idx))
+                self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
                 MFest = ql.MFestimator(self.cov, self.opfilt, mchain, self.lib_qlm,
                                        pix_pha=pix_pha, cmb_pha=cmb_pha, use_Pool=self.use_Pool)
                 grad = MFest.get_MFqlms(self.type, self.MFkey, idx)[{'p': 0, 'o': 1}[key.lower()]]
                 if self.subtract_phi0:
                     isofilt = self.cov.turn2isofilt()
-                    chain_descr_iso = fs.qcinv.chain_samples.get_isomgchain(
+                    chain_descr_iso = chain_samples.get_isomgchain(
                         self.cov.lib_skyalm.ellmax, self.cov.lib_datalm.shape, iter_max=self.maxiter)
-                    mchain_iso = fs.qcinv.multigrid.multigrid_chain(
+                    mchain_iso = multigrid.multigrid_chain(
                         self.opfilt, self.type, chain_descr_iso, isofilt, no_deglensing=self.nodeglensing)
                     MFest = ql.MFestimator(isofilt, self.opfilt, mchain_iso, self.lib_qlm,
                                            pix_pha=pix_pha, cmb_pha=cmb_pha, use_Pool=self.use_Pool)
@@ -786,50 +786,50 @@ class ffs_iterator_simMF(ffs_iterator):
                 # This is the data.
                 # FIXME : The solution input is not working properly sometimes. We give it up for now.
                 # FIXME  don't manage to find the right d0 to input for a given sol ?!!
-                self.cov.set_ffi(self.load_f(iter - 1, key), self.load_finv(iter - 1, key))
-                soltn = self.load_soltn(iter, key).copy() * self.soltn_cond
+                self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+                soltn = self.load_soltn(it, key).copy() * self.soltn_cond
                 mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
-                self.cache_TEBmap(soltn, iter - 1, key)
+                self.cache_TEBmap(soltn, it - 1, key)
                 TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)
-                ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, iter, key)
+                ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, it, key)
                 grad = - ql.get_qlms_wl(self.type, self.cov.lib_skyalm, TQUMlik, ResTQUMlik, self.lib_qlm,
-                                        use_Pool=self.use_Pool, f=self.load_f(iter - 1, key))[
+                                        use_Pool=self.use_Pool, f=self.load_f(it - 1, key))[
                     {'p': 0, 'o': 1}[key.lower()]]
                 self.cache_qlm(fname_likterm, grad, pbs_rank=self.PBSRANK)
 
-            print "%s it. %s sim %s, rank %s cg status  " % (key.lower(), iter, idx, self.PBSRANK)
+            print("%s it. %s sim %s, rank %s cg status  " % (key.lower(), it, idx, self.PBSRANK))
             # It does not help to cache both grad_O and grad_P as they do not follow the trajectory in plm space.
             # Saves some info about current iteration :
             if idx == -1:  # Saves some info about iteration times etc.
-                with open(self.lib_dir + '/cghistories/history_dat.txt', 'a') as file:
-                    file.write('%04d %.3f \n' % (iter, time.time() - ti))
+                with open(os.path.join(self.lib_dir, 'cghistories','history_dat.txt'), 'a') as file:
+                    file.write('%04d %.3f \n' % (it, time.time() - ti))
                     file.close()
             else:
-                with open(self.lib_dir + '/cghistories/history_sim%04d.txt' % idx, 'a') as file:
-                    file.write('%04d %.3f \n' % (iter, time.time() - ti))
+                with open(os.path.join(self.lib_dir, 'cghistories', 'history_sim%04d.txt' % idx), 'a') as file:
+                    file.write('%04d %.3f \n' % (it, time.time() - ti))
                     file.close()
         self.barrier()
         if self.PBSRANK == 0:
             # Collecting terms and caching det term.
             # We also cache arrays formed from independent sims for tests.
-            print "rank 0, collecting mc det. %s gradients :" % key.lower()
+            print("rank 0, collecting mc det. %s gradients :" % key.lower())
             det_term = np.zeros(self.lib_qlm.alm_size, dtype=complex)
             for i in range(self.nsims):
-                fname = self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), i)
+                fname = os.path.join(self.lib_dir, 'mf_it%03d'%(it -1),'g%s_%04d.npy'%(key.lower(), i))
                 det_term = (det_term * i + self.load_qlm(fname)) / (i + 1.)
             self.cache_qlm(fname_detterm, det_term, pbs_rank=0)
             det_term *= 0.
             fname_detterm1 = fname_detterm.replace('.npy', 'MF1.npy')
             assert 'MF1' in fname_detterm1
             for i in np.arange(self.nsims)[0::2]:
-                fname = self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), i)
+                fname = os.path.join(self.lib_dir, 'mf_it%03d'%(it - 1),'g%s_%04d.npy'%(key.lower(), i))
                 det_term = (det_term * i + self.load_qlm(fname)) / (i + 1.)
             self.cache_qlm(fname_detterm1, det_term, pbs_rank=0)
             det_term *= 0.
             fname_detterm2 = fname_detterm.replace('.npy', 'MF2.npy')
             assert 'MF2' in fname_detterm2
             for i in np.arange(self.nsims)[1::2]:
-                fname = self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), i)
+                fname = os.path.join(self.lib_dir, 'mf_it%03d'%(it - 1),'g%s_%04d.npy'%(key.lower(), i))
                 det_term = (det_term * i + self.load_qlm(fname)) / (i + 1.)
             self.cache_qlm(fname_detterm2, det_term, pbs_rank=0)
 
@@ -837,8 +837,8 @@ class ffs_iterator_simMF(ffs_iterator):
             if self.tidy > 1:
                 # We erase as well the gradient determinant term that were stored on disk :
                 files_to_remove = \
-                    [self.lib_dir + '/mf_it%03d/g%s_%04d.npy' % (iter - 1, key.lower(), i) for i in range(self.nsims)]
-                print 'rank %s removing %s maps in ' % (
-                    self.PBSRANK, len(files_to_remove)), self.lib_dir + '/mf_it%03d/' % (iter - 1)
+                    [os.path.join(self.lib_dir, 'mf_it%03d'%(it -1), 'g%s_%04d.npy'%(key.lower(), i)) for i in range(self.nsims)]
+                print('rank %s removing %s maps in ' % (
+                    self.PBSRANK, len(files_to_remove)), os.path.join(self.lib_dir, 'mf_it%03d'%(it - 1)))
                 for file in files_to_remove: os.remove(file)
         self.barrier()
