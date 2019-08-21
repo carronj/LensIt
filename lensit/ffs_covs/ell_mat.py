@@ -44,26 +44,26 @@ class ell_mat:
         self.mmap_mode = mmap_mode
 
         # Dumping ell mat in lib_dir. Overwrites if already present.
-
+        fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
         if pbs.rank == 0:
             if not os.path.exists(lib_dir): os.makedirs(lib_dir)
-            if not os.path.exists(lib_dir + "/ellmat_hash.pk"):
-                pk.dump(self.hash_dict(), open(lib_dir + "/ellmat_hash.pk", 'w'))
+            if not os.path.exists(fn_hash):
+                pk.dump(self.hash_dict(), open(fn_hash, 'wb'), protocol=2)
         pbs.barrier()
 
-        hash_check(pk.load(open(lib_dir + "/ellmat_hash.pk", 'r')), self.hash_dict())
+        hash_check(pk.load(open(fn_hash, 'rb')), self.hash_dict())
 
-        if pbs.rank == 0 and not os.path.exists(self.lib_dir + '/ellmat.npy'):
-                print('ell_mat:caching ells in ' + self.lib_dir + '/ellmat.npy')
-                np.save(self.lib_dir + '/ellmat.npy', self._build_ellmat())
+        if pbs.rank == 0 and not os.path.exists(os.path.join(self.lib_dir, 'ellmat.npy')):
+                print('ell_mat:caching ells in ' + os.path.join(self.lib_dir, 'ellmat.npy'))
+                np.save(os.path.join(self.lib_dir, 'ellmat.npy'), self._build_ellmat())
         pbs.barrier()
         # FIXME
         self.ellmax = int(self._get_ellmax())
         self._ell_counts = self._build_ell_counts()
         self._nz_counts = self._ell_counts.nonzero()
 
-    def __eq__(self, ell_mat):
-        return self.shape == ell_mat.shape and self.lsides == self.lsides
+    def __eq__(self, other):
+        return self.shape == other.shape and self.lsides == self.lsides
 
     def _build_ellmat(self):
         kmin = 2. * np.pi / np.array(self.lsides)
@@ -79,11 +79,13 @@ class ell_mat:
         assert axis in [0, 1], axis
         return np.pi / self.lsides[axis] * self.shape[axis]
 
-    def k2ell(self, k):
+    @staticmethod
+    def k2ell(k):
         ret = np.uint16(np.round(k - 0.5) + 0.5 * ((k - 0.5) < 0))
         return ret
 
-    def pbssafe_save(self, fname, data_to_save, pbs_rank=None):
+    @staticmethod
+    def pbssafe_save(fname, data_to_save, pbs_rank=None):
         if pbs_rank is not None and pbs.rank != pbs_rank:
             return
         np.save(fname, data_to_save)
@@ -115,9 +117,9 @@ class ell_mat:
         Returns the matrix containing the multipole ell assigned to k = (kx,ky)
         """
         if ellmax is None:
-            return np.load(self.lib_dir + '/ellmat.npy', mmap_mode=self.mmap_mode)
+            return np.load(os.path.join(self.lib_dir, 'ellmat.npy'), mmap_mode=self.mmap_mode)
         else:
-            fname = self.lib_dir + '/ellmat_ellmax%s.npy' % ellmax
+            fname = os.path.join(self.lib_dir, 'ellmat_ellmax%s.npy' % ellmax)
             if os.path.exists(fname): return np.load(fname, mmap_mode=self.mmap_mode)
             if pbs.rank == 0:
                 print('ell_mat:caching ells in ' + fname)
@@ -130,7 +132,7 @@ class ell_mat:
         Returns the matrix containing the phase k = 'k' e^i phi
         """
         if ellmax is None:
-            fname = self.lib_dir + '/phasemat.npy'
+            fname = os.path.join(self.lib_dir, 'phasemat.npy')
             if os.path.exists(fname): return np.load(fname, mmap_mode=self.mmap_mode)
             if not os.path.exists(fname) and pbs.rank == 0:
                 print('ell_mat:caching phases in '+ fname)
@@ -138,7 +140,7 @@ class ell_mat:
             pbs.barrier()
             return np.load(fname, mmap_mode=self.mmap_mode)
         else:
-            fname = self.lib_dir + '/phase_ellmax%s.npy' % ellmax
+            fname = os.path.join(self.lib_dir, 'phase_ellmax%s.npy' % ellmax)
             if not os.path.exists(fname) and pbs.rank == 0:
                 print('ell_mat:caching phases in '+ fname)
                 np.save(fname, np.arctan2(self.get_ky_mat(), self.get_kx_mat())[np.where(self.get_ellmat() <= ellmax)])
@@ -149,7 +151,7 @@ class ell_mat:
         """
         Built such that it should hit the pbs barrier only if the matrix is not already cached.
         """
-        fname = self.lib_dir + '/e2iphimat.npy'
+        fname = os.path.join(self.lib_dir, 'e2iphimat.npy')
         if os.path.exists(fname):
             return None if cache_only else np.load(fname, mmap_mode=self.mmap_mode)
         if not os.path.exists(fname) and pbs.rank == 0:
@@ -160,7 +162,7 @@ class ell_mat:
 
     def degrade(self, LDshape, lib_dir=None):
         if np.all(LDshape >= self.shape): return self
-        if lib_dir is None: lib_dir = self.lib_dir + '/degraded%sx%s' % (LDshape[0], LDshape[1])
+        if lib_dir is None: lib_dir = os.path.join(self.lib_dir, 'degraded%sx%s' % (LDshape[0], LDshape[1]))
         return ell_mat(lib_dir, LDshape, self.lsides)
 
     def get_cossin_2iphi_mat(self):
@@ -196,16 +198,16 @@ class ell_mat:
     def get_nonzero_ellcounts(self):
         return self._nz_counts
 
-    def map2cl(self, map, map2=None):
+    def map2cl(self, m, m2=None):
+        """Returns Cl estimates from a map.
+
+            Returns a cross-cl if m2 is set. Must have compatible shape.
+
         """
-        Returns Cl estimates from a map.
-        Included in self for convenience.
-        Must have the same shape than self.shape.
-        """
-        assert map.shape == self.shape, map.shape
-        if map2 is not None: assert map2.shape == self.shape, map2.shape
-        return self.rfft2cl(np.fft.rfft2(map)) if map2 is None else \
-            self.rfft2cl(np.fft.rfft2(map), rfftmap2=np.fft.rfft2(map2))
+        assert m.shape == self.shape, m.shape
+        if m2 is not None: assert m2.shape == self.shape, m2.shape
+        return self.rfft2cl(np.fft.rfft2(m)) if map2 is None else \
+            self.rfft2cl(np.fft.rfft2(m), rfftmap2=np.fft.rfft2(m2))
 
     def rfft2cl(self, rfftmap, rfftmap2=None):
         """
