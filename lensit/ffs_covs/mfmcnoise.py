@@ -4,6 +4,7 @@ and q' with weights W <-> V
 this has MC noise
 <q q'> =  W^{1a} V^{*,1b} W^{2a} V^{*,2b} +  W^{1a} V^{*,2b} W^{2a} V^{*,1b}
 """
+from __future__ import print_function
 
 import hashlib
 import os
@@ -11,16 +12,17 @@ import pickle as pk
 
 import numpy as np
 
-import lensit as fs
-from lensit import pbs as pbs
-import ffs_cov as COV, ffs_specmat as SM
+from lensit.pbs import pbs
+from lensit.ffs_covs import ffs_cov as COV, ffs_specmat as SM, ell_mat
+from lensit.misc.misc_utils import timer
+from lensit.sims.sims_generic import hash_check
 
 _timed = True
 
 types = ['T', 'QU', 'TQU']
 
 
-class MFMCnoise_lib():
+class MFMCnoise_lib:
     def __init__(self, lib_dir, lib_alm, cls_len, cl_transf, cls_noise):
         self.lib_alm = lib_alm
         self.cls_len = cls_len
@@ -38,7 +40,7 @@ class MFMCnoise_lib():
         if not os.path.exists(lib_dir + '/MFMC_hash.pk') and pbs.rank == 0:
             pk.dump(self.hashdict(), open(lib_dir + '/MFMC_hash.pk', 'w'))
         pbs.barrier()
-        fs.sims.sims_generic.hash_check(self.hashdict(), pk.load(open(lib_dir + '/MFMC_hash.pk', 'r')))
+        hash_check(self.hashdict(), pk.load(open(lib_dir + '/MFMC_hash.pk', 'r')))
 
     def hashdict(self):
         hash = {'transf': hashlib.sha1(self.cl_transf).hexdigest(),
@@ -72,7 +74,7 @@ class MFMCnoise_lib():
                 for _j in range(_i, len(_type)):
                     _fname = self.lib_dir + '/Pmats/%s_rootPmat_%s%s.npy' % (_type, _i, _j)
                     np.save(_fname, rPmat[:, _i, _j])
-                    print "Cached :", _fname
+                    print("Cached :", _fname)
         return np.load(fname)
 
     def _get_rootPmatinv(self, _type, i, j):
@@ -86,7 +88,7 @@ class MFMCnoise_lib():
                 for _j in range(_i, len(_type)):
                     _fname = self.lib_dir + '/Pmats/%s_rootPmatinv_%s%s.npy' % (_type, _i, _j)
                     np.save(_fname, rPmat[:, _i, _j])
-                    print "Cached :", _fname
+                    print("Cached :", _fname)
         return np.load(fname)
 
     def _get_Pmatinv(self, _type, i, j):
@@ -100,7 +102,7 @@ class MFMCnoise_lib():
                 for _j in range(_i, len(_type)):
                     _fname = self.lib_dir + '/Pmats/%s_Pmatinv_%s%s.npy' % (_type, _i, _j)
                     np.save(_fname, rPmat[:, _i, _j])
-                    print "Cached :", _fname
+                    print("Cached :", _fname)
         return np.load(fname)
 
     def _get_rootH(self, _type, i, j):
@@ -133,7 +135,7 @@ class MFMCnoise_lib():
                 for _j in range(_i, len(_type)):
                     _fname = self.lib_dir + '/%s_rootH_%s%s.npy' % (_type, _i, _j)
                     np.save(_fname, R[:, _i, _j])
-                    print "Cached :", _fname
+                    print("Cached :", _fname)
         return np.load(fname)
 
     def _buildPmats(self, MFkey):
@@ -235,7 +237,7 @@ class MFMCnoise_lib():
         :return:
         """
         assert _type in types, (_type, types)
-        timer = fs.misc.misc_utils.timer(_timed)
+        timer = timer(_timed)
         W1, W2, ijsymmetry = self._buildPmats(MFkey)
         W1a, W1b = W1
         W2a, W2b = W2
@@ -278,8 +280,8 @@ class MFMCnoise_lib():
         MFkey2 = MFkey1
         fname = self.lib_dir + '/%s_%04d_%04d.dat' % (_type, MFkey1, MFkey2)
         if not os.path.exists(fname) or recache or MCnoise_floor:
-            timer = fs.misc.misc_utils.timer(_timed)
-            lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_alm.ell_mat, filt_func=lambda ell: ell >= 0)
+            times = timer(_timed)
+            lib_qlm = ell_mat.ffs_alm_pyFFTW(self.lib_alm.ell_mat, filt_func=lambda ell: ell >= 0)
 
             assert MFkey1 == MFkey2, 'Fix the rotation to phi-Omega space at the end'
             W1, W2, ijsymmetry = self._buildPmats(MFkey1)
@@ -304,7 +306,7 @@ class MFMCnoise_lib():
                 # If the weights are symmetric, i != j contributions count twice.
                 return 1 + ijsymmetry * (i != j)
 
-            timer.checkpoint('Starting MCnoise calc.')
+            times.checkpoint('Starting MCnoise calc.')
             for i in range(len(t)):  # Build Fourier space covariances :
                 for j in range(i * ijsymmetry, len(t)):
                     sfac = symm_fac(i, j)
@@ -365,9 +367,9 @@ class MFMCnoise_lib():
                             Pmata += W1a(t, i, k) * V1b(t, j, k).conj()
                             Pmatb += W2a(t, i, k) * V2b(t, j, k).conj()
                         Covyx += _2alm(_2map(Pmata * sfac) * _2map(Pmatb))
-                    timer.checkpoint('%s %s Done' % (i, j))
+                    times.checkpoint('%s %s Done' % (i, j))
 
-            print 'xy and yx allclose :', np.allclose(Covxy, Covxy)
+            print('xy and yx allclose :', np.allclose(Covxy, Covxy))
             facunits = 1. / np.sqrt(np.prod(self.lib_alm.ell_mat.lsides))
             Covxx, Covyy, Covxy = COV.xylms_to_phiOmegalm(lib_qlm, Covxx * facunits, Covyy * facunits, Covxy * facunits)
             MCpp = lib_qlm.bin_realpart_inell(Covxx)[0:2 * self.lib_alm.ellmax + 1]

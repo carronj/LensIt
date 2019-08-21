@@ -753,8 +753,8 @@ class ffs_displacement(object):
         return np.array([dphi_ell, dOm_ell])
 
 
-class ffs_id_displacement():
-    """ Displacement instance where there is actually no displacement. For sheer convenience """
+class ffs_id_displacement:
+    """ Displacement instance where there is actually no displacement. For convenience """
 
     def __init__(self, shape, lsides):
         self.shape = shape

@@ -2,7 +2,7 @@ import numpy as np
 
 
 def PTR(p, t, r):
-    return (lambda i: max(0, i - max(p, int(min(t, np.mod(i, r))))))
+    return lambda i: max(0, i - max(p, int(min(t, np.mod(i, r)))))
 
 
 tr_cg = (lambda i: i - 1)

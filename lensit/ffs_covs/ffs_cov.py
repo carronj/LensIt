@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import datetime
 import os
 import pickle as pk
@@ -5,9 +7,9 @@ import shutil
 
 import numpy as np
 
-import lensit as fs
-import lensit.pbs
-import lensit.qcinv
+from lensit.pbs import pbs
+from lensit.qcinv import opfilt_cinv, chain_samples, cd_solve, cd_monitors, multigrid, ffs_ninv_filt_ideal
+from lensit.ffs_covs import ell_mat
 from lensit.ffs_covs import ffs_specmat as SM
 from lensit.ffs_covs.ffs_specmat import get_unlPmat_ij, get_Pmat, get_datPmat_ij, \
     TQUPmats2TEBcls, get_rootunlPmat_ij, get_unlrotPmat_ij
@@ -38,7 +40,7 @@ def xylms_to_phiOmegalm(lib_alm, Fxx, Fyy, Fxy, Fyx=None):
         Fpp = Fxx * lx() ** 2 + Fyy * ly() ** 2 + (Fxy + Fyx) * lx() * ly()
         FOO = Fxx * ly() ** 2 + Fyy * lx() ** 2 - (Fxy + Fyx) * lx() * ly()
         FpO = lx() * ly() * (Fxx - Fyy) + Fxy * (ly() ** 2 - lx() ** 2)
-        print 'Fxy Fyx equal, allclose', np.all(Fxy == Fyx), np.allclose(Fxy, Fyx)
+        print('Fxy Fyx equal, allclose', np.all(Fxy == Fyx), np.allclose(Fxy, Fyx))
 
     # FIXME: is the sign of the following line correct ? (anyway result should be close to zero)
     return np.array([Fpp, FOO, FpO])
@@ -60,7 +62,7 @@ def extend_cl(_cl, ell_max, fill_val=0.):
 
 class ffs_diagcov_alm(object):
     def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
-                 lib_skyalm=None, init_rank=lensit.pbs.rank, init_barrier=lensit.pbs.barrier):
+                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier):
 
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_datalm.clone() if lib_skyalm is None else lib_skyalm
@@ -82,13 +84,14 @@ class ffs_diagcov_alm(object):
         if not os.path.exists(lib_dir) and init_rank == 0:
             os.makedirs(lib_dir)
         init_barrier()
-        if not os.path.exists(lib_dir + '/cov_hash.pk') and init_rank == 0:
-            pk.dump(self.hashdict(), open(lib_dir + '/cov_hash.pk', 'w'))
+        fn = os.path.join(lib_dir, 'cov_hash.pk')
+        if not os.path.exists(fn) and init_rank == 0:
+            pk.dump(self.hashdict(), open(fn, 'w'))
         init_barrier()
-        hash_check(pk.load(open(lib_dir + '/cov_hash.pk', 'r')), self.hashdict())
+        hash_check(pk.load(open(fn, 'r')), self.hashdict())
 
-        self.barrier = lensit.pbs.barrier if _runtimebarriers else lambda: -1
-        self.pbsrank = 0 if _runtimerankzero else lensit.pbs.rank
+        self.barrier = pbs.barrier if _runtimebarriers else lambda: -1
+        self.pbsrank = 0 if _runtimerankzero else pbs.rank
 
     def _deg(self, skyalm):
         assert skyalm.shape == (self.lib_skyalm.alm_size,), (skyalm.shape, self.lib_skyalm.alm_size)
@@ -108,15 +111,15 @@ class ffs_diagcov_alm(object):
 
     def _datalms_shape(self, _type):
         assert _type in _types, (_type, _types)
-        return (len(_type), self.lib_datalm.alm_size)
+        return len(_type), self.lib_datalm.alm_size
 
     def _skyalms_shape(self, _type):
         assert _type in _types, (_type, _types)
-        return (len(_type), self.lib_skyalm.alm_size)
+        return len(_type), self.lib_skyalm.alm_size
 
     def _datmaps_shape(self, _type):
         assert _type in _types, (_type, _types)
-        return (len(_type), self.dat_shape[0], self.dat_shape[1])
+        return len(_type), self.dat_shape[0], self.dat_shape[1]
 
     def hashdict(self):
         hash = {'lib_alm': self.lib_datalm.hashdict(), 'lib_skyalm': self.lib_skyalm.hashdict()}
@@ -165,7 +168,7 @@ class ffs_diagcov_alm(object):
             for _j in range(len(_type)):
                 for _i in range(_j, len(_type)):
                     np.save(self.lib_dir + '/%s_Pmatinv_%s_%s%s.npy' % (_type, _str, _i, _j), Pmatinv[:, _i, _j])
-                    print "     get_Pmatinv:: cached", self.lib_dir + '/%s_Pmatinv_%s_%s%s.npy' % (_type, _str, _i, _j)
+                    print("     get_Pmatinv:: cached", self.lib_dir + '/%s_Pmatinv_%s_%s%s.npy' % (_type, _str, _i, _j))
         self.barrier()
         return np.load(fname)
 
@@ -237,7 +240,7 @@ class ffs_diagcov_alm(object):
             if wNoise: header += "\n incl. Noise "
             header += "\n TT TE TB EE EB BB"
             np.savetxt(fname, save_arr.transpose(), fmt=['%.8e'] * 6, header=header)
-            print "Cached ", fname
+            print("Cached " + fname)
         self.barrier()
         cls = np.loadtxt(fname).transpose()
         ret = np.zeros((3, 3, self.lib_datalm.ellmax + 1), dtype=float)
@@ -402,8 +405,8 @@ class ffs_diagcov_alm(object):
         for _i in range(3):  # Building TQU biases, before rotation to Gradient / Curl
             for _j in range(_i, 3):
                 if _i == 0 and _j == 0:
-                    print "Testing conjecture that in the MV case this is symmetric :"
-                print _type + ' :', np.allclose(retalms[_j, _i, :].real, retalms[_i, _j, :].real)
+                    print("Testing conjecture that in the MV case this is symmetric :")
+                print(_type + ' :', np.allclose(retalms[_j, _i, :].real, retalms[_i, _j, :].real))
                 retalms[_i, _j, :] += retalms[_j, _i, :].conjugate()
 
         return TQUPmats2TEBcls(self.lib_datalm, retalms) * norm
@@ -515,8 +518,8 @@ class ffs_diagcov_alm(object):
         for _i in range(3):  # Building TQU biases, before rotation to Gradient / Curl
             for _j in range(_i, 3):
                 if _i == 0 and _j == 0:
-                    print "Testing conjecture that in the MV case this is symmetric :"
-                print _type + ' :', np.allclose(retalms[_j, _i, :].real, retalms[_i, _j, :].real)
+                    print("Testing conjecture that in the MV case this is symmetric :")
+                print( _type + ' :', np.allclose(retalms[_j, _i, :].real, retalms[_i, _j, :].real))
                 retalms[_i, _j, :] += retalms[_j, _i, :].conjugate()
 
         return TQUPmats2TEBcls(self.lib_datalm, retalms) * norm
@@ -578,7 +581,7 @@ class ffs_diagcov_alm(object):
 
 
     def cd_solve(self, _type, alms, cond='3', maxiter=50, ulm0=None,
-                 use_Pool=0, tol=1e-5, tr_cd=lensit.qcinv.cd_solve.tr_cg, cd_roundoff=25, d0=None):
+                 use_Pool=0, tol=1e-5, tr_cd=cd_solve.tr_cg, cd_roundoff=25, d0=None):
         """
 
         Solves for (F B D xi_unl D^t B^t F^t + N)^-1 dot input alms
@@ -617,10 +620,10 @@ class ffs_diagcov_alm(object):
         if d0 is None:
             d0 = dot_op(alms, alms)
         if ulm0 is None: ulm0 = np.zeros_like(alms)
-        criterion = lensit.qcinv.cd_monitors.monitor_basic(dot_op, iter_max=maxiter, eps_min=tol, d0=d0)
-        print "++ ffs_cov cd_solve: starting, cond %s " % cond
+        criterion = cd_monitors.monitor_basic(dot_op, iter_max=maxiter, eps_min=tol, d0=d0)
+        print("++ ffs_cov cd_solve: starting, cond %s " % cond)
 
-        iter = lensit.qcinv.cd_solve.cd_solve(ulm0, alms, fwd_op, [pre_ops], dot_op, criterion, tr_cd,
+        iter = cd_solve.cd_solve(ulm0, alms, fwd_op, [pre_ops], dot_op, criterion, tr_cd,
                                               roundoff=cd_roundoff)
         return ulm0, iter
 
@@ -731,8 +734,7 @@ class ffs_diagcov_alm(object):
             fname = self.lib_dir + '/%s_N0cls_%sCls.dat' % (_type, {True: 'len', False: 'unl'}[use_cls_len])
             if not os.path.exists(fname):
                 if self.pbsrank == 0:
-                    lib_full = lensit.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_datalm.ell_mat,
-                                                                      filt_func=lambda ell: ell > 0)
+                    lib_full = ell_mat.ffs_alm_pyFFTW(self.lib_datalm.ell_mat, filt_func=lambda ell: ell > 0)
                     Rpp, ROO = self.get_qlm_resprlm(_type, lib_full, use_cls_len=use_cls_len)
                     header = datetime.datetime.now().strftime("%I:%M%p on %B %d, %Y") + '\n' + __file__
                     np.savetxt(fname, np.array((2 * lib_full.alm2cl(np.sqrt(Rpp)), 2 * lib_full.alm2cl(np.sqrt(ROO)))).transpose(),fmt=['%.8e'] * 2, header=header)
@@ -743,9 +745,8 @@ class ffs_diagcov_alm(object):
             return cl
         else:
             Rpp, ROO = self.get_qlm_resprlm(_type, lib_qlm,
-                                            use_cls_len=use_cls_len, cls_obs=cls_obs, cls_weights=cls_weights,
-                                            cls_filt=cls_filt, cls_obs2=cls_obs2)
-            return (2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO)))
+                use_cls_len=use_cls_len, cls_obs=cls_obs, cls_weights=cls_weights, cls_filt=cls_filt, cls_obs2=cls_obs2)
+            return 2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO))
 
     def iterateN0cls(self, _type, lib_qlm, Nitmax, Nit=0,return_delCls = False):
         """
@@ -755,7 +756,7 @@ class ffs_diagcov_alm(object):
         See iterateN0cls_camb for alternative approach.
         """
         N0 = self.get_N0cls(_type, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
-        if Nit == Nitmax: return (N0 if not return_delCls else N0,self.cls_len)
+        if Nit == Nitmax: return N0 if not return_delCls else (N0,self.cls_len)
         cpp = np.zeros(lib_qlm.ellmax + 1)
         cpp[:min(len(cpp), len(self.cls_unl['pp']))] = (self.cls_unl['pp'][:min(len(cpp), len(self.cls_unl['pp']))])
         clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])
@@ -774,75 +775,15 @@ class ffs_diagcov_alm(object):
             self.lib_dir.replace('/N0iter%04d' % (Nit), '/N0iter%04d' % (Nit + 1))
 
         try:
-            new_cov = lensit.ffs_covs.ffs_cov.ffs_diagcov_alm(new_libdir, self.lib_datalm,
-                                                              cls_unl, cls_delen, self.cl_transf, self.cls_noise,
+            new_cov = ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen, self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
         except:
-            print "hash check failed, removing ", new_libdir
+            print("hash check failed, removing " + new_libdir)
             shutil.rmtree(new_libdir)
-            new_cov = lensit.ffs_covs.ffs_cov.ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen,
-                                                              self.cl_transf, self.cls_noise,
+            new_cov = ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen, self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
 
-        return new_cov.iterateN0cls(_type, lib_qlm, Nitmax, Nit=Nit + 1,return_delCls = return_delCls)
-
-    def iterateN0cls_camb(self, _type, lib_qlm, Nitmax, cambfile, Nit=0,return_delCls = False):
-        """
-        Iterates delensing and N0 calculation to estimate the noise levels of the iterative estimator.
-        This version is not fully-self-consistent as it calls camb using lensing at all ell
-        to predict the result in the box where many ells can be missing.
-        See iterateN0cls for alternative approach.
-        """
-        assert os.path.exists(cambfile), cambfile
-        N0 = self.get_N0cls(_type, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
-        if Nit == Nitmax: return (N0 if not return_delCls else N0,self.cls_len)
-
-        def build_cppweight():
-            ret = np.ones(lib_qlm.ellmax + 1, dtype=float)
-            _path = self.lib_dir + '/iterN0_cpp_weights.dat'
-            ret *= np.loadtxt(_path).transpose()[1]
-            return ret
-
-        # cppWeight = build_cppweight()
-        cpp = np.zeros(lib_qlm.ellmax + 1)
-        cpp[:min(len(cpp), len(self.cls_unl['pp']))] = (
-            self.cls_unl['pp'][:min(len(cpp), len(self.cls_unl['pp']))]).copy()
-        # cpp *= cppWeight
-        # FIXME * (N0 > 0.) ? The modes not entering should or should not be counted for in the lensing ? Better use the self-consistent pert. approach if this is an issue.
-        clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])
-        # build delensed Cls :
-        params = fs.misc.jc_camb.read_params(cambfile)
-        params['output_root'] += '/iter_%04d' % (Nit + 1)
-        params['lensing_method'] = 4  # custom modified rescaling
-        if not os.path.exists(params['output_root']): os.makedirs(params['output_root'])
-        # np.savetxt('/Users/jcarron/camb/cpp_weights.txt', np.array([np.arange(len(clWF)), cppWeight * (1. - clWF)]).transpose(),fmt=['%i', '%10.5f'])
-        np.savetxt('/Users/jcarron/camb/cpp_weights.txt',
-                   np.array([np.arange(len(clWF)), (1. - clWF)]).transpose(), fmt=['%i', '%10.5f'])
-        fs.misc.jc_camb.run_camb_fromparams(params)
-        new_libdir = self.lib_dir + '/%s_N0cambiter_%s/N0iter%04d' % (
-            _type, lib_qlm.filt_hash(), Nit + 1) if Nit == 0 else \
-            self.lib_dir.replace('/N0iter%04d' % (Nit), '/N0iter%04d' % (Nit + 1))
-        cls_len = {}
-        for _k, _cl in fs.misc.jc_camb.spectra_fromcambfile(params['output_root'] + '_lensedCls.dat').iteritems():
-            cls_len[_k] = _cl[:self.lib_skyalm.ellmax + 1]
-        cls_unl = {}
-        for _k, _cl in fs.misc.jc_camb.spectra_fromcambfile(
-                        params['output_root'] + '_lenspotentialCls.dat').iteritems():
-            cls_unl[_k] = _cl[:self.lib_skyalm.ellmax + 1]
-        try:
-            new_cov = lensit.ffs_covs.ffs_cov.ffs_diagcov_alm(new_libdir, self.lib_datalm,
-                                                              self.cls_unl, cls_len, self.cl_transf, self.cls_noise,
-                                                              lib_skyalm=self.lib_skyalm)
-        except:
-            print "hash check failed, removing ", new_libdir
-            if os.path.exists(new_libdir):
-                shutil.rmtree(new_libdir)
-            new_cov = lensit.ffs_covs.ffs_cov.ffs_diagcov_alm(new_libdir, self.lib_datalm, self.cls_unl, cls_len,
-                                                              self.cl_transf, self.cls_noise,
-                                                              lib_skyalm=self.lib_skyalm)
-        np.savetxt(new_libdir + '/iterN0_cpp_weights.dat', np.array([np.arange(len(clWF)), (1. - clWF)]).transpose(),
-                   fmt=['%i', '%10.5f'])
-        return new_cov.iterateN0cls_camb(_type, lib_qlm, Nitmax, cambfile, Nit=Nit + 1,return_delCls=return_delCls)
+        return new_cov.iterateN0cls(_type, lib_qlm, Nitmax, Nit=Nit + 1,return_delCls=return_delCls)
 
     def get_N0Pk_minimal(self, _type, lib_qlm, use_cls_len=True, cls_obs=None):
         """
@@ -850,11 +791,10 @@ class ffs_diagcov_alm(object):
         """
         assert _type in _types, (_type, _types)
         Rpp, ROO = self.get_qlm_resprlm(_type, lib_qlm, use_cls_len=use_cls_len, cls_obs=cls_obs)
-        return (lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO)))
+        return lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO))
 
-    def get_response(self, _type, lib_qlm, use_cls_len=True, cls_weights=None, cls_filt=None, cls_cmb=None):
-        """
-        Lensing quadratic estimator gradient and curl response functions.
+    def get_response(self, _type, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True):
+        """Lensing quadratic estimator gradient and curl response functions.
 
             Args:
                 cls_filt: CMB spectra used in the filtering procedure ( i.e. those entering Cov^{-1}).
@@ -1012,7 +952,7 @@ class ffs_diagcov_alm(object):
         ## Notice that in the case of RDN0 computation, only one of the two inverse covariance matrix is replaced.
         if cls_obs is None:
             assert cls_obs2 is None
-            _lib_qlm = lensit.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_datalm.ell_mat,
+            _lib_qlm = ell_mat.ffs_alm_pyFFTW(self.lib_datalm.ell_mat,
                                                               filt_func=lambda ell: (ell > 0) & (
                                                               ell <= 2 * self.lib_datalm.ellmax))
             if cls_obs is None and cls_weights is None and cls_filt is None and cls_obs2 is None:  # default is cached
@@ -1176,7 +1116,7 @@ class ffs_diagcov_alm(object):
         """
         assert self.lib_skyalm.shape == self.lib_datalm.shape
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
-        _lib_qlm = lensit.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat,
+        _lib_qlm = ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat,
                                                           filt_func=lambda ell: (ell <= 2 * self.lib_skyalm.ellmax))
         fname = self.lib_dir + '/%s_MFresplm_%s.npy' % (_type, {True: 'len', False: 'unl'}[use_cls_len])
         if not os.path.exists(fname) or recache:
@@ -1234,7 +1174,7 @@ class ffs_diagcov_alm(object):
             facunits = 1. / np.sqrt(np.prod(self.lsides))
             ret = xylms_to_phiOmegalm(_lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)
             np.save(fname, ret)
-            print "Cached ", fname
+            print("Cached " + fname)
         return np.array([lib_qlm.udgrade(_lib_qlm, _a) for _a in np.load(fname)])
 
     def get_dMFrespcls(self, _type, cmb_dcls, lib_qlm, use_cls_len=False):
@@ -1252,10 +1192,9 @@ class ffs_diagcov_alm(object):
         """
         assert self.lib_skyalm.shape == self.lib_datalm.shape
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
-        _lib_qlm = lensit.ffs_covs.ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat,
-                                                          filt_func=lambda ell: (ell <= 2 * self.lib_skyalm.ellmax))
+        _lib_qlm = ell_mat.ffs_alm_pyFFTW(self.lib_skyalm.ell_mat, filt_func=lambda ell: (ell <= 2 * self.lib_skyalm.ellmax))
         # FIXME dclhash !
-        print "!!!! dMFresplms::cmb_dcls hash is missing here !! ?"
+        print("!!!! dMFresplms::cmb_dcls hash is missing here !! ?")
         fname = self.lib_dir + '/%s_dMFresplm_%s.npy' % (_type, {True: 'len', False: 'unl'}[use_cls_len])
         if not os.path.exists(fname) or recache:
 
@@ -1331,7 +1270,7 @@ class ffs_diagcov_alm(object):
             facunits = 1. / np.sqrt(np.prod(self.lsides))
             ret = xylms_to_phiOmegalm(_lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)
             np.save(fname, ret)
-            print "Cached ", fname
+            print("Cached " + fname)
         return np.array([lib_qlm.udgrade(_lib_qlm, _a) for _a in np.load(fname)])
 
     def get_lndetcurv(self, _type, lib_qlm, get_A=None, use_cls_len=False, recache=False):
@@ -1661,7 +1600,6 @@ class ffs_diagcov_alm(object):
         -1/2 Tr (Covi Covdat -1) Covi d2Cov  (lndet curv)
         N0-like normalisation 
         """
-        # FIXME : The rel . agreement with 1/N0 is only 1e-6 not double prec., not sure what is going on.
         fname = self.lib_dir + '/%splmlikcurv_cls%s_cldat' % (_type, {True: 'len', False: 'unl'}[use_cls_len]) \
                 + cls_hash(datcmb_cls, lmax=self.lib_datalm.ellmax) + '.dat'
         if not os.path.exists(fname) or recache:
@@ -1706,14 +1644,14 @@ class ffs_diagcov_alm(object):
                 return ret
 
             # First term :
-            _lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
+            _lib_qlm = ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
             curv = -self.get_lndetcurv(_type, _lib_qlm, get_A=get_dcovd, use_cls_len=use_cls_len)
             Fish = self.get_fishertrace(_type, _lib_qlm, get_A1=get_idCi, use_cls_len=use_cls_len)
             ret = np.array([_lib_qlm.bin_realpart_inell(_r) for _r in (curv + Fish)[:2]])
             np.savetxt(fname, ret.transpose(),
                        header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
-            print "Cached ", fname
-        print "loading ", fname
+            print("Cached " + fname)
+        print("loading " + fname)
         cond = lib_qlm.ell_mat.get_Nell() > 0
         ret = np.array([(_r * cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
         return ret
@@ -1785,7 +1723,7 @@ class ffs_diagcov_alm(object):
                 return ret
 
             # First term :
-            _lib_qlm = fs.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
+            _lib_qlm = ell_mat.ffs_alm_pyFFTW(lib_qlm.ell_mat, filt_func=lambda ell: ell >= 0)
             curv = -self.get_lndetcurv(_type, _lib_qlm, get_A=get_dcovd, use_cls_len=use_cls_len_D)
             Fish = self.get_fishertrace(_type, _lib_qlm, get_A1=get_idCi, use_cls_len=use_cls_len)
             ret = np.array([_lib_qlm.bin_realpart_inell(_r) for _r in (curv + Fish)[:2]])
@@ -1799,7 +1737,7 @@ class ffs_diagcov_alm(object):
             # ret = withD * np.array([_lib_qlm.bin_realpart_inell(_r) for _r in curv[:2]])
             # if withF: ret += np.array([_lib_qlm.bin_realpart_inell(_r) for _r in Fish[:2]])
             # return ret
-        print "loading ", fname
+        print("loading ", fname)
         cond = lib_qlm.ell_mat.get_Nell() > 0
         ret = np.array([(_r * cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
         return ret
@@ -1856,8 +1794,8 @@ class ffs_diagcov_alm(object):
             ret = np.array([_lib_qlm.bin_realpart_inell(_r) for _r in (curv + Fish)[:2]])
             np.savetxt(fname, ret.transpose(),
                        header='second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat')
-            print "cached ", fname
-        print "loading ", fname
+            print("cached ", fname)
+        print("loading ", fname)
         cond = lib_qlm.ell_mat.get_Nell() > 0
         return np.array([(_r * cond)[:lib_qlm.ellmax + 1] for _r in np.loadtxt(fname).transpose()])
         # return np.loadtxt(fname).transpose()
@@ -1869,7 +1807,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
     """
 
     def __init__(self, lib_dir, lib_datalm, lib_skyalm, cls_unl, cls_len, cl_transf, cls_noise, f, f_inv,
-                 init_rank=lensit.pbs.rank, init_barrier=lensit.pbs.barrier):
+                 init_rank=pbs.rank, init_barrier=pbs.barrier):
         """
         f and finv are displacement field classes. Number of points on each side 2**HD_res,2**HD_res.
         f and f_inv must have a f.lens_map routine that does the lensing of map 2**HD_res by 2**HD_res.
@@ -2006,16 +1944,16 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         assert use_cls_len == False, 'not implemented'
         if _type == 'QU':
             return self.get_iblms_new(_type, datalms, use_cls_len=use_cls_len, use_Pool=use_cls_len, **kwargs)
-        if datalms.shape == ((len(_type), self.dat_shape[0], self.dat_shape[1])):
+        if datalms.shape == (len(_type), self.dat_shape[0], self.dat_shape[1]):
             _datalms = np.array([self.lib_datalm.map2alm(_m) for _m in datalms])
             return self.get_iblms(_type, _datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
 
         assert datalms.shape == self._datalms_shape(_type), (datalms.shape, self._datalms_shape(_type))
-        ilms, iter = self.cd_solve(_type, datalms, use_Pool=use_Pool, **kwargs)
+        ilms, it = self.cd_solve(_type, datalms, use_Pool=use_Pool, **kwargs)
         ret = np.empty(self._skyalms_shape(_type), dtype=complex)
         for _i in range(len(_type)):
             ret[_i] = self._upg(self.lib_datalm.almxfl(ilms[_i], self.cl_transf))
-        return ret, iter
+        return ret, it
 
     def get_iblms_new(self, _type, datalms, use_cls_len=False, use_Pool=0, **kwargs):
         """
@@ -2036,15 +1974,6 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                             use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
         ret = self.MLTQUlms2ibTQUlms(_type,MLTQUlms,datalms,use_Pool=use_Pool)
         return ret, -1  # No iterations info implemented
-
-    def iblm2MLlms(self, _type, iblms, use_Pool=0, use_cls_len=False):
-        assert 0,'not good, lensing of small scales maps'
-        # C_unl D^t B^t F^t Cov^{-1}
-        cmb_cls = self.cls_len if use_cls_len else self.cls_unl
-        ret = np.empty(self._skyalms_shape(_type), dtype=complex)
-        for _i in range(len(_type)):
-            ret[_i] = self.f_inv.lens_alm(self.lib_skyalm, iblms[_i], use_Pool=use_Pool, mult_magn=True)
-        return SM.apply_TEBmat(_type, self.lib_skyalm, cmb_cls, SM.TQU2TEBlms(_type, self.lib_skyalm, ret))
 
     def MLTQUlms2ibTQUlms(self,_type,MLTQUlms,datalms,use_Pool = 0):
         """ Output TQU skyalm shaped """
@@ -2077,13 +2006,13 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         nlev_p = np.sqrt(self.cls_noise['q'][0] * (180. * 60 / np.pi) ** 2)
 
         cmb_cls = self.cls_len if use_cls_len else self.cls_unl
-        filt = lensit.qcinv.ffs_ninv_filt_ideal.ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm,
+        filt = ffs_ninv_filt_ideal.ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm,
                                                                  cmb_cls, self.cl_transf, nlev_t, nlev_p, self.f,
                                                                  self.f_inv, lens_pool=use_Pool)
-        opfilt = lensit.qcinv.opfilt_cinv
+        opfilt = opfilt_cinv
         opfilt._type = _type
-        chain = lensit.qcinv.chain_samples.get_isomgchain(self.lib_skyalm.ellmax, self.lib_datalm.shape, **kwargs)
-        mchain = fs.qcinv.multigrid.multigrid_chain(opfilt, _type, chain, filt)
+        chain = chain_samples.get_isomgchain(self.lib_skyalm.ellmax, self.lib_datalm.shape, **kwargs)
+        mchain =multigrid.multigrid_chain(opfilt, _type, chain, filt)
         soltn = np.zeros((opfilt.TEBlen(_type), self.lib_skyalm.alm_size), dtype=complex)
         mchain.solve(soltn, datalms, finiop='MLIK')
         return soltn
@@ -2143,10 +2072,9 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         return np.array([-2 * dphi, -2 * dOm])  # Factor 2 since gradient w.r.t. real and imag. parts.
 
     def degrade(self, LD_shape, no_lensing=False, ellmax=None, ellmin=None, libtodegrade='sky', lib_dir=None):
+        """Degrades covariance matrix to some lower resolution.
+
         """
-        Degrades covariance matrix to some lower resolution.
-        """
-        # assert 0, 'FIXME'
 
         if lib_dir is None: lib_dir = self.lib_dir + '/%sdegraded%sx%s_%s_%s' % (
             {True: 'unl', False: 'len'}[no_lensing], LD_shape[0], LD_shape[1], ellmin, ellmax)
@@ -2193,10 +2121,10 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         """
         assert lib_qlm.ell_mat.lsides == self.lsides, (self.lsides, lib_qlm.ell_mat.lsides)
         assert _type in _types, (_type, _types)
-        timer = fs.misc.misc_utils.timer(_timed)
+        times = timer(_timed)
         ikx = lambda: self.lib_skyalm.get_ikx()
         iky = lambda: self.lib_skyalm.get_iky()
-        timer.checkpoint('Just started eval MF %s %s' % (_type, MFkey))
+        times.checkpoint('Just started eval MF %s %s' % (_type, MFkey))
         if MFkey == 14:
             # W1 =  B^t F^t l^{1/2},  W2 = D daxi  D^t B^t F^t Cov_f^{-1}l^{-1/2}
             assert np.all([(_x.size == self.lib_datalm.alm_size) for _x in xlms_dat])
@@ -2211,9 +2139,9 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                 _alm = self.lib_skyalm.udgrade(self.lib_datalm, _alm)
                 return self.lib_skyalm.alm2map(_alm)
 
-            ilms, iter = self.cd_solve(_type, xlms_dat, use_Pool=use_Pool, **kwargs)
+            ilms, it = self.cd_solve(_type, xlms_dat, use_Pool=use_Pool, **kwargs)
 
-            timer.checkpoint('   Done with cd solving')
+            times.checkpoint('   Done with cd solving')
 
             for _i in range(len(_type)):
                 ilms[_i] = self.lib_datalm.almxfl(ilms[_i], self.cl_transf)
@@ -2222,7 +2150,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                 skyalms[_i] = self.lib_skyalm.udgrade(self.lib_datalm, ilms[_i])
                 skyalms[_i] = self.f_inv.lens_alm(self.lib_skyalm, skyalms[_i], mult_magn=True, use_Pool=use_Pool)
             del ilms
-            timer.checkpoint('   Done with first lensing')
+            times.checkpoint('   Done with first lensing')
 
             def _2lenmap(_alm):
                 return self.f.alm2lenmap(self.lib_skyalm, _alm, use_Pool=use_Pool)
@@ -2236,7 +2164,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                     tempalms += get_unlPmat_ij(_type, self.lib_skyalm, self.cls_unl, _i, _j) * skyalms[_j]
                 dx += lib_qlm.map2alm(Bx(_i) * _2lenmap(tempalms * ikx()))
                 dy += lib_qlm.map2alm(Bx(_i) * _2lenmap(tempalms * iky()))
-            timer.checkpoint('   Done with second lensing. Done.')
+            times.checkpoint('   Done with second lensing. Done.')
             del skyalms, tempalms
 
         elif MFkey == 0:
@@ -2263,12 +2191,12 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                 sim[0] += self.lib_datalm.almxfl(xlms_dat[0], np.sqrt(self.cls_noise['t']))
             else:
                 assert 0
-            timer.checkpoint('   Done with building sim')
+            times.checkpoint('   Done with building sim')
 
-            sim, iter = self.cd_solve(_type, sim, use_Pool=use_Pool, **kwargs)
+            sim, it = self.cd_solve(_type, sim, use_Pool=use_Pool, **kwargs)
             for _i in range(len(_type)):  # xlms is now iblms
                 sim[_i] = self.lib_datalm.almxfl(sim[_i], self.cl_transf)
-            timer.checkpoint('   Done with ivf')
+            times.checkpoint('   Done with ivf')
             return self.get_qlms(_type, np.array([self.lib_skyalm.udgrade(self.lib_datalm, _s) for _s in sim]),
                                  lib_qlm=lib_qlm, use_Pool=use_Pool)
 
@@ -2280,4 +2208,4 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
         dphi = dx * lib_qlm.get_ikx() + dy * lib_qlm.get_iky()
         dOm = -dx * lib_qlm.get_iky() + dy * lib_qlm.get_ikx()
-        return np.array([-2 * dphi, -2 * dOm]), iter  # Factor 2 since gradient w.r.t. real and imag. parts.
+        return np.array([-2 * dphi, -2 * dOm]), it  # Factor 2 since gradient w.r.t. real and imag. parts.

@@ -1,16 +1,16 @@
+from __future__ import print_function
+
 import numpy as np
 import os
 import pickle as pk
-import lensit as fs
+
+import pyfftw
+
 from lensit.sims import sims_generic
 from lensit.sims.sims_generic import hash_check
 from lensit.misc.misc_utils import npy_hash
-from lensit import pbs
-
-try:
-    import pyfftw
-except ImportError:
-    print "-- NB : import of pyfftw unsucessful -- "
+from lensit.misc.rfft2_utils import udgrade_rfft2, supersample
+from lensit.pbs import pbs
 
 
 def Freq(i, N):
@@ -26,7 +26,7 @@ def Freq(i, N):
     return i - 2 * (i >= (N / 2)) * (i % (N / 2))
 
 
-class ell_mat():
+class ell_mat:
     """
     Class to setup and handle Fourier mode structure on the flat sky, at the given resolution and size of
     the rectangular box. Each 2d vector kx,ky is assigned to a multipole ell according to ell = int(|k| - 1/2).
@@ -54,7 +54,7 @@ class ell_mat():
         hash_check(pk.load(open(lib_dir + "/ellmat_hash.pk", 'r')), self.hash_dict())
 
         if pbs.rank == 0 and not os.path.exists(self.lib_dir + '/ellmat.npy'):
-                print 'ell_mat:caching ells in ', self.lib_dir + '/ellmat.npy'
+                print('ell_mat:caching ells in ' + self.lib_dir + '/ellmat.npy')
                 np.save(self.lib_dir + '/ellmat.npy', self._build_ellmat())
         pbs.barrier()
         # FIXME
@@ -120,7 +120,7 @@ class ell_mat():
             fname = self.lib_dir + '/ellmat_ellmax%s.npy' % ellmax
             if os.path.exists(fname): return np.load(fname, mmap_mode=self.mmap_mode)
             if pbs.rank == 0:
-                print 'ell_mat:caching ells in ', fname
+                print('ell_mat:caching ells in ' + fname)
                 np.save(fname, self.get_ellmat()[np.where(self.get_ellmat() <= ellmax)])
             pbs.barrier()
             return np.load(fname, mmap_mode=self.mmap_mode)
@@ -133,14 +133,14 @@ class ell_mat():
             fname = self.lib_dir + '/phasemat.npy'
             if os.path.exists(fname): return np.load(fname, mmap_mode=self.mmap_mode)
             if not os.path.exists(fname) and pbs.rank == 0:
-                print 'ell_mat:caching phases in ', fname
+                print('ell_mat:caching phases in '+ fname)
                 np.save(fname, np.arctan2(self.get_ky_mat(), self.get_kx_mat()))
             pbs.barrier()
             return np.load(fname, mmap_mode=self.mmap_mode)
         else:
             fname = self.lib_dir + '/phase_ellmax%s.npy' % ellmax
             if not os.path.exists(fname) and pbs.rank == 0:
-                print 'ell_mat:caching phases in ', fname
+                print('ell_mat:caching phases in '+ fname)
                 np.save(fname, np.arctan2(self.get_ky_mat(), self.get_kx_mat())[np.where(self.get_ellmat() <= ellmax)])
             pbs.barrier()
             return np.load(fname, mmap_mode=self.mmap_mode)
@@ -153,7 +153,7 @@ class ell_mat():
         if os.path.exists(fname):
             return None if cache_only else np.load(fname, mmap_mode=self.mmap_mode)
         if not os.path.exists(fname) and pbs.rank == 0:
-            print 'ell_mat:caching e2iphi in ', fname
+            print('ell_mat:caching e2iphi in ' + fname)
             np.save(fname, np.exp(2j * np.arctan2(self.get_ky_mat(), self.get_kx_mat())))
         pbs.barrier()
         return None if cache_only else np.load(fname, mmap_mode=self.mmap_mode)
@@ -444,7 +444,7 @@ class ffs_alm(object):
         if lib_almin is None or self.shape == lib_almin.shape:
             return self.rfftmap2alm(self.map2rfft(_map))
         else:
-            return self.rfftmap2alm(self.map2rfft(fs.misc.rfft2_utils.supersample(_map, lib_almin.ell_mat.shape)))
+            return self.rfftmap2alm(self.map2rfft(supersample(_map, lib_almin.ell_mat.shape)))
 
     def alm2rfft(self, alm):
         assert alm.size == self.alm_size, alm.size
@@ -568,14 +568,14 @@ class ffs_alm(object):
     def alms2rlms(self, alms):
         assert alms.ndim == 2 and np.all(alm.size == self.alm_size for alm in alms), alms.shape
         rlms = np.zeros((alms.shape[0] * 2 * self.alm_size,))
-        for i in xrange(alms.shape[0]):
+        for i in range(alms.shape[0]):
             rlms[i * (2 * self.alm_size): (i + 1) * 2 * self.alm_size] = self.alm2rlm(alms[i])
         return rlms
 
     def rlms2alms(self, rlms):
         assert rlms.ndim == 1 and rlms.size % (2 * self.alm_size) == 0, rlms.shape
         alms = np.zeros((rlms.size / (2 * self.alm_size), self.alm_size), dtype=complex)
-        for i in xrange(alms.shape[0]):
+        for i in range(alms.shape[0]):
             alms[i, :] = self.rlm2alm(rlms[i * (2 * self.alm_size):(i + 1) * 2 * self.alm_size])
         return alms
 
@@ -618,7 +618,7 @@ class ffs_alm(object):
         if self.iseq(lib_alm, allow_shape=True): return alm
         assert alm.size == lib_alm.alm_size, (alm.size, lib_alm.alm_size)
         assert self.ell_mat.lsides == lib_alm.ell_mat.lsides  # Must have same frequencies in the map.
-        return self.almmap2alm(fs.misc.rfft2_utils.udgrade_rfft2(lib_alm.alm2almmap(alm), self.ell_mat.shape))
+        return self.almmap2alm(udgrade_rfft2(lib_alm.alm2almmap(alm), self.ell_mat.shape))
 
     def QUlms2EBalms(self, QUlms):
         """
@@ -668,14 +668,13 @@ class ffs_lib_phas(sims_generic.sim_lib):
     def _build_sim_from_rng(self, rng_state, phas_only=False):
         np.random.set_state(rng_state)
         alms = np.array([(np.random.standard_normal(self.lib_alm.alm_size) +
-                          1j * np.random.standard_normal(self.lib_alm.alm_size)) / np.sqrt(2.) for i in
-                         xrange(self.nfields)])
+                1j * np.random.standard_normal(self.lib_alm.alm_size)) / np.sqrt(2.) for i in range(self.nfields)])
         if phas_only: return
         # Reality conditions on the rfft maps
         sla = slice(self.lib_alm.ell_mat.shape[0] / 2 + 1, self.lib_alm.ell_mat.shape[0], 1)
         slb = slice(self.lib_alm.ell_mat.shape[0] / 2 - 1, 0, -1)
 
-        for i in xrange(self.nfields):
+        for i in range(self.nfields):
             rfft = self.lib_alm.alm2rfft(alms[i])
             rfft[sla, [-1, 0]] = np.conjugate(rfft[slb, [-1, 0]])
             rfft.real[self.lib_alm.ell_mat.rfft2_reals()] *= np.sqrt(2.)
@@ -694,25 +693,6 @@ class ffs_alm_pyFFTW(ffs_alm):
 
     def __init__(self, ellmat, filt_func=lambda ell: ell > 0, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), flags_init=('FFTW_MEASURE',)):
         super(ffs_alm_pyFFTW, self).__init__(ellmat, filt_func=filt_func)
-        # FIXME : This can be tricky in in hybrid MPI-OPENMP, or calling from difference machines
-        # Builds FFTW Wisdom :
-        #wisdom_fname = self.ell_mat.lib_dir + '/FFTW_wisdom_%s_%s.npy' % (num_threads, ''.join(flags_init))
-        #if not os.path.exists(wisdom_fname):
-        #    print "++ ffs_alm_pyFFTW :: building and caching FFTW wisdom, this might take a little while..."
-        #    if pbs.rank == 0:
-        #        inpt = pyfftw.empty_aligned(self.ell_mat.shape, dtype='float64')
-        #        oupt = pyfftw.empty_aligned(self.ell_mat.rshape, dtype='complex128')
-        #        fft = pyfftw.FFTW(inpt, oupt, axes=(0, 1), direction='FFTW_FORWARD', flags=flags_init,
-        #                          threads=num_threads)
-        #        ifft = pyfftw.FFTW(oupt, inpt, axes=(0, 1), direction='FFTW_BACKWARD', flags=flags_init,
-        #                           threads=num_threads)
-        #        wisdom = pyfftw.export_wisdom()
-        #        np.save(wisdom_fname, wisdom)
-        #        del inpt, oupt, fft, ifft
-        #    pbs.barrier()
-        #pyfftw.import_wisdom(np.load(wisdom_fname))
-        # print "++ ffs_alm_pyFFTW :: loaded widsom ", wisdom_fname
-        #self.flags = ('FFTW_WISDOM_ONLY',)  # This will make the code crash if arrays are not properly aligned.
         self.flags = flags_init
         self.threads = num_threads
 

@@ -1,68 +1,12 @@
 import numpy as np
 
 
-class periodicmap_spliter():
+class periodicmap_spliter:
     def __init__(self):
         pass
 
-    def splitin4(self, map, buffers):
-        """
-        Outputs a list of 4 maps with shape 1/2 of the input map  + 2*buffers,
-        with the four corners of the input map at the center of the 4 chunks.
-        The buffers are filled in assuming periodicity of the maps.
-        """
-        return self._mk_4chunks_by_rolling(map, buffers)
-
-    def get_splitin4_chunk_i(self, map, buffers, i):
-        assert i >= 0 and i < 4, i
-        return self._mk_4chunks_by_rolling(map, buffers, i=i)[0]
-
-    def splitin4_inverse(self, chks, buffers):
-        """
-        Inverse operation to self.splitin4.
-        Takes list of 4 chunks and buffer sizes as input
-        """
-        assert len(chks) == 4, "Weird input, should be the output of splitin4"
-        assert len(buffers) == 2
-        N0 = (chks[0].shape[0] - 2 * buffers[0])
-        N1 = (chks[0].shape[1] - 2 * buffers[1])
-        map = np.zeros((N0 * 2, N1 * 2))
-        sl0 = slice(buffers[0], N0 + buffers[0])
-        sl1 = slice(buffers[1], N1 + buffers[1])
-        map[0:N0, 0:N1] = chks[0][sl0, sl1]
-        map[N0:, 0:N1] = chks[1][sl0, sl1]
-        map[0:N0, N1:] = chks[2][sl0, sl1]
-        map[N0:, N1:] = chks[3][sl0, sl1]
-        return map
-
-    def _split_sgns4chks(self, i):
-        if i == -1:
-            return [(1, 1), (-1, 1), (1, -1), (-1, -1)]  # Full set
-        else:
-            return [[(1, 1), (-1, 1), (1, -1), (-1, -1)][i]]
-
-    def _mk_4chunks_by_rolling(self, map, buffers, i=-1):
-        # TODO : can't be the best, really. But don't bother.
-        assert len(map.shape) == 2, 'Lets keep it simple'
-        assert map.shape[0] % 2 == 0 and map.shape[1] % 2 == 0, 'I said, lets keep it simple'
-        assert map.shape[0] / 2 > 2 * buffers[0] and map.shape[1] / 2 > 2 * buffers[1], \
-            'Buffer too large (or map too small...)'
-        assert len(buffers) == 2 and type(buffers[0] == int) and type(buffers[1] == int)
-        N0, N1 = map.shape
-        # Chunk side lengths :
-        chk_len0 = N0 / 2 + 2 * buffers[0]
-        chk_len1 = N1 / 2 + 2 * buffers[1]
-        chks = []
-        for sgns in self._split_sgns4chks(i):
-            sgn0, sgn1 = sgns
-            newmap = np.roll(map, sgn0 * buffers[0], axis=0)
-            newmap = np.roll(newmap, sgn1 * buffers[1], axis=1)
-            s0 = (N0 - chk_len0) * abs((sgn0 - 1) / 2)
-            s1 = (N1 - chk_len1) * abs((sgn1 - 1) / 2)
-            chks.append(newmap[s0:s0 + chk_len0, s1:s1 + chk_len1])
-        return chks
-
-    def get_slices_chk_N(self, N, LD_res, HD_res, buffers, inverse=False):
+    @staticmethod
+    def get_slices_chk_N(N, LD_res, HD_res, buffers, inverse=False):
         """
         This lengthy irritating piece of code returns the slice idcs for subcube (i,j)
         in a decomposition of an original map of shape (2**HD_res[0],2**HD_res[1]) with chunks of 2**LD_res per sides,
@@ -115,7 +59,7 @@ class periodicmap_spliter():
         ret_LD = []
         ret_HD = []
         j = N % Nchks_1
-        i = N / Nchks_1  # in 0, ..., Nchks_0 -1
+        i = N // Nchks_1  # in 0, ..., Nchks_0 -1
 
         if inverse:
             # We want the inverse mapping only
@@ -127,11 +71,11 @@ class periodicmap_spliter():
             ret_HD.append((sl0_HD, sl1_HD))
             return ret_LD, ret_HD
 
-        if i > 0 and i < Nchks_0 - 1:
+        if 0 < i < Nchks_0 - 1:
             # i in the interior :
             sl0_LD = slice(0, N0 + 2 * b0)  # Slices of LD cube
             sl0_HD = slice(i * N0 - b0, (i + 1) * N0 + b0)  # slices of HD cube
-            if j > 0 and j < Nchks_1 - 1:
+            if 0 < j < Nchks_1 - 1:
                 # We are in the interior, no big deal
                 sl1_LD = slice(0, N1 + 2 * b1)
                 sl1_HD = slice(j * N1 - b1, (j + 1) * N1 + b1)
@@ -227,7 +171,7 @@ class periodicmap_spliter():
                 ret_HD.append((sl0_HD, sl1_HD))
                 return ret_LD, ret_HD
             else:
-                assert j > 0 and j < Nchks_1 - 1
+                assert 0 < j < Nchks_1 - 1
                 sl1_LD = slice(0, N1 + 2 * b1)
                 sl1_HD = slice(j * N1 - b1, (j + 1) * N1 + b1)
                 ret_LD.append((sl0_LD, sl1_LD))
@@ -301,7 +245,7 @@ class periodicmap_spliter():
                 return ret_LD, ret_HD
 
             else:
-                assert j > 0 and j < Nchks_1 - 1
+                assert 0 < j < Nchks_1 - 1
                 sl1_LD = slice(0, N1 + 2 * b1)
                 sl1_HD = slice(j * N1 - b1, (j + 1) * N1 + b1)
                 ret_LD.append((sl0_LD, sl1_LD))
