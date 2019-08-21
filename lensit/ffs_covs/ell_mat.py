@@ -23,7 +23,7 @@ def Freq(i, N):
      All entries of N must be even.
     """
     assert np.all(N % 2 == 0), "This routine only for even numbers of points"
-    return i - 2 * (i >= (N / 2)) * (i % (N / 2))
+    return i - 2 * (i >= (N // 2)) * (i % (N // 2))
 
 
 class ell_mat:
@@ -104,7 +104,7 @@ class ell_mat:
     def get_pixwinmat(self):
         """ sin(kx Lcell_x / 2) sin (k_y Lcell_y / 2 ) """
         ky = (np.pi/self.shape[0]) * Freq(np.arange(self.shape[0]), self.shape[0])
-        ky[self.shape[0] / 2:] *= -1.
+        ky[self.shape[0] // 2:] *= -1.
         kx = (np.pi/self.shape[1]) * Freq(np.arange(self.rshape[1]), self.shape[1])
         rety = np.sin(ky)
         rety[1:] /= ky[1:];rety[0] = 1.
@@ -505,7 +505,7 @@ class ffs_alm(object):
         """
         weights = self._cond()
         counts = np.bincount(self.ell_mat()[:, 1:self.ell_mat.rshape[1] - 1].flatten(), minlength=self.ell_mat.ellmax + 1,weights=weights[:, 1:self.ell_mat.rshape[1] - 1].flatten())
-        s_counts = np.bincount(self.ell_mat()[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(),weights=weights[0:self.shape[0] / 2 + 1, [-1, 0]].flatten())
+        s_counts = np.bincount(self.ell_mat()[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(),weights=weights[0:self.shape[0] // 2 + 1, [-1, 0]].flatten())
         counts[0:len(s_counts)] += s_counts
         return counts
 
@@ -610,8 +610,8 @@ class ffs_alm(object):
         weights = self.alm2almmap(alm).real
         Cl = np.bincount(self.ell_mat()[:, 1:self.ell_mat.rshape[1] - 1].flatten(),
                          weights=weights[:, 1:self.ell_mat.rshape[1] - 1].flatten(), minlength=self.ell_mat.ellmax + 1)
-        Cl += np.bincount(self.ell_mat()[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(),
-                          weights=weights[0:self.shape[0] / 2 + 1, [-1, 0]].flatten(), minlength=self.ell_mat.ellmax + 1)
+        Cl += np.bincount(self.ell_mat()[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(),
+                          weights=weights[0:self.shape[0] // 2 + 1, [-1, 0]].flatten(), minlength=self.ell_mat.ellmax + 1)
         Cl[np.where(self._get_ell_counts())] /= self._get_ell_counts()[np.where(self._get_ell_counts())]
         return Cl[:(ellmax or self.ellmax) + 1]
 
@@ -679,8 +679,8 @@ class ffs_lib_phas(sims_generic.sim_lib):
                 1j * np.random.standard_normal(self.lib_alm.alm_size)) / np.sqrt(2.) for i in range(self.nfields)])
         if phas_only: return
         # Reality conditions on the rfft maps
-        sla = slice(self.lib_alm.ell_mat.shape[0] / 2 + 1, self.lib_alm.ell_mat.shape[0], 1)
-        slb = slice(self.lib_alm.ell_mat.shape[0] / 2 - 1, 0, -1)
+        sla = slice(self.lib_alm.ell_mat.shape[0] // 2 + 1, self.lib_alm.ell_mat.shape[0], 1)
+        slb = slice(self.lib_alm.ell_mat.shape[0] // 2 - 1, 0, -1)
 
         for i in range(self.nfields):
             rfft = self.lib_alm.alm2rfft(alms[i])

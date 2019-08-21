@@ -312,10 +312,12 @@ class ffs_displacement(object):
             #assert self.shape[0] == self.shape[1]
             #weave.inline(bicubicspline, ['lenmap', 'filtmap', 'dx_gu', 'dy_gu', 'width'], headers=[header])
             #return lenmap
-
-            dx_gu = np.require(self.get_dx_ingridunits().flatten(), float)
-            dy_gu = np.require(self.get_dy_ingridunits().flatten(), float)
-            return bicubic.deflect(np.require(filtmap, float), dx_gu, dy_gu).reshape(self.shape)
+            i = np.arange(int(np.prod(self.shape)), dtype=int)
+            # new coordinates in grid units:
+            x_gu = np.require(self.get_dx_ingridunits().flatten(), float) + i % self.shape[1]
+            y_gu = np.require(self.get_dy_ingridunits().flatten(), float) + i // self.shape[1]
+            del i
+            return bicubic.deflect(np.require(filtmap, float), x_gu , y_gu).reshape(self.shape)
 
     def lens_alm(self, lib_alm, alm,
                  lib_alm_out=None, use_Pool=0, no_lensing=False, mult_magn=False):
