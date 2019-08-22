@@ -27,7 +27,7 @@ class ell_mat:
 
     """
 
-    def __init__(self, lib_dir, shape, lsides, cache=0):
+    def __init__(self, lib_dir, shape, lsides, cache=1):
         assert len(shape) == 2 and len(lsides) == 2
         assert shape[0] % 2 == 0 and shape[1] % 2 == 0
         assert shape[0] < 2 ** 16 and shape[1] < 2 ** 16
@@ -38,7 +38,6 @@ class ell_mat:
         self.mmap_mode = None
         self.cache=cache
 
-        # Dumping ell mat in lib_dir. Overwrites if already present.
         fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
         if pbs.rank == 0:
             if not os.path.exists(lib_dir): os.makedirs(lib_dir)
@@ -214,9 +213,10 @@ class ell_mat:
 
         """
         assert m.shape == self.shape, m.shape
-        if m2 is not None: assert m2.shape == self.shape, m2.shape
-        return self._rfft2cl(np.fft.rfft2(m)) if map2 is None else \
-            self._rfft2cl(np.fft.rfft2(m), rfftmap2=np.fft.rfft2(m2))
+        if m2 is not None:
+            assert m2.shape == self.shape, m2.shape
+            return self._rfft2cl(np.fft.rfft2(m), rfftmap2=np.fft.rfft2(m2))
+        return self._rfft2cl(np.fft.rfft2(m))
 
     def _rfft2cl(self, rfftmap, rfftmap2=None):
         """Returns Cl estimates from a rfftmap.
@@ -250,22 +250,10 @@ class ell_mat:
         Cl[self._nz_counts] /= self._ell_counts[self._nz_counts]
         return Cl
 
-    def get_rx_mat(self):
-        rx_min = self.lsides[1] / self.shape[1]
-        rx = rx_min * Freq(np.arange(self.shape[1]), self.shape[1])
-        rx[self.shape[1] // 2:] *= -1.
-        return np.outer(np.ones(self.shape[0]), rx)
-
     def get_kx_mat(self):
         kx_min = (2. * np.pi) / self.lsides[1]
         kx = kx_min * Freq(np.arange(self.rshape[1]), self.shape[1])
         return np.outer(np.ones(self.shape[0]), kx)
-
-    def get_ry_mat(self):
-        ry_min = self.lsides[0] / self.shape[0]
-        ry = ry_min * Freq(np.arange(self.shape[0]), self.shape[0])
-        ry[self.shape[0] // 2:] *= -1.
-        return np.outer(ry, np.ones(self.shape[1]))
 
     def get_ky_mat(self):
         ky_min = (2. * np.pi) / self.lsides[0]
@@ -280,6 +268,9 @@ class ell_mat:
         return 1j * self.get_ky_mat()
 
     def get_unique_ells(self, return_index=False, return_inverse=False, return_counts=False):
+        """Returns list of multipoles :math:`\ell` present in the flat-sky patch
+
+        """
         return np.unique(self.get_ellmat(),
                          return_index=return_index, return_inverse=return_inverse, return_counts=return_counts)
 
@@ -324,19 +315,24 @@ class ell_mat:
 
 
 class ffs_alm(object):
-    """Library to facilitate filtering operations on flat-sky alms in the ffs scheme.
+    """Library to facilitate operations on flat-sky alms in the ffs scheme.
 
+        Methods includes alm2map and map2alm, among other things.
         The instance contains info on the sky patch size and discretization.
-        Methods includes alm2map and map2alm methods amon other things.
+
+        Args:
+            ellmat: *lensit.ffs_covs.ell_mat.ell_mat* instance carrying flat-sky patch definitions
+            filt_func(callable, optional): mutlipole filtering. Set this to discard multipoles in map2alm
+                                           Defaults to lambda ell : ell > 0
+            kxfilt_func(callable, optional): filtering on x-component of the 2d-frequencies
+
+            kyfilt_func(callable, optional): filtering on y-component of the 2d-frequencies
+
 
     """
 
-    def __init__(self, ellmat, filt_func=lambda ell: ell > 0, kxfilt_func = None, kyfilt_func = None):
-        """
-        :param ellmat: ell_mat instance that defines the mode structure in the ffs scheme.
-        :param filt: is callable with Boolean return. filt(ell) tells whether or not mode ell is considered
-                or filtered away.
-        """
+    def __init__(self, ellmat, filt_func=lambda ell: ell > 0, kxfilt_func=None, kyfilt_func=None):
+
         self.ell_mat = ellmat
         self.shape = self.ell_mat.shape
         self.lsides = self.ell_mat.lsides
@@ -345,17 +341,16 @@ class ffs_alm(object):
         self.kxfilt_func = kxfilt_func
         self.kyfilt_func = kyfilt_func
 
-        #self.isocond = filt_func(np.arange(self.ell_mat.ellmax + 1))
 
         self.alm_size = np.count_nonzero(self._cond())
         # The mapping ell[i] for i in alm array :
         self.reduced_ellmat = lambda: ellmat()[self._cond()]
         self.ellmax = np.max(self.reduced_ellmat()) if self.alm_size > 0 else None
         self.ellmin = np.min(self.reduced_ellmat()) if self.alm_size > 0 else None
+
         # Some trivial convenience factors :
         self.fac_rfft2alm = np.sqrt(np.prod(ellmat.lsides)) / np.prod(self.ell_mat.shape)
         self.fac_alm2rfft = 1. / self.fac_rfft2alm
-        # assert self.ellmax < ellmat()[0, -1], (self.ellmax, ellmat()[0, -1])  # Dont want to deal with redundant frequencies
         self.__ellcounts = None
 
     def _cond(self):
@@ -526,8 +521,10 @@ class ffs_alm(object):
         """Power spectrum estimation on the grid, with minimal binning (only exact same frequencies).
 
             Many bins will have only number count 4 or something.
-            Outputs a list with integer array of squared frequencies,integer array number counts, and Pk estimates.
-            (only non zero counts frequencies)
+
+            Returns:
+                list with integer array of squared frequencies, integer array number counts, and Pk estimates.
+                (only non zero counts frequencies)
 
         """
         almmap = self.alm2almmap(alm)
@@ -612,15 +609,26 @@ class ffs_alm(object):
         assert alm.size == self.alm_size
         return alm
 
-    def map2cl(self, map1, map2=None, ellmax=None):
-        return self.alm2cl(self.map2alm(map1),alm2= None if map2 is None else self.map2alm(map2))[:(ellmax or self.ellmax) + 1]
+    def map2cl(self, m1, m2=None, ellmax=None):
+        """Returns power spectrum of alm array
+
+        """
+        return self.alm2cl(self.map2alm(m1),alm2= None if m2 is None else self.map2alm(m2))[:(ellmax or self.ellmax) +1]
 
     def alm2cl(self, alm, alm2=None, ellmax=None):
+        """Returns power spectrum of alm array
+
+        """
         assert alm.size == self.alm_size, (alm.size, self.alm_size)
         if alm2 is not None: assert alm2.size == self.alm_size, (alm2.size, self.alm_size)
         return self.bin_realpart_inell(np.abs(alm) ** 2 if alm2 is None else (alm * np.conjugate(alm2)).real,ellmax=ellmax)
 
     def bin_realpart_inell(self,alm,ellmax = None):
+        """Bin real part of a rfftmap according to multipole :math:`\ell`
+
+            Input must have the same shape then self.rshape
+
+        """
         #FIXME: dont go to full rfft
         assert alm.size == self.alm_size, (alm.size, self.alm_size)
         weights = self.alm2almmap(alm).real
@@ -675,7 +683,7 @@ class ffs_alm(object):
 
 
 class ffs_alm_pyFFTW(ffs_alm):
-    """Same as ffs_alm but with pyfftw fft engine  threaded fftw library (up to 10 times faster than numpy's).
+    r"""Same as ffs_alm but with pyfftw fft-engine threaded fftw library (up to 10 times faster than numpy's).
 
     """
 
