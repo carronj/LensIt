@@ -11,18 +11,12 @@ from lensit.pbs import pbs
 from lensit.ffs_deflect import ffs_deflect
 from lensit.ffs_qlms import qlms as ql
 from lensit.ffs_covs import ffs_specmat, ffs_cov
-from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP
+from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, cl_inverse
 from lensit.ffs_iterators import bfgs
 from lensit.qcinv import multigrid, chain_samples
 from lensit.sims import ffs_phas
 
 _types = ['T', 'QU', 'TQU']
-
-
-def cl_inverse(cl):
-    clinv = np.zeros_like(cl)
-    clinv[np.where(cl != 0.)] = 1. / cl[np.where(cl != 0.)]
-    return clinv
 
 
 def prt_time(dt, label=''):
@@ -34,42 +28,47 @@ def prt_time(dt, label=''):
 
 
 class ffs_iterator(object):
-    def __init__(self, lib_dir, type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
+    r"""Flat-sky iterator template class
+
+        Args:
+            lib_dir: many things will be written there
+            typ: 'T', 'QU' or 'TQU' for estimation on temperature data, polarization data or jointly
+            filt: inverse-variance filtering instance (e.g. *lensit.qcinv.ffs_ninv_filt* )
+            dat_maps: data maps or path to maps.
+            lib_qlm: lib_alm (*lensit.ffs_covs.ell_mat.ffs_alm*) instance describing the lensing estimate Fourier arrays
+            Plm0: Starting point for the iterative search. alm array consistent with *lib_qlm*
+            H0: initial isotropic likelihood curvature approximation (roughly, inverse lensing noise bias :math:`N^{(0)}_L`)
+            cpp_prior: fiducial lensing power spectrum, used for the prior part of the posterior density.
+
+    """
+    def __init__(self, lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                  use_Pool_lens=0, use_Pool_inverse=0, chain_descr=None, opfilt=None, soltn0=None, cache_magn=False,
                  no_deglensing=False, NR_method=100, tidy=10, verbose=True, maxcgiter=150, PBSSIZE=None, PBSRANK=None,
                  **kwargs):
-        """
-        Normalisation of gradients etc are now complex-like, not real and imag.
 
-        qlm_norm is the normalization of the qlms.
+        assert typ in _types
+        assert self.chain_descr is not None
+        assert opfilt is not None
+        assert filt.lib_skyalm.lsides == lib_qlm.lsides
 
-        H0 the starting Hessian estimate. (cl array, ~ 1 / N0)
-        """
-        assert type in _types
 
         self.PBSSIZE = pbs.size if PBSSIZE is None else PBSSIZE
         self.PBSRANK = pbs.rank if PBSRANK is None else PBSRANK
         assert self.PBSRANK < self.PBSSIZE, (self.PBSRANK, self.PBSSIZE)
         self.barrier = (lambda: 0) if self.PBSSIZE == 1 else pbs.barrier
 
-        self.type = type
+        self.type = typ
         self.lib_dir = lib_dir
         self.dat_maps = dat_maps
 
         self.chain_descr = chain_descr
         self.opfilt = opfilt
-        assert self.chain_descr is not None
-        assert opfilt is not None
-        # lib_noise = getattr(par, 'lib_noise_%s' % type)
-        # lib_cmb_unl = getattr(par, 'lib_cmb_unl_%s' % type)
-
         self.cl_pp = cpp_prior
         self.lib_qlm = lib_qlm
 
         self.cache_magn = cache_magn
 
-        self.lsides = cov.lib_skyalm.lsides
-        assert cov.lib_skyalm.lsides == lib_qlm.lsides
+        self.lsides = filt.lib_skyalm.lsides
         self.lmax_qlm = self.lib_qlm.ellmax
         self.NR_method = NR_method
 
@@ -79,16 +78,16 @@ class ffs_iterator(object):
 
         self.nodeglensing = no_deglensing
         if self.verbose:
-            print(" I see t", cov.Nlev_uKamin('t'))
-            print(" I see q", cov.Nlev_uKamin('q'))
-            print(" I see u", cov.Nlev_uKamin('u'))
+            print(" I see t", filt.Nlev_uKamin('t'))
+            print(" I see q", filt.Nlev_uKamin('q'))
+            print(" I see u", filt.Nlev_uKamin('u'))
 
             # Defining a trial newton step length :
 
         def newton_step_length(it, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
-            if cov.Nlev_uKamin('t') > 2.1: return 1.0
-            if cov.Nlev_uKamin('t') <= 2.1 and norm_incr >= 0.5:
+            if filt.Nlev_uKamin('t') > 2.1: return 1.0
+            if filt.Nlev_uKamin('t') <= 2.1 and norm_incr >= 0.5:
                 return 0.5
             return 0.5
 
@@ -100,17 +99,18 @@ class ffs_iterator(object):
         #    return 1e-3
 
         # self.tol_func = tol_func
-        f_id = ffs_deflect.ffs_id_displacement(cov.lib_skyalm.shape, cov.lib_skyalm.lsides)
-        if not hasattr(cov, 'f') or not hasattr(cov, 'fi'):
-            self.cov = cov.turn2wlfilt(f_id, f_id)
+        f_id = ffs_deflect.ffs_id_displacement(filt.lib_skyalm.shape, filt.lib_skyalm.lsides)
+        if not hasattr(filt, 'f') or not hasattr(filt, 'fi'):
+            self.cov = filt.turn2wlfilt(f_id, f_id)
         else:
-            cov.set_ffi(f_id, f_id)
-            self.cov = cov
+            filt.set_ffi(f_id, f_id)
+            self.cov = filt
         if self.PBSRANK == 0:
             if not os.path.exists(self.lib_dir): os.makedirs(self.lib_dir)
         self.barrier()
-        #FIXME: even this does not work on small patches !!:
-        #self.soltn_cond = np.all([np.all(self.cov.get_mask(_t) == 1.) for _t in self.type])
+
+        #FIXME
+        #self.soltn_cond = np.all([np.all(self.filt.get_mask(_t) == 1.) for _t in self.type])
         self.soltn_cond = False
         print('ffs iterator : This is %s trying to setup %s' % (self.PBSRANK, lib_dir))
         # Lensed covariance matrix library :
@@ -130,7 +130,7 @@ class ffs_iterator(object):
         if self.PBSRANK == 0 and \
                 (not os.path.exists(self.lib_dir + '/qlm_%s_H0.dat' % ('P'))
                  or not os.path.exists(self.lib_dir + '/%shi_plm_it%03d.npy' % ('P', 0))):
-            print('++ ffs_%s_iterator: Caching qlm_norms and N0s' % type + self.lib_dir)
+            print('++ ffs_%s_iterator: Caching qlm_norms and N0s' % typ + self.lib_dir)
 
             # Caching qlm norm that we will use as zeroth order curvature : (with lensed weights)
             # Prior curvature :
@@ -173,14 +173,6 @@ class ffs_iterator(object):
         return np.load(self.dat_maps) if isinstance(self.dat_maps, str) else self.dat_maps
 
     def cache_qlm(self, fname, alm, pbs_rank=None):
-        """
-        Method that caches the various qlm arrays. Used for likelihood gradients and potential estimates.
-        pbs_rank set to some integer makes sure only pbs.rank is effectively caching the array.
-        :param fname:
-        :param alm:
-        :param pbs_rank:
-        :return:
-        """
         if pbs_rank is not None and self.PBSRANK != pbs_rank:
             return
         else:
@@ -193,12 +185,6 @@ class ffs_iterator(object):
         return self.lib_qlm.read_alm(fname) if isinstance(fname, str) else fname
 
     def cache_rlm(self, fname, rlm):
-        """
-        Caches real alm vectors (used for updates of the Hessian matrix)
-        :param fname:
-        :param rlm:
-        :return:
-        """
         assert rlm.ndim == 1 and rlm.size == 2 * self.lib_qlm.alm_size, (rlm.ndim, rlm.size)
         print('rank %s caching ' % self.PBSRANK, fname)
         np.save(fname, rlm)
@@ -230,14 +216,17 @@ class ffs_iterator(object):
 
 
     def how_many_iter_done(self, key):
-        """
-        Returns the number of points already calculated. Zeroth is the qest.
+        """ Returns the number of points already calculated. 0th is the qest.
+
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fn = os.path.join(self.lib_dir, '%s_plm_it*.npy' % {'p': 'Phi', 'o': 'Om'}[key.lower()])
         return len( glob.glob(fn))
 
     def get_Plm(self, it, key):
+        """Loads solution at iteration *it*
+
+        """
         if it < 0:
             return np.zeros(self.lib_qlm.alm_size, dtype=complex)
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
@@ -249,29 +238,26 @@ class ffs_iterator(object):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         return self.lib_qlm.alm2map(self.get_Plm(it, key))
 
-    def getfnames_f(self, key, it):
+    def _getfnames_f(self, key, it):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_dx = os.path.join(self.lib_dir, 'f_%s_it%03d_dx.npy' % (key.lower(), it))
         fname_dy = os.path.join(self.lib_dir, 'f_%s_it%03d_dy.npy' % (key.lower(), it))
         return fname_dx, fname_dy
 
-    def getfnames_finv(self, key, it):
+    def _getfnames_finv(self, key, it):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_dx = os.path.join(self.lib_dir,  'finv_%s_it%03d_dx.npy' % (key.lower(), it))
         fname_dy = os.path.join(self.lib_dir,  'finv_%s_it%03d_dy.npy' % (key.lower(), it))
         return fname_dx, fname_dy
 
-    def calc_ffinv(self, it, key):
-        """
-        Calculate displacement at iter and its inverse. Only pbs rank 0 can do this.
-        :param it:
-        :param key:
-        :return:
+    def _calc_ffinv(self, it, key):
+        """Calculates displacement at iter and its inverse. Only mpi rank 0 can do this.
+
         """
         assert self.PBSRANK == 0, 'NO MPI METHOD'
         if it < 0: return
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
-        fname_dx, fname_dy = self.getfnames_f(key, it)
+        fname_dx, fname_dy = self._getfnames_f(key, it)
 
         if not os.path.exists(fname_dx) or not os.path.exists(fname_dy):
             # FIXME : does this from plm
@@ -294,9 +280,9 @@ class ffs_iterator(object):
             del dx, dy
         lib_dir = os.path.join(self.lib_dir, 'f_%04d_libdir' % it)
         if not os.path.exists(lib_dir): os.makedirs(lib_dir)
-        fname_invdx, fname_invdy = self.getfnames_finv(key, it)
+        fname_invdx, fname_invdy = self._getfnames_finv(key, it)
         if not os.path.exists(fname_invdx) or not os.path.exists(fname_invdy):
-            f = self.load_f(it, key)
+            f = self._load_f(it, key)
             print('rank %s inverting displacement it. %s for key %s' % (self.PBSRANK, it, key))
             f_inv = f.get_inverse(use_Pool=self.use_Pool_inverse)
             np.save(fname_invdx, f_inv.get_dx())
@@ -307,11 +293,11 @@ class ffs_iterator(object):
         assert os.path.exists(fname_invdy), fname_invdy
         return
 
-    def load_f(self, it, key):
+    def _load_f(self, it, key):
+        """Loads current displacement solution at iteration iter
+
         """
-        Loads current displacement solution at iteration iter
-        """
-        fname_dx, fname_dy = self.getfnames_f(key, it)
+        fname_dx, fname_dy = self._getfnames_f(key, it)
         lib_dir = os.path.join(self.lib_dir,  'f_%04d_libdir' % it)
         assert os.path.exists(fname_dx), fname_dx
         assert os.path.exists(fname_dx), fname_dy
@@ -319,11 +305,11 @@ class ffs_iterator(object):
         return ffs_deflect.ffs_displacement(fname_dx, fname_dy, self.lsides,
                                             verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
 
-    def load_finv(self, it, key):
+    def _load_finv(self, it, key):
+        """Loads current inverse displacement solution at iteration iter.
+
         """
-        Loads current inverse displacement solution at iteration iter.
-        """
-        fname_invdx, fname_invdy = self.getfnames_finv(key, it)
+        fname_invdx, fname_invdy = self._getfnames_finv(key, it)
         lib_dir = os.path.join(self.lib_dir, 'finv_%04d_libdir' % it)
         assert os.path.exists(fname_invdx), fname_invdx
         assert os.path.exists(fname_invdx), fname_invdy
@@ -332,10 +318,6 @@ class ffs_iterator(object):
                                             verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
 
     def load_soltn(self, it, key):
-        """
-        Load starting point for the conjugate gradient inversion, by looking for file on disk from the previous
-        iteration point.
-        """
         assert key.lower() in ['p', 'o']
         for i in np.arange(it, -1, -1):
             fname = os.path.join(self.lib_dir, 'MAPlms/Mlik_%s_it%s.npy' % (key.lower(), i))
@@ -345,20 +327,15 @@ class ffs_iterator(object):
         if self.soltn0 is not None: return np.load(self.soltn0)[:self.opfilt.TEBlen(self.type)]
         return np.zeros((self.opfilt.TEBlen(self.type), self.cov.lib_skyalm.alm_size), dtype=complex)
 
-    def cache_TEBmap(self, TEBMAP, it, key):
+    def _cache_tebwf(self, TEBMAP, it, key):
         assert key.lower() in ['p', 'o']
         fname = os.path.join(self.lib_dir,  'MAPlms/Mlik_%s_it%s.npy' % (key.lower(), it))
         print("rank %s caching " % pbs.rank + fname)
         np.save(fname, TEBMAP)
 
     def get_gradPpri(self, it, key, cache_only=False):
-        """
-        Calculates and returns the gradient from Gaussian prior with cl_pp (or cl_OO) at iteration 'iter'.
-        ! Does not consider purely real frequencies.
-        :param it:
-        :param key: 'p' or 'o'
-        :param cache_only:
-        :return:
+        """Builds prior gradient at iteration *it*
+
         """
         assert self.PBSRANK == 0, 'NO MPI method!'
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
@@ -372,13 +349,12 @@ class ffs_iterator(object):
         self.cache_qlm(fname, grad, pbs_rank=0)
         return None if cache_only else self.load_qlm(fname)
 
-    def Mlik2ResTQUMlik(self, TQUMlik, it, key):
-        """
-        Produces B^t Ni (data - B D Mlik) in TQU space,
-        that is fed into the qlm estimator.
+    def _mlik2rest_tqumlik(self, TQUMlik, it, key):
+        """Produces B^t Ni (data - B D Mlik) in TQU space, that is fed into the qlm estimator.
+
         """
         f_id = ffs_deflect.ffs_id_displacement(self.cov.lib_skyalm.shape, self.cov.lib_skyalm.lsides)
-        self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+        self.cov.set_ffi(self._load_f(it - 1, key), self._load_finv(it - 1, key))
         temp = ffs_specmat.TQU2TEBlms(self.type, self.cov.lib_skyalm, TQUMlik)
         maps = self.get_datmaps() - self.cov.apply_Rs(self.type, temp)
         self.cov.apply_maps(self.type, maps, inplace=True)
@@ -387,40 +363,54 @@ class ffs_iterator(object):
         return ffs_specmat.TEB2TQUlms(self.type, self.cov.lib_skyalm, temp)
 
     def calc_gradPlikPdet(self, it, key):
-        """Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
+        """Calculates the likelihood gradient (quadratic and mean-field parts)
 
         """
         assert 0, 'subclass this'
 
-    def load_graddet(self, k, key):
-        fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), k))
+    def load_graddet(self, it, key):
+        """Loads mean-field gradient at iteration *it*
+
+            Gradient must have already been calculated
+
+        """
+        fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it))
         assert os.path.exists(fname_detterm), fname_detterm
         return self.load_qlm(fname_detterm)
 
-    def load_gradpri(self, k, key):
-        fname_prior = os.path.join(self.lib_dir, 'qlm_grad%spri_it%03d.npy' % (key.upper(), k))
+    def load_gradpri(self, it, key):
+        """Loads prior gradient at iteration *it*
+
+            Gradient must have already been calculated
+
+        """
+        fname_prior = os.path.join(self.lib_dir, 'qlm_grad%spri_it%03d.npy' % (key.upper(), it))
         assert os.path.exists(fname_prior), fname_prior
         return self.load_qlm(fname_prior)
 
-    def load_gradquad(self, k, key):
-        fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), k))
+    def load_gradquad(self, it, key):
+        """Loads likelihood quadratic piece gradient at iteration *it*
+
+            Gradient must have already been calculated
+
+        """
+        fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it))
         assert os.path.exists(fname_likterm), fname_likterm
         return self.load_qlm(fname_likterm)
 
-    def load_total_grad(self, k, key):
-        """Load the total gradient at iteration iter.
+    def load_total_grad(self, it, key):
+        """Load the total gradient at iteration *it*.
 
-            All maps must be previously cached on disk.
+            All gradients must have already been calculated.
 
          """
-        return self.load_gradpri(k, key) + self.load_gradquad(k, key) + self.load_graddet(k, key)
+        return self.load_gradpri(it, key) + self.load_gradquad(it, key) + self.load_graddet(it, key)
 
-    def calc_norm(self,qlm):
+    def _calc_norm(self, qlm):
         return np.sqrt(np.sum(self.lib_qlm.alm2rlm(qlm) ** 2))
 
-    def apply_curv(self,k, key, alphak, plm):
-        """
-        Apply curvature matrix making use of information incuding sk and yk.
+    def _apply_curv(self, k, key, alphak, plm):
+        """Apply curvature matrix making use of information incuding sk and yk.
 
         Applies v B_{k + 1}v = v B_k v +   (y^t v)** 2/(y^t s) - (s^t B v) ** 2 / (s^t B s))
         (B_k+1 = B  + yy^t / (y^ts) - B s s^t B / (s^t Bk s))   (all k on the RHS))
@@ -436,7 +426,7 @@ class ffs_iterator(object):
         dot_op = lambda plm1,plm2,:np.sum(self.lib_qlm.alm2cl(plm1,alm2=plm2) * self.lib_qlm.get_Nell()[:self.lib_qlm.ellmax + 1])
         if k <= -1:
             return dot_op(plm,self.lib_qlm.rlm2alm(H.applyB0k(self.lib_qlm.alm2rlm(plm),0)))
-        ret = self.apply_curv(k-1,key,alphak,plm)
+        ret = self._apply_curv(k - 1, key, alphak, plm)
         Hgk = H.get_mHkgk(self.lib_qlm.alm2rlm(self.load_total_grad(k, key)), k)
         st_Bs = alphak[k] ** 2 * dot_op(self.load_total_grad(k, key),self.lib_qlm.rlm2alm(Hgk))
         yt_s = dot_op(self.lib_qlm.rlm2alm(H.s(k)),self.lib_qlm.rlm2alm(H.y(k)))
@@ -472,9 +462,10 @@ class ffs_iterator(object):
         return self.lib_qlm.alm2map(self.lib_qlm.rlm2alm(ret)) if real_space else self.lib_qlm.rlm2alm(ret)
 
 
-    def get_Hessian(self, k, key):
-        """
-        We need the inverse Hessian that will produce phi_iter.
+    def get_Hessian(self, it, key):
+        """Build the L-BFGS Hessian at iteration *k*
+
+
         """
         # Zeroth order inverse Hessian :
         apply_H0k = lambda rlm, k: \
@@ -484,23 +475,27 @@ class ffs_iterator(object):
         BFGS_H = bfgs.BFGS_Hessian(os.path.join(self.lib_dir,  'Hessian'), apply_H0k, {}, {}, L=self.NR_method,
                                              verbose=self.verbose,apply_B0k=apply_B0k)
         # Adding the required y and s vectors :
-        for _k in range(np.max([0, k - BFGS_H.L]), k):
-            BFGS_H.add_ys(os.path.join(self.lib_dir,  'Hessian', 'rlm_yn_%s_%s.npy' % (_k, key)),
-                          os.path.join(self.lib_dir,  'Hessian', 'rlm_sn_%s_%s.npy' % (_k, key)), _k)
+        for k in range(np.max([0, it - BFGS_H.L]), it):
+            BFGS_H.add_ys(os.path.join(self.lib_dir,  'Hessian', 'rlm_yn_%s_%s.npy' % (k, key)),
+                          os.path.join(self.lib_dir,  'Hessian', 'rlm_sn_%s_%s.npy' % (k, key)), k)
         return BFGS_H
 
     def build_incr(self, it, key, gradn):
-        """
-        Search direction :    BGFS method with 'self.NR method' BFGS updates to the Hessian.
-        Initial Hessian are built from N0s.
-        It must be rank 0 here.
-        :param it: current iteration level. Will produce the increment to phi_{k-1}, from gradient est. g_{k-1}
+        """Search direction
+
+            BGFS method with 'self.NR method' BFGS updates to the Hessian.
+            Initial Hessian are built from N0s.
+            It must be rank 0 here.
+
+            Args:
+                it: current iteration level. Will produce the increment to phi_{k-1}, from gradient est. g_{k-1}
                       phi_{k_1} + output = phi_k
-        :param key: 'p' or 'o'
-        :param gradn: current estimate of the gradient (alm array)
-        :return: increment for next iteration (alm array)
-        s_k = x_k+1 - x_k = - H_k g_k
-        y_k = g_k+1 - g_k
+                key: 'p' or 'o'
+                gradn: current estimate of the gradient (alm array)
+
+            Returns:
+                 increment for next iteration (alm array)
+
         """
         assert self.PBSRANK == 0, 'single MPI process method !'
         assert it > 0, it
@@ -518,17 +513,18 @@ class ffs_iterator(object):
             print("rank %s calculating descent direction" % self.PBSRANK)
             t0 = time.time()
             incr = BFGS.get_mHkgk(self.lib_qlm.alm2rlm(gradn), k)
-            norm_inc = self.calc_norm(self.lib_qlm.rlm2alm(incr)) / self.calc_norm(self.get_Plm(0, key))
+            norm_inc = self._calc_norm(self.lib_qlm.rlm2alm(incr)) / self._calc_norm(self.get_Plm(0, key))
             step = self.newton_step_length(it, norm_inc)
             self.cache_rlm(sk_fname,incr * step)
             prt_time(time.time() - t0, label=' Exec. time for descent direction calculation')
         assert os.path.exists(sk_fname), sk_fname
         return self.lib_qlm.rlm2alm(self.load_rlm(sk_fname)),step
 
-    def iterate(self, it, key, cache_only=False, callback='default_callback'):
-        """
-        Performs an iteration, by collecting the gradients at level iter, and the lower level potential,
-        saving then the iter + 1 potential map.
+    def iterate(self, it, key, cache_only=False):
+        """Performs an iteration
+
+            This builds the gradients at iteration *it*, and the  potential estimate, and saves the *it* + 1 estimate.
+
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         plm_fname = os.path.join(self.lib_dir, '%s_plm_it%03d.npy' % ({'p': 'Phi', 'o': 'Om'}[key.lower()], it))
@@ -538,7 +534,7 @@ class ffs_iterator(object):
         # Calculation in // of lik and det term :
         ti = time.time()
         if self.PBSRANK == 0:  # Single processes routines :
-            self.calc_ffinv(it - 1, key)
+            self._calc_ffinv(it - 1, key)
             self.get_gradPpri(it, key, cache_only=True)
         self.barrier()
         # Calculation of the likelihood term, involving the det term over MCs :
@@ -549,12 +545,12 @@ class ffs_iterator(object):
             self.cache_qlm(plm_fname, self.get_Plm(it - 1, key) + incr, pbs_rank=0)
 
             # Saves some info about increment norm and exec. time :
-            norm_inc = self.calc_norm(incr) / self.calc_norm(self.get_Plm(0, key))
-            norms = [self.calc_norm(self.load_gradquad(it - 1, key))]
-            norms.append(self.calc_norm(self.load_graddet(it - 1, key)))
-            norms.append(self.calc_norm(self.load_gradpri(it - 1, key)))
-            norm_grad = self.calc_norm(self.load_total_grad(it - 1, key))
-            norm_grad_0 = self.calc_norm(self.load_total_grad(0, key))
+            norm_inc = self._calc_norm(incr) / self._calc_norm(self.get_Plm(0, key))
+            norms = [self._calc_norm(self.load_gradquad(it - 1, key))]
+            norms.append(self._calc_norm(self.load_graddet(it - 1, key)))
+            norms.append(self._calc_norm(self.load_gradpri(it - 1, key)))
+            norm_grad = self._calc_norm(self.load_total_grad(it - 1, key))
+            norm_grad_0 = self._calc_norm(self.load_total_grad(0, key))
             for i in [0, 1, 2]: norms[i] = norms[i] / norm_grad_0
 
             with open(os.path.join(self.lib_dir, 'history_increment.txt'), 'a') as file:
@@ -564,8 +560,8 @@ class ffs_iterator(object):
                 file.close()
 
             if self.tidy > 2:  # Erasing dx,dy and det magn (12GB for full sky at 0.74 amin per iteration)
-                f1, f2 = self.getfnames_f(key, it - 1)
-                f3, f4 = self.getfnames_finv(key, it - 1)
+                f1, f2 = self._getfnames_f(key, it - 1)
+                f3, f4 = self._getfnames_finv(key, it - 1)
                 for _f in [f1, f2, f3, f4]:
                     if os.path.exists(_f):
                         os.remove(_f)
@@ -582,20 +578,29 @@ class ffs_iterator(object):
 
 
 class ffs_iterator_cstMF(ffs_iterator):
-    """
-    Identical mean field as each step
+    r"""Iterator instance, that uses fixed, input mean-field at each step.
+
+        Args:
+            lib_dir: many things will be written there
+            typ: 'T', 'QU' or 'TQU' for estimation on temperature data, polarization data or jointly
+            filt: inverse-variance filtering instance (e.g. *lensit.qcinv.ffs_ninv_filt* )
+            dat_maps: data maps or path to maps.
+            lib_qlm: lib_alm (*lensit.ffs_covs.ell_mat.ffs_alm*) instance describing the lensing estimate Fourier arrays
+            Plm0: Starting point for the iterative search. alm array consistent with *lib_qlm*
+            H0: initial isotropic likelihood curvature approximation (roughly, inverse lensing noise bias :math:`N^{(0)}_L`)
+            MF_qlms: mean-field alm array (also desribed by lib_qlm)
+            cpp_prior: fiducial lensing power spectrum, used for the prior part of the posterior density.
+
+
     """
 
-    def __init__(self, lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, MF_qlms, cpp_prior, **kwargs):
-        super(ffs_iterator_cstMF, self).__init__(lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
+    def __init__(self, lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, MF_qlms, cpp_prior, **kwargs):
+        super(ffs_iterator_cstMF, self).__init__(lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                                                  PBSSIZE=1, PBSRANK=0,  # so that all proc. act independently
                                                  **kwargs)
         self.MF_qlms = MF_qlms
 
     def calc_gradPlikPdet(self, it, key):
-        """
-        Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
-        """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
         fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
@@ -607,7 +612,7 @@ class ffs_iterator_cstMF(ffs_iterator):
 
         # Identical MF here
         self.cache_qlm(fname_detterm, self.load_qlm(self.MF_qlms))
-        self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+        self.cov.set_ffi(self._load_f(it - 1, key), self._load_finv(it - 1, key))
         mchain = multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
                                                     no_deglensing=self.nodeglensing)
         # FIXME : The solution input is not working properly sometimes. We give it up for now.
@@ -615,14 +620,14 @@ class ffs_iterator_cstMF(ffs_iterator):
         soltn = self.load_soltn(it, key).copy() * self.soltn_cond
         self.opfilt._type = self.type
         mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
-        self.cache_TEBmap(soltn, it - 1, key)
+        self._cache_tebwf(soltn, it - 1, key)
         # soltn = self.opfilt.MLIK2BINV(soltn,self.cov,self.get_datmaps())
         # grad = - ql.get_qlms(self.type, self.cov.lib_skyalm, soltn, self.cov.cls, self.lib_qlm,
         #                     use_Pool=self.use_Pool, f=self.cov.f)[{'p': 0, 'o': 1}[key.lower()]]
         TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)
-        ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, it, key)
+        ResTQUMlik = self._mlik2rest_tqumlik(TQUMlik, it, key)
         grad = - ql.get_qlms_wl(self.type, self.cov.lib_skyalm, TQUMlik, ResTQUMlik, self.lib_qlm,
-                                use_Pool=self.use_Pool, f=self.load_f(it - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
+                                use_Pool=self.use_Pool, f=self._load_f(it - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
 
         self.cache_qlm(fname_likterm, grad, pbs_rank=self.PBSRANK)
         # It does not help to cache both grad_O and grad_P as they do not follow the trajectory in plm space.
@@ -630,33 +635,40 @@ class ffs_iterator_cstMF(ffs_iterator):
 
 
 class ffs_iterator_pertMF(ffs_iterator):
-    """
-    Mean field from theory, perturbatively
+    """Iterator instance, that uses the deflection-perturbative prediction for the mean-field at each step.
+
+        Args:
+            lib_dir: many things will be written there
+            typ: 'T', 'QU' or 'TQU' for estimation on temperature data, polarization data or jointly
+            filt: inverse-variance filtering instance (e.g. *lensit.qcinv.ffs_ninv_filt* )
+            dat_maps: data maps or path to maps.
+            lib_qlm: lib_alm (*lensit.ffs_covs.ell_mat.ffs_alm*) instance describing the lensing estimate Fourier arrays
+            Plm0: Starting point for the iterative search. alm array consistent with *lib_qlm*
+            H0: initial isotropic likelihood curvature approximation (roughly, inverse lensing noise bias :math:`N^{(0)}_L`)
+            cpp_prior: fiducial lensing power spectrum, used for the prior part of the posterior density.
+
+
     """
 
-    def __init__(self, lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
+    def __init__(self, lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                  init_rank=pbs.rank, init_barrier=pbs.barrier, **kwargs):
-        super(ffs_iterator_pertMF, self).__init__(lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
+        super(ffs_iterator_pertMF, self).__init__(lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                                                   PBSSIZE=1, PBSRANK=0,  # so that all proc. act independently
                                                   **kwargs)
-        lmax_sky_ivf = cov.lib_skyalm.ellmax
-        cls_noise = {'t': (cov.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
-                     'q': (cov.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
-                     'u': (cov.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
+        lmax_sky_ivf = filt.lib_skyalm.ellmax
+        cls_noise = {'t': (filt.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
+                     'q': (filt.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
+                     'u': (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
 
         self.isocov = ffs_cov.ffs_diagcov_alm(os.path.join(lib_dir, 'isocov'),
-                                                          cov.lib_skyalm, cov.cls, cov.cls, cov.cl_transf, cls_noise,
-                                                          lib_skyalm=cov.lib_skyalm, init_rank=init_rank,
-                                                          init_barrier=init_barrier)
-        # FIXME : could simply cache the response...
+                                              filt.lib_skyalm, filt.cls, filt.cls, filt.cl_transf, cls_noise,
+                                              lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
+                                              init_barrier=init_barrier)
 
     def get_MFresp(self, key):
         return self.isocov.get_MFresplms(self.type, self.lib_qlm, use_cls_len=False)[{'p': 0, 'o': 1}[key.lower()]]
 
     def calc_gradPlikPdet(self, it, key):
-        """
-        Caches the det term for it via MC sims, together with the data one, for maximal //isation.
-        """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
         fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
@@ -667,7 +679,7 @@ class ffs_iterator_pertMF(ffs_iterator):
         assert self.is_previous_iter_done(it, key)
         # Identical MF here
         self.cache_qlm(fname_detterm, self.load_qlm(self.get_MFresp(key.lower()) * self.get_Plm(it - 1, key.lower())))
-        self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+        self.cov.set_ffi(self._load_f(it - 1, key), self._load_finv(it - 1, key))
         mchain = multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
                                            no_deglensing=self.nodeglensing)
         # FIXME : The solution input is not working properly sometimes. We give it up for now.
@@ -675,11 +687,11 @@ class ffs_iterator_pertMF(ffs_iterator):
         soltn = self.load_soltn(it, key).copy() * self.soltn_cond
         self.opfilt._type = self.type
         mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
-        self.cache_TEBmap(soltn, it - 1, key)
+        self._cache_tebwf(soltn, it - 1, key)
         TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)
-        ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, it, key)
+        ResTQUMlik = self._mlik2rest_tqumlik(TQUMlik, it, key)
         grad = - ql.get_qlms_wl(self.type, self.cov.lib_skyalm, TQUMlik, ResTQUMlik, self.lib_qlm,
-                                use_Pool=self.use_Pool, f=self.load_f(it - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
+                                use_Pool=self.use_Pool, f=self._load_f(it - 1, key))[{'p': 0, 'o': 1}[key.lower()]]
 
         self.cache_qlm(fname_likterm, grad, pbs_rank=self.PBSRANK)
         # It does not help to cache both grad_O and grad_P as they do not follow the trajectory in plm space.
@@ -687,15 +699,24 @@ class ffs_iterator_pertMF(ffs_iterator):
 
 
 class ffs_iterator_simMF(ffs_iterator):
-    """
-    Mean field calculated with simulation according to input MFkey.
-    # FIXME : this requires the pbs.size to be a multiple of the maps to do
-    otherwise the MPI barriers will not work (in 'degrade' libraries for
-    the W.F.)
-    """
+    r"""Iterator instance, that estimate the mean-field at each steps from Monte-Carlos.
 
-    def __init__(self, lib_dir, _type, MFkey, nsims, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior, **kwargs):
-        super(ffs_iterator_simMF, self).__init__(lib_dir, _type, cov, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
+        Args:
+            lib_dir: many things will be written there
+            typ: 'T', 'QU' or 'TQU' for estimation on temperature data, polarization data or jointly
+            MFkey: mean-field estimator key
+            nsims: number of sims to use at each step
+            filt: inverse-variance filtering instance (e.g. *lensit.qcinv.ffs_ninv_filt* )
+            dat_maps: data maps or path to maps.
+            lib_qlm: lib_alm (*lensit.ffs_covs.ell_mat.ffs_alm*) instance describing the lensing estimate Fourier arrays
+            Plm0: Starting point for the iterative search. alm array consistent with *lib_qlm*
+            H0: initial isotropic likelihood curvature approximation (roughly, inverse lensing noise bias :math:`N^{(0)}_L`)
+            cpp_prior: fiducial lensing power spectrum, used for the prior part of the posterior density.
+
+
+    """
+    def __init__(self, lib_dir, typ, MFkey, nsims, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior, **kwargs):
+        super(ffs_iterator_simMF, self).__init__(lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                                                  **kwargs)
         print('++ ffs_%s simMF iterator (PBSSIZE %s pbs.size %s) : setup OK' % (self.type, self.PBSSIZE, pbs.size))
         self.MFkey = MFkey
@@ -705,10 +726,8 @@ class ffs_iterator_simMF(ffs_iterator):
         self.barrier()
 
     def build_pha(self, it):
-        """
-        Sets up sim libraries for the MF evaluation
-        :param it:
-        :return:
+        """Builds sims for the mean-field evaluation at iter *it*
+
         """
         if self.nsims == 0: return None
         phas_pix = ffs_phas.pix_lib_phas(
@@ -724,8 +743,8 @@ class ffs_iterator_simMF(ffs_iterator):
         return phas_pix, phas_cmb
 
     def calc_gradPlikPdet(self, it, key, callback='default_callback'):
-        """
-        Caches the det term for iter via MC sims, together with the data one, for maximal //isation.
+        """Caches the det term for iter via MC sims, together with the data one, with MPI maximal //isation.
+
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
@@ -768,7 +787,7 @@ class ffs_iterator_simMF(ffs_iterator):
 
             if idx >= 0:  # sim
                 grad_fname = os.path.join(self.lib_dir, 'mf_it%03d/g%s_%04d.npy' % (it - 1, key.lower(), idx))
-                self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+                self.cov.set_ffi(self._load_f(it - 1, key), self._load_finv(it - 1, key))
                 MFest = ql.MFestimator(self.cov, self.opfilt, mchain, self.lib_qlm,
                                        pix_pha=pix_pha, cmb_pha=cmb_pha, use_Pool=self.use_Pool)
                 grad = MFest.get_MFqlms(self.type, self.MFkey, idx)[{'p': 0, 'o': 1}[key.lower()]]
@@ -786,14 +805,14 @@ class ffs_iterator_simMF(ffs_iterator):
                 # This is the data.
                 # FIXME : The solution input is not working properly sometimes. We give it up for now.
                 # FIXME  don't manage to find the right d0 to input for a given sol ?!!
-                self.cov.set_ffi(self.load_f(it - 1, key), self.load_finv(it - 1, key))
+                self.cov.set_ffi(self._load_f(it - 1, key), self._load_finv(it - 1, key))
                 soltn = self.load_soltn(it, key).copy() * self.soltn_cond
                 mchain.solve(soltn, self.get_datmaps(), finiop='MLIK')
-                self.cache_TEBmap(soltn, it - 1, key)
+                self._cache_tebwf(soltn, it - 1, key)
                 TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.cov)
-                ResTQUMlik = self.Mlik2ResTQUMlik(TQUMlik, it, key)
+                ResTQUMlik = self._mlik2rest_tqumlik(TQUMlik, it, key)
                 grad = - ql.get_qlms_wl(self.type, self.cov.lib_skyalm, TQUMlik, ResTQUMlik, self.lib_qlm,
-                                        use_Pool=self.use_Pool, f=self.load_f(it - 1, key))[
+                                        use_Pool=self.use_Pool, f=self._load_f(it - 1, key))[
                     {'p': 0, 'o': 1}[key.lower()]]
                 self.cache_qlm(fname_likterm, grad, pbs_rank=self.PBSRANK)
 
