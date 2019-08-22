@@ -1,16 +1,15 @@
-"""
-Contains some pure convenience functions for quick startup.
+"""This __init__ module contains some convenience functions for quick startup.
+
 """
 from __future__ import print_function
 
 import numpy as np
-import healpy as hp
 import os
 
 from lensit.ffs_covs import ffs_cov, ell_mat
 from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
 from lensit.pbs import pbs
-from lensit.misc.misc_utils import enumerate_progress, camb_clfile
+from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam
 
 LENSITDIR = os.environ.get('LENSIT', './')
 CLSPATH = os.path.join(LENSITDIR, 'inputs', 'cls')
@@ -53,11 +52,6 @@ def get_config(exp):
     elif exp == 'SOb1':
         sN_uKamin = 3.
         Beam_FWHM_amin = 1.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'SOmark':
-        sN_uKamin = 10.
-        Beam_FWHM_amin = 3.
         ellmin = 10
         ellmax = 3000
     elif exp == 'PB85':
@@ -158,7 +152,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
-    cl_transf = hp.gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
+    cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
     lib_datalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
                                                  num_threads=num_threads)
     fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
@@ -188,7 +182,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     cls_noise = {'t': (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
                  'q':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
                  'u':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)}  # simple flat noise Cls
-    cl_transf = hp.gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=ellmax_sky)
+    cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=ellmax_sky)
     lib_alm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                         filt_func=lambda ell: (ell >= ellmin) & (ell <= ellmax), num_threads=pyFFTWthreads)
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),

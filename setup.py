@@ -8,7 +8,7 @@ with open("README.md", "r") as fh:
 
 def configuration(parent_package='', top_path=''):
     config = Configuration('', parent_package, top_path)
-    config.add_extension('lensit.bicubic.bicubic', ['plancklens/bicubic/bicubic.f90'])
+    config.add_extension('lensit.bicubic.bicubic', ['lensit/bicubic/bicubic.f90'])
     return config
 
 setup(
@@ -18,8 +18,8 @@ setup(
     url='https://github.com/carronj/lensit',
     author='Julien Carron',
     author_email='to.jcarron@gmail.com',
-    description='CMB lensing flat-sky quadratic and iterative estimation pipelines',
-    install_requires=['numpy', 'pyfftw', 'healpy', 'scipy', 'mpi4py'],
+    description='CMB lensing flat-sky quadratic and iterative estimation tools',
+    install_requires=['numpy', 'pyfftw', 'scipy', 'mpi4py'],
     long_description=long_description,
     configuration=configuration)
 

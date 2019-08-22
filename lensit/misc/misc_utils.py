@@ -8,6 +8,20 @@ import os
 import hashlib
 from lensit.pbs import pbs
 
+def gauss_beam(fwhm_rad, lmax=512):
+    """Gaussian beam window function
+
+        Args:
+            full width half max in radians
+
+        Returns:
+            beam window function array of size lmax + 1
+
+    """
+    l = np.arange(lmax + 1, dtype=int)
+    return np.exp(-l * (l + 1.) * (fwhm_rad / 2.3548200450309493) ** 2 * 0.5)
+
+
 def camb_clfile(fname, lmax=None):
     """CAMB spectra (lenspotentialCls, lensedCls or tensCls types) returned as a dict of numpy arrays.
 

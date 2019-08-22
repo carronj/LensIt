@@ -6,8 +6,7 @@ import hashlib
 import os
 import numpy as np
 
-from lenspyx.bicubic import bicubic
-from scipy import interpolate
+from lensit.bicubic import bicubic
 
 from lensit.misc import map_spliter
 from lensit.misc import misc_utils as utils
@@ -125,37 +124,6 @@ class ffs_displacement(object):
         else:
             return m
 
-    def is_dxdy_ondisk(self):
-        """ Checks whether the displacements are on disk or in memory. Bool."""
-        return isinstance(self.dx, str) and isinstance(self.dy, str)
-
-    def has_lib_dir(self):
-        """ Just checks whether there is an libdir specified for this instance. Bool. """
-        return self.lib_dir is not None
-
-    def mk_args(self, path_to_map, path_to_dx, path_to_dy, NR_iter=None):
-        if NR_iter is None: NR_iter = self.NR_iter
-        return [path_to_map, path_to_dx, path_to_dy, self.buffers[0], self.buffers[1], self.lsides[0], self.lsides[1],
-                self.HD_res[0], self.HD_res[1], NR_iter, self.k]
-
-    def write_npy(self, fname):
-        """
-        Writes dx dy to disk and sets self.dx, self.dy to path names.
-        """
-        if self.verbose: print("write_npy:: rank %s caching " % pbs.rank, fname + '_dx.npy')
-        try:
-            np.save(fname + '_dx.npy', self.get_dx())
-        except:
-            assert 0, 'could not write %s' % (fname + '_dx.npy')
-        if self.verbose: print("write_npy:: rank %s caching " % pbs.rank, fname + '_dy.npy')
-        try:
-            np.save(fname + '_dy.npy', self.get_dy())
-        except:
-            assert 0, 'could not write %s' % (fname + '_dy.npy')
-        self.dx = fname + '_dx.npy'
-        self.dy = fname + '_dy.npy'
-        return
-
     def get_dx(self):
         if isinstance(self.dx, str):
             return np.load(self.dx)
@@ -234,7 +202,7 @@ class ffs_displacement(object):
         else:
             assert 0, crude
 
-    def lens_map(self, map, use_Pool=0, tidy=True, crude=0, do_not_prefilter=False):
+    def lens_map(self, map, use_Pool=0, crude=0, do_not_prefilter=False):
         """
         Lens the input map according to the displacement fields dx dy. 'map' typically could be (8192 * 8192) np array,
         or the path to the array on disk.
@@ -255,7 +223,7 @@ class ffs_displacement(object):
             # use of GPU :
             try:
                 from lensit.gpu import lens_GPU
-            except:
+            except ImportError:
                 assert 0, 'Import of mllens lens_GPU failed !'
 
             GPU_res = np.array(lens_GPU.GPU_HDres_max)
@@ -280,8 +248,7 @@ class ffs_displacement(object):
                     dy_N[sLD] = self.get_dy()[sHD] / self.rmin[0]
                     unl_CMBN[sLD] = self.load_map(map)[sHD]
                 sLDs, sHDs = spliter_lib.get_slices_chk_N(N, LD_res, self.HD_res, buffers, inverse=True)
-                lensed_map[sHDs[0]] = lens_GPU.lens_onGPU(unl_CMBN, dx_N, dy_N, do_not_prefilter=do_not_prefilter)[
-                    sLDs[0]]
+                lensed_map[sHDs[0]] = lens_GPU.lens_onGPU(unl_CMBN, dx_N, dy_N, do_not_prefilter=do_not_prefilter)[sLDs[0]]
             return lensed_map
 
         elif use_Pool == 0 or use_Pool == 1:
@@ -300,13 +267,10 @@ class ffs_displacement(object):
             x_gu = self.get_dx_ingridunits().flatten() + i % self.shape[1]
             y_gu = self.get_dy_ingridunits().flatten() + i // self.shape[1]
             del i
-            return bicubic.deflect(filtmap, y_gu , x_gu).reshape(self.shape)
+            return bicubic.deflect(filtmap, x_gu , y_gu).reshape(self.shape)
 
-    def lens_alm(self, lib_alm, alm,
-                 lib_alm_out=None, use_Pool=0, no_lensing=False, mult_magn=False):
+    def lens_alm(self, lib_alm, alm, lib_alm_out=None, use_Pool=0, no_lensing=False, mult_magn=False):
         """
-        Turn alms into the alms of the lensed map. If mult_magn is set, multiplies the lensed map by the determinant
-        of the magnification matrix prior to take the harmonic transform.
         """
         if no_lensing and lib_alm_out is None: return alm
         if lib_alm_out is None: lib_alm_out = lib_alm
@@ -331,8 +295,16 @@ class ffs_displacement(object):
             return
 
     def alm2lenmap(self, lib_alm, alm, use_Pool=0, no_lensing=False):
-        """
-        Turn alm into the lensed map.
+        """Return deflected position-space map from its unlensed input harmonic coeffients.
+
+            Args:
+                lib_alm: *lensit.ffs_covs.ell_mat.ffs_alm* instance adapted to input *alm* array
+                alm: input unlensed flat-sky alm array
+                no_lensing: the method reduces to alm2map if set.
+
+            Returns:
+                position space map of shape *lib_alm.shape*
+
         """
         assert alm.shape == (lib_alm.alm_size,), (alm.shape, lib_alm.alm_size)
         assert lib_alm.ell_mat.shape == self.shape, (lib_alm.ell_mat.shape, self.shape)
@@ -350,8 +322,8 @@ class ffs_displacement(object):
                                  use_Pool=use_Pool, do_not_prefilter=True)
 
     def get_det_magn(self):
-        """
-        Returns entire magnification det map.
+        """Returns entire magnification determinant map.
+
         """
         # FIXME : bad
         if not self.cache_magn:
@@ -361,7 +333,7 @@ class ffs_displacement(object):
                    PDP(self.get_dx(), axis=0, h=self.rmin[0], rule=self.rule)
             return det
         else:
-            assert self.has_lib_dir(), 'Specify lib_dir if you want to cache magn'
+            assert self.lib_dir is not None, 'Specify lib_dir if you want to cache magn'
             fname = os.path.join(self.lib_dir, 'det_magn_%s_%s_rank%s.npy' % \
                                    (hashlib.sha1(self.get_dx()[0, 0:100]).hexdigest(),
                                     hashlib.sha1(self.get_dy()[0, 0:100]).hexdigest(), pbs.rank))
@@ -373,7 +345,6 @@ class ffs_displacement(object):
                 print("  ffs_displacement caching ", fname)
                 np.save(fname, det)
                 del det
-            # pbs.barrier()
             return np.load(fname)
 
     def pOlm(self, lib_qlm):
@@ -425,42 +396,9 @@ class ffs_displacement(object):
         rfft_Om[1:] /= (np.outer(ky ** 2, np.ones(rs[1])) + np.outer(np.ones(rs[0]), kx ** 2)).flatten()[1:]
         return np.fft.irfft2(2 * rfft_Om.reshape(rs), self.shape)
 
-    def get_det_magn_chk_N(self, N, extra_buff=np.array((5, 5))):
-        """
-        Returns chunk N of magnification map, adding an extra buffer 'extra_buff' to avoid
-        surprises with the periodic derivatives.
-        """
-        dx, dy = self.get_dxdy_chk_N(N, buffers=self.buffers + extra_buff)  # In physical units
-        det = (PDP(dx, axis=1, h=self.rmin[1], rule=self.rule) + 1.) \
-              * (PDP(dy, axis=0, h=self.rmin[0], rule=self.rule) + 1.)
-        det -= PDP(dy, axis=1, h=self.rmin[1], rule=self.rule) * \
-               PDP(dx, axis=0, h=self.rmin[0], rule=self.rule)
-        return det[extra_buff[0]:dx.shape[0] - extra_buff[0], extra_buff[1]:dx.shape[1] - extra_buff[1]]
-
-    def get_magn_mat_chk_N(self, N, extra_buff=np.array((5, 5))):
-        """
-        Returns chk number 'N' of magnification matrix, adding an extra-buffer to avoid surprises with
-        periodic derivatives.
-        """
-        # Setting up dx and dy displacement chunks :
-        # We add small extra buffer to get correct derivatives in the chunks
-        dx, dy = self.get_dxdy_chk_N(N, buffers=self.buffers + extra_buff)  # In physical units
-        # Jacobian matrix :
-        sl0 = slice(extra_buff[0], dx.shape[0] - extra_buff[0])
-        sl1 = slice(extra_buff[1], dx.shape[1] - extra_buff[1])
-        dfxdx = PDP(dx, axis=1, h=self.rmin[1], rule=self.rule)[sl0, sl1]
-        dfydx = PDP(dy, axis=1, h=self.rmin[1], rule=self.rule)[sl0, sl1]
-        dfxdy = PDP(dx, axis=0, h=self.rmin[0], rule=self.rule)[sl0, sl1]
-        dfydy = PDP(dy, axis=0, h=self.rmin[0], rule=self.rule)[sl0, sl1]
-        return {'kappa': 0.5 * (dfxdx + dfydy), 'omega': 0.5 * (dfxdy - dfydx), \
-                'gamma_U': 0.5 * (dfxdy + dfydx), 'gamma_Q': 0.5 * (dfxdx - dfydy), \
-                'det': (dfxdx + 1.) * (dfydy + 1.) - dfydx * dfxdy}
-
     def get_inverse_crude(self, crude):
-        """
-        Crude inversions of the displacement field
-        :param crude:
-        :return:
+        """Crude inversions of the displacement field
+
         """
         assert crude in [1], crude
         if crude == 1:
@@ -606,7 +544,7 @@ class ffs_displacement(object):
         # Hopefully the map resolution is enough to spline the magnification matrix.
         s0, s1 = self.chk_shape
         r0 = s0
-        r1 = s1 / 2 + 1  # rfft shape
+        r1 = s1 // 2 + 1  # rfft shape
 
         w0 = 6. / (2. * np.cos(2. * np.pi * Freq(np.arange(r0), s0) / s0) + 4.)
         w1 = 6. / (2. * np.cos(2. * np.pi * Freq(np.arange(r1), s1) / s1) + 4.)
@@ -619,94 +557,11 @@ class ffs_displacement(object):
         Minv_yx = bic_filter(Minv_yx)
         Minv_xx = bic_filter(Minv_xx)
         Minv_yy = bic_filter(Minv_yy)
-
-        header = r' "%s/lensit/gpu/bicubicspline.h" ' % li.LENSITDIR
-        iterate = r"\
-            double fx,fy;\
-            double ex_len_dx,ey_len_dy,len_Mxx,len_Mxy,len_Myx,len_Myy;\
-            int i = 0;\
-            for(int y= 0; y < width; y++ )\
-               {\
-               for(int x = 0; x < width; x++,i++)\
-                {\
-                fx = x +  ex[i];\
-                fy = y +  ey[i];\
-                ex_len_dx = ex[i] +  bicubiclensKernel(dx,fx,fy,width);\
-                ey_len_dy = ey[i] +  bicubiclensKernel(dy,fx,fy,width);\
-                len_Mxx =  bicubiclensKernel(Minv_xx,fx,fy,width);\
-                len_Myy =  bicubiclensKernel(Minv_yy,fx,fy,width);\
-                len_Mxy =  bicubiclensKernel(Minv_xy,fx,fy,width);\
-                len_Myx =  bicubiclensKernel(Minv_yx,fx,fy,width);\
-                ex[i] += len_Mxx * ex_len_dx + len_Mxy * ey_len_dy;\
-                ey[i] += len_Myx * ex_len_dx + len_Myy * ey_len_dy;\
-                }\
-            }\
-            "
-        width = int(s0)
-        assert s0 == s1, 'Havent checked how this works with rectangular maps'
         for i in range(0, NR_iter):
-            weave.inline(iterate, ['ex', 'ey', 'dx', 'dy', 'Minv_xx', 'Minv_yy', 'Minv_xy', 'Minv_yx', 'width'],
-                         headers=[header])
+            ex1, ey1 = bicubic.deflect_inverse(ex, ey, dx, dy, Minv_xx, Minv_yy, Minv_xy, Minv_yx)
+            ex = ex1
+            ey = ey1
         return ex * rmin1, ey * rmin0
-
-    def get_inverse_chk_N_old(self, N, NR_iter=None):
-        """
-        Old version with scipy.interpolate
-        Returns inverse displacement in chunk N
-        Uses periodic boundary conditions, which is not applicable to chunks, thus there
-        will be boudary effects on the edges (2 or 4 pixels depending on the rule). Make sure the buffer is large enough.
-        """
-        if NR_iter is None: NR_iter = self.NR_iter
-
-        s = self.chk_shape
-        M_mat = self.get_magn_mat_chk_N(N)
-        if not np.all(M_mat['det'] > 0.):
-            print("ffs_displ::Negative value in det k : something's weird, you'd better check that")
-
-        # Inverse magn. elements. (with a minus sign) We may need to spline these later for further NR iterations :
-
-        _Minv_xx = -(1. + M_mat['kappa'] - M_mat['gamma_Q']) / M_mat['det']
-        _Minv_yy = -(1. + M_mat['kappa'] + M_mat['gamma_Q']) / M_mat['det']
-        _Minv_xy = (M_mat['gamma_U'] + M_mat['omega']) / M_mat['det']
-        _Minv_yx = (M_mat['gamma_U'] - M_mat['omega']) / M_mat['det']
-        del M_mat
-
-        # First NR step. This one is easy :
-        dx, dy = self.get_dxdy_chk_N(N)
-        dxn = (_Minv_xx * dx + _Minv_xy * dy)
-        dyn = (_Minv_yx * dx + _Minv_yy * dy)
-        if NR_iter == 0: return [dxn, dyn]
-
-        # Setting up a bunch of splines to interpolate the increment to the displacement according to Newton-Raphson.
-        # Needed are splines of the forward displacement and of the (inverse, as implemented here) magnification matrix.
-        # Hopefully the map resolution is enough to spline the magnification matrix.
-
-        xcoord = np.arange(s[1]) * self.rmin[1]
-        ycoord = np.arange(s[0]) * self.rmin[0]
-
-        spl_dx = interpolate.RectBivariateSpline(ycoord, xcoord, dx, kx=self.k, ky=self.k)
-        spl_dy = interpolate.RectBivariateSpline(ycoord, xcoord, dy, kx=self.k, ky=self.k)
-
-        spl_xx = interpolate.RectBivariateSpline(ycoord, xcoord, _Minv_xx, kx=self.k, ky=self.k)
-        spl_yy = interpolate.RectBivariateSpline(ycoord, xcoord, _Minv_yy, kx=self.k, ky=self.k)
-        spl_xy = interpolate.RectBivariateSpline(ycoord, xcoord, _Minv_xy, kx=self.k, ky=self.k)
-        spl_yx = interpolate.RectBivariateSpline(ycoord, xcoord, _Minv_yx, kx=self.k, ky=self.k)
-
-        idc = np.indices(s)
-        y_x = idc[1] * self.rmin[1]
-        y_y = idc[0] * self.rmin[0]
-        del idc
-
-        for i in range(NR_iter):
-            dxn_1 = dxn
-            dyn_1 = dyn
-            lx = (y_x + dxn_1).flatten()
-            ly = (y_y + dyn_1).flatten()
-            res_x = dxn_1 + spl_dx.ev(ly, lx).reshape(s)  # dx residuals
-            res_y = dyn_1 + spl_dy.ev(ly, lx).reshape(s)  # dy residuals
-            dxn = dxn_1 + spl_xx.ev(ly, lx).reshape(s) * res_x + spl_xy.ev(ly, lx).reshape(s) * res_y
-            dyn = dyn_1 + spl_yx.ev(ly, lx).reshape(s) * res_x + spl_yy.ev(ly, lx).reshape(s) * res_y
-        return [dxn, dyn]
 
     def degrade(self, LD_shape, no_lensing, **kwargs):
         if no_lensing: return ffs_id_displacement(LD_shape, self.lsides)
