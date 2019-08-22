@@ -136,48 +136,11 @@ class ffs_displacement(object):
         else:
             return self.dy
 
-    def get_dnorm(self):
-        return np.sqrt(self.get_dx() ** 2 + self.get_dy() ** 2)
-
-    def get_dnorm_phi(self):
-        """
-        Norm of the displacement due to phi
-        :return:
-        """
-        phi = self.get_phi()
-        return np.sqrt(PDP(phi, 1, h=self.rmin[1]) ** 2  + PDP(phi, 0, h=self.rmin[0]) ** 2)
-
-    def get_dnorm_Omega(self):
-        """
-        Norm of the displacement due to curl
-        :return:
-        """
-        Omega = self.get_Omega()
-        return np.sqrt(PDP(Omega, 1, h=self.rmin[1]) ** 2 + PDP(Omega, 0, h=self.rmin[0]) ** 2)
-
     def get_dx_ingridunits(self):
         return self.get_dx() / self.rmin[1]
 
     def get_dy_ingridunits(self):
         return self.get_dy() / self.rmin[0]
-
-    def get_dxdy_chk_N(self, N, buffers=None):
-        if buffers is None: buffers = self.buffers
-        shape = (2 ** self.LD_res[0] + 2 * buffers[0], 2 ** self.LD_res[1] + 2 * buffers[1])
-        dx, dy = np.zeros(shape), np.zeros(shape)
-        spliter_lib = map_spliter.periodicmap_spliter()  # library to split periodic maps.
-        sLDs, sHDs = spliter_lib.get_slices_chk_N(N, self.LD_res, self.HD_res, buffers)
-        for sLD, sHD in zip(sLDs, sHDs):
-            dx[sLD] = self.get_dx()[sHD]
-            dy[sLD] = self.get_dy()[sHD]
-        return dx, dy
-
-    def apply(self, map, **kwargs):
-        """ For compatibility purposes """
-        return self.lens_map(map, **kwargs)
-
-    def _get_e2iomega(self):
-        return np.exp(-2j * self.get_omega())
 
     def lens_map_crude(self, map, crude):
         """
@@ -269,12 +232,21 @@ class ffs_displacement(object):
             del i
             return bicubic.deflect(filtmap, x_gu , y_gu).reshape(self.shape)
 
-    def lens_alm(self, lib_alm, alm, lib_alm_out=None, use_Pool=0, no_lensing=False, mult_magn=False):
+    def lens_alm(self, lib_alm, alm, lib_alm_out=None, mult_magn=False, use_Pool=0):
+        """Returns lensed harmonic coefficients from the unlensed input coefficients
+
+            Args:
+                lib_alm: *lensit.ffs_covs.ell_mat.ffs_alm* instance adapted to input *alm* array
+                alm: input unlensed flat-sky alm array
+                lib_alm_out(optional): output *ffs_alm* instance if difference from input
+                mult_magn(optional): optionally multiplies the real-space lensed map with the magnification det. if set.
+                use_Pool(optional): calculations are performed on the GPU if negative.
+
+            Returns:
+                lensed alm array
+
         """
-        """
-        if no_lensing and lib_alm_out is None: return alm
         if lib_alm_out is None: lib_alm_out = lib_alm
-        if no_lensing: return lib_alm_out.udgrade(lib_alm, alm)
         if use_Pool < 0:  # can we fit the full map on the GPU ?
             from lensit.gpu import lens_GPU
             GPU_res = np.array(lens_GPU.GPU_HDres_max)
@@ -287,20 +259,19 @@ class ffs_displacement(object):
             self.mult_wmagn(temp_map, inplace=True)
         return lib_alm_out.map2alm(temp_map)
 
-    def mult_wmagn(self, _map, inplace=False):
+    def mult_wmagn(self, m, inplace=False):
         if not inplace:
-            return self.get_det_magn() * _map
+            return self.get_det_magn() * m
         else:
-            _map *= self.get_det_magn()
+            m *= self.get_det_magn()
             return
 
-    def alm2lenmap(self, lib_alm, alm, use_Pool=0, no_lensing=False):
+    def alm2lenmap(self, lib_alm, alm, use_Pool=0):
         """Return deflected position-space map from its unlensed input harmonic coeffients.
 
             Args:
                 lib_alm: *lensit.ffs_covs.ell_mat.ffs_alm* instance adapted to input *alm* array
                 alm: input unlensed flat-sky alm array
-                no_lensing: the method reduces to alm2map if set.
 
             Returns:
                 position space map of shape *lib_alm.shape*
@@ -308,8 +279,6 @@ class ffs_displacement(object):
         """
         assert alm.shape == (lib_alm.alm_size,), (alm.shape, lib_alm.alm_size)
         assert lib_alm.ell_mat.shape == self.shape, (lib_alm.ell_mat.shape, self.shape)
-        if no_lensing:
-            return lib_alm.alm2map(alm)
         if use_Pool < 0:  # can we fit the full map on the GPU ? If we can't we send it the lens_map
             from lensit.gpu import lens_GPU
             GPU_res = np.array(lens_GPU.GPU_HDres_max)
@@ -347,31 +316,33 @@ class ffs_displacement(object):
                 del det
             return np.load(fname)
 
-    def pOlm(self, lib_qlm):
-        pass
 
     def get_kappa(self):
-        """
-        kappa map. kappa is -1/2 del phi
-        :return:
+        r"""Convergence map.
+
+            Returns:
+                :math:`\kappa = -\frac 12  \left( \frac{\partial \alpha_x}{\partial x} +  \frac{\partial \alpha_y}{\partial y} \right)`
+
         """
         dfxdx = PDP(self.get_dx(), axis=1, h=self.rmin[1], rule=self.rule)
         dfydy = PDP(self.get_dy(), axis=0, h=self.rmin[0], rule=self.rule)
         return -0.5 * (dfxdx + dfydy)
 
     def get_omega(self):
-        """
-        curl kappa map
-        :return:
+        """Field rotation map
+
+            Returns:
+                :math:`\kappa = \frac 12  \left( \frac{\partial \alpha_x}{\partial y} +  \frac{\partial \alpha_y}{\partial x} \right)`
+
         """
         dfxdy = PDP(self.get_dx(), axis=0, h=self.rmin[0], rule=self.rule)
         dfydx = PDP(self.get_dy(), axis=1, h=self.rmin[1], rule=self.rule)
         return 0.5 * (dfxdy - dfydx)
 
     def get_phi(self):
-        """
-        -1/2 Laplac phi = kappa
-        :return:
+        """Lensing (gradient) potential map
+
+
         """
         rfft_phi = np.fft.rfft2(self.get_kappa())
         rs = rfft_phi.shape
@@ -383,9 +354,9 @@ class ffs_displacement(object):
         return np.fft.irfft2(2 * rfft_phi.reshape(rs), self.shape)
 
     def get_Omega(self):
-        """
-        -1/2 Laplac Omega = omega
-        :return:
+        """Lensing (curl) potential map
+
+
         """
         rfft_Om = np.fft.rfft2(self.get_omega())
         rs = rfft_Om.shape
@@ -396,7 +367,7 @@ class ffs_displacement(object):
         rfft_Om[1:] /= (np.outer(ky ** 2, np.ones(rs[1])) + np.outer(np.ones(rs[0]), kx ** 2)).flatten()[1:]
         return np.fft.irfft2(2 * rfft_Om.reshape(rs), self.shape)
 
-    def get_inverse_crude(self, crude):
+    def _get_inverse_crude(self, crude):
         """Crude inversions of the displacement field
 
         """
@@ -419,8 +390,7 @@ class ffs_displacement(object):
         :return:
         """
         if HD_res is not None:
-            # FIXME : this upgrade can be done in GPU for use_Pool < 0
-            lib_dir = self.lib_dir if self.lib_dir is None else self.lib_dir + '/temp_fup'
+            lib_dir = self.lib_dir if self.lib_dir is None else os.path.join(self.lib_dir, 'temp_fup')
             f_up = ffs_displacement(rfft2_utils.upgrade_map(self.get_dx(), HD_res),
                                     rfft2_utils.upgrade_map(self.get_dy(), HD_res), self.lsides,
                                     LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k,
@@ -435,7 +405,7 @@ class ffs_displacement(object):
                                     NR_iter=self.NR_iter, lib_dir=self.lib_dir)
 
         if crude > 0:
-            return self.get_inverse_crude(crude)
+            return self._get_inverse_crude(crude)
 
         if NR_iter is None: NR_iter = self.NR_iter
 
@@ -445,7 +415,7 @@ class ffs_displacement(object):
             label = 'ffs_deflect::calculating inverse displ. field'
             for i, N in utils.enumerate_progress(range(self.N_chks), label=label):
                 # Doing chunk N
-                dx_inv_N, dy_inv_N = self.get_inverse_chk_N(N, NR_iter=NR_iter)
+                dx_inv_N, dy_inv_N = self._get_inverse_chk(N, NR_iter=NR_iter)
                 sLDs, sHDs = spliter_lib.get_slices_chk_N(N, self.LD_res, self.HD_res, self.buffers, inverse=True)
                 # Pasting it onto the full map
                 dx_inv[sHDs[0]] = dx_inv_N[sLDs[0]]
@@ -491,7 +461,7 @@ class ffs_displacement(object):
         else:
             assert 0
 
-    def get_inverse_chk_N(self, N, NR_iter=None):
+    def _get_inverse_chk(self, N, NR_iter=None):
         """Returns inverse displacement in chunk N
 
             NB: Uses periodic boundary conditions, which is not applicable to chunks, thus there
@@ -559,6 +529,13 @@ class ffs_displacement(object):
         Minv_yy = bic_filter(Minv_yy)
         for i in range(0, NR_iter):
             ex1, ey1 = bicubic.deflect_inverse(ex, ey, dx, dy, Minv_xx, Minv_yy, Minv_xy, Minv_yx)
+            if self.verbose: # prints some convergence info.
+                max_incr = max(np.max(np.abs(ex1 - ex)) * self.rmin[1], np.max(np.abs(ey1- ey)) * self.rmin[0])
+                max_incr *=  180. * 60. / np.pi
+                print('NR iter %s: max. increment size in NR deflection inverse %.2e amin'%(i + 1, max_incr))
+                rms_x = np.mean(np.abs(ex1- ex)) * self.rmin[1] / np.pi * 180. * 60.
+                rms_y = np.mean(np.abs(ey1- ey)) * self.rmin[0] / np.pi * 180. * 60.
+                print('           mean x, y rms increment : %.2e, %.2e amin'%(rms_x, rms_y))
             ex = ex1
             ey = ey1
         return ex * rmin1, ey * rmin0
@@ -594,7 +571,11 @@ class ffs_displacement(object):
 
 
 class ffs_id_displacement:
-    """ Displacement instance where there is actually no displacement. For convenience """
+    """Displacement instance where there is actually no displacement.
+
+        Mostly useful for testing purposes
+
+    """
 
     def __init__(self, shape, lsides):
         self.shape = shape
@@ -621,27 +602,31 @@ class ffs_id_displacement:
     def get_dy_ingridunits(self):
         return np.zeros(self.shape, dtype=float)
 
-    def lens_map(self, map, **kwargs):
-        if isinstance(map, str):
-            return np.load(map)
+    @staticmethod
+    def lens_map(m, **kwargs):
+        if isinstance(m, str):
+            return np.load(m)
         else:
-            return map
+            return m
 
     def clone(self):
         return ffs_id_displacement(self.shape, self.lsides)
 
-    def mult_wmagn(self, _map, inplace=False):
+    @staticmethod
+    def mult_wmagn(m, inplace=False):
         if inplace:
             return
         else:
-            return _map
+            return m
 
-    def lens_alm(self, lib_alm, alm, lib_alm_out=None, **kwargs):
+    @staticmethod
+    def lens_alm(lib_alm, alm, lib_alm_out=None, **kwargs):
         if lib_alm_out is not None:
             return lib_alm_out.udgrade(lib_alm, alm)
         return alm
 
-    def alm2lenmap(self, lib_alm, alm, **kwargs):
+    @staticmethod
+    def alm2lenmap(lib_alm, alm, **kwargs):
         return lib_alm.alm2map(alm)
 
     def get_det_magn(self):

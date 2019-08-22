@@ -49,13 +49,6 @@ double precision function eval(ftl_map, fx, fy, nx, ny)
                         tex2d(ftl_map, px+1, py+2,nx, ny), tex2d(ftl_map, px+2, py+2,nx, ny)) )
 end
 
-integer function mod_test(i, npix)
-    integer i, npix
-    mod_test = i
-    if (mod_test < 0) mod_test = mod(npix + mod_test, npix)
-    if (mod_test >= npix)  mod_test = mod(mod_test, npix)
-end function mod_test
-
 subroutine deflect(output, ftl_map, fx, fy, nx, ny, npts)
     ! input ftl_map should be bicubic prefiltered map
     ! fx, fy new coordinate in grid units.
@@ -75,6 +68,11 @@ subroutine deflect(output, ftl_map, fx, fy, nx, ny, npts)
 end subroutine deflect
 
 subroutine deflect_inverse(exo, eyo, ex, ey, dx, dy, minv_xx, minv_yy, minv_xy, minv_yx, nx, ny)
+    ! iterate deflection inversion estimate
+    ! ex, ey are current estimates in grid units, dx, dy the deflection in grid units
+    ! minv_XX are the magnification matrix inverse components
+    ! exo, eyo are the improved estimates.
+
     implicit none
     double precision, intent(in) :: dx(0:ny-1, 0:nx-1), dy(0:ny-1, 0:nx-1)
     double precision, intent(in) :: minv_xx(0:ny-1, 0:nx-1), minv_yy(0:ny-1, 0:nx-1)
@@ -104,34 +102,4 @@ subroutine deflect_inverse(exo, eyo, ex, ey, dx, dy, minv_xx, minv_yy, minv_xy, 
     end do
 
 end subroutine deflect_inverse
-
-subroutine deflect_inversev2(ex, ey, dx, dy, minv_xx, minv_yy, minv_xy, minv_yx, nx, ny)
-    implicit none
-    double precision, intent(in) :: dx(0:ny-1, 0:nx-1), dy(0:ny-1, 0:nx-1)
-    double precision, intent(in) :: minv_xx(0:ny-1, 0:nx-1), minv_yy(0:ny-1, 0:nx-1)
-    double precision, intent(in) :: minv_xy(0:ny-1, 0:nx-1), minv_yx(0:ny-1, 0:nx-1)
-    double precision, intent(out) :: ex(0:ny-1, 0:nx-1), ey(0:ny-1, 0:nx-1)
-    double precision fx, fy
-    double precision len_mxx, len_myy, len_mxy, len_myx
-    double precision ex_len_dx, ey_len_dy
-    double precision, external :: eval
-    integer x, y, nx, ny
-
-    do y = 0, nx -1
-        do x = 0, ny -1
-            fx = ex(y, x) + x
-            fy = ey(y, x) + y
-            ex_len_dx = ex(y, x) + eval(dx, fx, fy, nx, ny)
-            ey_len_dy = ey(y, x) + eval(dy, fx, fy, nx, ny)
-            len_mxx = eval(minv_xx, fx, fy, nx, ny)
-            len_myy = eval(minv_yy, fx, fy, nx, ny)
-            len_mxy = eval(minv_xy, fx, fy, nx, ny)
-            len_myx = eval(minv_yx, fx, fy, nx, ny)
-            ex(y, x) = ex(y, x) + len_mxx * ex_len_dx + len_mxy * ey_len_dy
-            ey(y, x) = ey(y, x) + len_myx * ex_len_dx + len_myy * ey_len_dy
-        end do
-    end do
-
-end subroutine deflect_inversev2
-
 
