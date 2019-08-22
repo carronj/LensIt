@@ -59,6 +59,22 @@ def cls_hash(cls, lmax=None, astype=np.float32):
 def npy_hash(npy_array, astype=np.float32):
     return hashlib.sha1(np.copy(npy_array.astype(astype), order='C')).hexdigest()
 
+def cl_inverse(cl):
+    """Array pseudo-inverse
+
+    """
+    clinv = np.zeros_like(cl)
+    clinv[np.where(cl != 0.)] = 1. / cl[np.where(cl != 0.)]
+    return clinv
+
+
+def extend_cl(_cl, ell_max, fill_val=0.):
+    cl = np.zeros(ell_max + 1)
+    cl[0:min([len(_cl), ell_max + 1])] = _cl[0:min([len(_cl), ell_max + 1])]
+    if min([len(_cl), ell_max + 1]) < len(cl):
+        cl[min([len(_cl), ell_max + 1]): len(cl)] = fill_val
+    return cl
+
 class timer:
     def __init__(self, verbose, prefix='', suffix=''):
         self.t0 = time.time()
@@ -384,7 +400,8 @@ def Freq(i, N):
      All entries of N must be even.
     """
     assert (np.all(N % 2 == 0)), "This routine only for even numbers of points"
-    return i - 2 * (i >= (N / 2)) * (i % (N / 2))
+    return i - 2 * (i >= (N // 2)) * (i % (N // 2))
+
 
 # --------------------------
 # Some simple-minded utils for verbose mode on :

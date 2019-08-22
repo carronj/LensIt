@@ -13,7 +13,7 @@ from lensit.ffs_covs import ell_mat
 from lensit.ffs_covs import ffs_specmat as SM
 from lensit.ffs_covs.ffs_specmat import get_unlPmat_ij, get_Pmat, get_datPmat_ij, \
     TQUPmats2TEBcls, get_rootunlPmat_ij, get_unlrotPmat_ij
-from lensit.misc.misc_utils import timer, cls_hash, npy_hash
+from lensit.misc.misc_utils import timer, cls_hash, npy_hash, cl_inverse, extend_cl
 from lensit.sims.sims_generic import hash_check
 
 typs = ['T', 'QU', 'TQU']
@@ -45,20 +45,6 @@ def xylms_to_phiOmegalm(lib_alm, Fxx, Fyy, Fxy, Fyx=None):
 
     # FIXME: is the sign of the following line correct ? (anyway result should be close to zero)
     return np.array([Fpp, FOO, FpO])
-
-
-def cl_inverse(cl):
-    clinv = np.zeros_like(cl)
-    clinv[np.where(cl != 0.)] = 1. / cl[np.where(cl != 0.)]
-    return clinv
-
-
-def extend_cl(_cl, ell_max, fill_val=0.):
-    cl = np.zeros(ell_max + 1)
-    cl[0:min([len(_cl), ell_max + 1])] = _cl[0:min([len(_cl), ell_max + 1])]
-    if min([len(_cl), ell_max + 1]) < len(cl):
-        cl[min([len(_cl), ell_max + 1]): len(cl)] = fill_val
-    return cl
 
 
 class ffs_diagcov_alm(object):
@@ -136,13 +122,6 @@ class ffs_diagcov_alm(object):
     def _get_Nell(self, field):
         return self.cls_noise[field.lower()][0]
 
-    def get_SN(self, typ):
-        """
-        Estimate of the number of independent modes with S / N > 1
-        Returns sum_ell Tr (bP)_ell Cov^-1_ell (bP)_ell Cov^-1_ell
-        """
-        assert 0
-        # FIXME
 
     def degrade(self, LD_shape, ellmin=None, ellmax=None, lib_dir=None, libtodegrade='sky', **kwargs):
         assert 0, 'FIXME'
