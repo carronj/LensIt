@@ -1,5 +1,6 @@
 # pytest --ignore=./scripts --ignore=./lensit
 import os
+import numpy as np
 assert 'LENSIT' in os.environ.keys()
 
 def test_lencmbs():
@@ -30,6 +31,17 @@ def test_cl():
     cl_unl, cl_len = li.get_fidcls(ellmax_sky=5000)
     assert len(cl_unl['tt'] == 5001)
     assert 1
+
+def test_biases():
+    import lensit as li
+    isocov = li.get_isocov('S4', 8, 8)
+    N0s = isocov.get_N0cls('QU', isocov.lib_skyalm)
+    assert np.all(N0s[0][:3000] >= 0.)
+    assert np.all(N0s[1][:3000] >= 0.)
+    ell, = np.where(isocov.lib_skyalm.get_Nell()[:3001] == 1)
+    assert np.all(N0s[0][ell] == 0.)
+    assert np.all(N0s[1][ell] == 0.)
+
 
 if __name__ == '__main__':
     test_lencmbs()

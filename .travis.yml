@@ -5,6 +5,11 @@ dist: xenial   # required for Python >= 3.7
 git:
   depth: false
 
+# safelist
+branches:
+  only:
+  - lensitdev
+
 matrix:
   include:
     - name: "GCC6"
@@ -34,6 +39,7 @@ install:
   - mkdir -p gfortran-symlinks
   - ln -s /usr/bin/gfortran-$GCC_VERSION gfortran-symlinks/gfortran
   - export PATH=$PWD/gfortran-symlinks:$PATH
+  - export LENSIT=$PWD
   - gfortran --version
   - pip install -e .
 
