@@ -526,12 +526,22 @@ class ffs_diagcov_alm(object):
             ret[_i] = self.lib_datalm.almxfl(alms[_i], _cl)
         return ret
 
-    def get_MLlms(self, typ, datmaps, use_cls_len=True, use_Pool=0, **kwargs):
+    def get_mllms(self, typ, datmaps, use_cls_len=True, use_Pool=0, **kwargs):
+        r"""Returns maximum likelihood sky CMB modes.
+
+            This instance uses isotropic filtering
+
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                datmaps: data real-space maps array
+                use_cls_len: use lensed cls in filtering (defaults to True)
+
+            Returns:
+                T,E,B alm array
+
+
         """
-        Returns maximum likelihood sky CMB modes. (P B^t F^t Cov^-1 = (P^-1 + B^F^t N^{-1} F B)^{-1} F B N^{-1} d)
-        Outputs are sky-shaped TEB alms
-        """
-        ilms = self.apply_conddiagcl(typ, np.array([self.lib_datalm.map2alm(_m) for _m in datmaps]),
+        ilms = self.apply_conddiagcl(typ, np.array([self.lib_datalm.map2alm(m) for m in datmaps]),
                                      use_Pool=use_Pool, use_cls_len=use_cls_len)
         cmb_cls = self.cls_len if use_cls_len else self.cls_unl
         for i in range(len(typ)): ilms[i] = self.lib_datalm.almxfl(ilms[i], self.cl_transf)
@@ -1897,11 +1907,11 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         return ret
 
     def get_iblms(self, typ, datalms, use_cls_len=False, use_Pool=0, **kwargs):
-        """Inverse-variance filters input CMB maps
+        r"""Inverse-variance filters input CMB maps
 
-            Produces :math`B^t F^t \rm{Cov_\alpha}^{-1}X^{\rm dat}` (inputs to quadratic estimator routines)
+            Produces :math:`B^t \rm{Cov_\alpha}^{-1}X^{\rm dat}` (inputs to quadratic estimator routines)
 
-            The covariance matrix here includes lensing deflections :math:`\alpha` as given by the *self.f* *self.f_inv* instances.
+            The covariance matrix here includes the lensing deflection field :math:`\alpha` as given by the *self.f* and *self.f_inv* attributes
 
         """
         assert use_cls_len == False, 'not implemented'
@@ -1921,8 +1931,8 @@ class ffs_lencov_alm(ffs_diagcov_alm):
     def _get_iblms_v2(self, typ, datalms, use_cls_len=False, use_Pool=0, **kwargs):
         # some weird things happening with very low noise T ?
         assert use_cls_len == False, 'not implemented'
-        MLTQUlms = SM.TEB2TQUlms(typ, self.lib_skyalm,self.get_MLlms_new(typ, datalms,
-                            use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
+        MLTQUlms = SM.TEB2TQUlms(typ, self.lib_skyalm,self._get_mllms(typ, datalms,
+                                                                      use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
         ret = self._mltqulms2ibtqulms(typ, MLTQUlms, datalms, use_Pool=use_Pool)
         return ret, -1  # No iterations info implemented
 
@@ -1939,10 +1949,26 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         return ret
 
 
-    def get_MLlms(self, typ, datmaps, use_Pool=0, use_cls_len=False, **kwargs):
-        assert 0
+    def get_mllms(self, typ, datmaps, use_Pool=0, use_cls_len=False, **kwargs):
+        r"""Returns maximum likelihood sky CMB modes.
 
-    def get_MLlms_new(self, typ, datalms, use_Pool=0, use_cls_len=False, **kwargs):
+            This instance uses anisotropic filtering, with lensing deflections as defined by
+            *self.f* and *self.f_inv*
+
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                datmaps: data real-space maps array
+                use_cls_len: use lensed cls in filtering (defaults to True)
+
+            Returns:
+                T,E,B alm array
+
+
+        """
+        return self._get_mllms(typ, np.array([self.lib_datalm.map2alm(m) for m in datmaps]),
+                               use_cls_len=use_cls_len, use_Pool=use_Pool)
+
+    def _get_mllms(self, typ, datalms, use_Pool=0, use_cls_len=False, **kwargs):
         assert np.all(self.cls_noise['t'] == self.cls_noise['t'][0]), 'adapt ninv filt ideal for coloured cls(easy)'
         assert np.all(self.cls_noise['q'] == self.cls_noise['q'][0]), 'adapt ninv filt ideal for coloured cls(easy'
         assert np.all(self.cls_noise['u'] == self.cls_noise['q'][0]), 'adapt ninv filt ideal for coloured cls(easy'
