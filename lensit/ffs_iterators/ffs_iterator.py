@@ -194,11 +194,13 @@ class ffs_iterator(object):
         assert rlm.ndim == 1 and rlm.size == 2 * self.lib_qlm.alm_size, (rlm.ndim, rlm.size)
         return rlm
 
-    def cache_cl(self, fname, cl):
+    @staticmethod
+    def cache_cl(fname, cl):
         assert cl.ndim == 1
         np.savetxt(fname, cl)
 
-    def load_cl(self, fname):
+    @staticmethod
+    def load_cl(fname):
         assert os.path.exists(fname), fname
         return np.loadtxt(fname)
 
@@ -362,7 +364,7 @@ class ffs_iterator(object):
         temp = self.cov.apply_Rts(self.type, maps)
         return ffs_specmat.TEB2TQUlms(self.type, self.cov.lib_skyalm, temp)
 
-    def calc_gradPlikPdet(self, it, key):
+    def calc_gradplikpdet(self, it, key):
         """Calculates the likelihood gradient (quadratic and mean-field parts)
 
         """
@@ -538,7 +540,7 @@ class ffs_iterator(object):
             self.get_gradPpri(it, key, cache_only=True)
         self.barrier()
         # Calculation of the likelihood term, involving the det term over MCs :
-        irrelevant = self.calc_gradPlikPdet(it, key)
+        irrelevant = self.calc_gradplikpdet(it, key)
         self.barrier()  # Everything should be on disk now.
         if self.PBSRANK == 0:
             incr,steplength = self.build_incr(it, key, self.load_total_grad(it - 1, key))
@@ -600,7 +602,7 @@ class ffs_iterator_cstMF(ffs_iterator):
                                                  **kwargs)
         self.MF_qlms = MF_qlms
 
-    def calc_gradPlikPdet(self, it, key):
+    def calc_gradplikpdet(self, it, key):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
         fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
@@ -665,10 +667,10 @@ class ffs_iterator_pertMF(ffs_iterator):
                                               lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
                                               init_barrier=init_barrier)
 
-    def get_MFresp(self, key):
+    def get_mfresp(self, key):
         return self.isocov.get_MFresplms(self.type, self.lib_qlm, use_cls_len=False)[{'p': 0, 'o': 1}[key.lower()]]
 
-    def calc_gradPlikPdet(self, it, key):
+    def calc_gradplikpdet(self, it, key):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         fname_likterm = os.path.join(self.lib_dir, 'qlm_grad%slik_it%03d.npy' % (key.upper(), it - 1))
         fname_detterm = os.path.join(self.lib_dir, 'qlm_grad%sdet_it%03d.npy' % (key.upper(), it - 1))
@@ -678,7 +680,7 @@ class ffs_iterator_pertMF(ffs_iterator):
 
         assert self.is_previous_iter_done(it, key)
         # Identical MF here
-        self.cache_qlm(fname_detterm, self.load_qlm(self.get_MFresp(key.lower()) * self.get_Plm(it - 1, key.lower())))
+        self.cache_qlm(fname_detterm, self.load_qlm(self.get_mfresp(key.lower()) * self.get_Plm(it - 1, key.lower())))
         self.cov.set_ffi(self._load_f(it - 1, key), self._load_finv(it - 1, key))
         mchain = multigrid.multigrid_chain(self.opfilt, self.type, self.chain_descr, self.cov,
                                            no_deglensing=self.nodeglensing)
@@ -742,7 +744,7 @@ class ffs_iterator_simMF(ffs_iterator):
         self.barrier()
         return phas_pix, phas_cmb
 
-    def calc_gradPlikPdet(self, it, key, callback='default_callback'):
+    def calc_gradplikpdet(self, it, key, callback='default_callback'):
         """Caches the det term for iter via MC sims, together with the data one, with MPI maximal //isation.
 
         """

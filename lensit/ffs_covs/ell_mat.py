@@ -69,10 +69,6 @@ class ell_mat:
     def hash_dict(self):
         return {'shape': self.shape, 'lsides': self.lsides}
 
-    def Nyq(self, axis):
-        assert axis in [0, 1], axis
-        return np.pi / self.lsides[axis] * self.shape[axis]
-
     @staticmethod
     def k2ell(k):
         r"""Mapping of 2d-frequency to multipole :math:`\ell`
@@ -90,7 +86,8 @@ class ell_mat:
         return self.get_ellmat()[item]
 
     def get_pixwinmat(self):
-        r""" sin(kx Lcell_x / 2) sin (k_y Lcell_y / 2 )
+        r"""Pixel window function rfft array :math:`\sin(k_x l_{\rm cell, x} / 2) \sin (k_y l_{\rm cell, y} / 2 )`
+        
 
         """
         ky = (np.pi/self.shape[0]) * Freq(np.arange(self.shape[0]), self.shape[0])
@@ -103,7 +100,7 @@ class ell_mat:
         return np.outer(rety,retx)
 
     def get_ellmat(self, ellmax=None):
-        r"""Returns the matrix containing the multipole ell assigned to 2d-frequency k = (kx,ky)
+        r"""Returns the matrix containing the multipole ell assigned to 2d-frequency :math:`k = (k_x,k_y)`
 
         """
         if self.cache == 0:
@@ -122,7 +119,7 @@ class ell_mat:
             return np.load(fname, mmap_mode=self.mmap_mode)
 
     def get_phasemat(self, ellmax=None):
-        r"""Returns the matrix containing the phase k = 'k' e^i phi
+        r"""Returns the rfft array containing the phase :math:`\phi` where 2d-frequencies are :math:`k = |k| e^{i \phi}`
 
         """
         if self.cache == 0:
@@ -145,7 +142,7 @@ class ell_mat:
             return np.load(fname, mmap_mode=self.mmap_mode)
 
     def get_e2iphi_mat(self, cache_only=False):
-        r"""Returns the matrix containing the phase e^{2 i phi}
+        r"""Returns the matrix containing the phase :math:`e^{2 i \phi}`
 
         """
         if self.cache == 0:
@@ -161,9 +158,13 @@ class ell_mat:
         return None if cache_only else np.load(fname, mmap_mode=self.mmap_mode)
 
     def degrade(self, LDshape, lib_dir=None):
+        """Returns an *ell_mat* instance on the same physical flat-sky patch but a degraded sampling resolution
+
+        """
         if np.all(LDshape >= self.shape): return self
-        if lib_dir is None: lib_dir = os.path.join(self.lib_dir, 'degraded%sx%s' % (LDshape[0], LDshape[1]))
-        return ell_mat(lib_dir, LDshape, self.lsides)
+        if lib_dir is None:
+            lib_dir = os.path.join(self.lib_dir, 'degraded%sx%s' % (LDshape[0], LDshape[1]))
+        return ell_mat(lib_dir, LDshape, self.lsides, cache=self.cache)
 
     def get_cossin_2iphi_mat(self):
         """
@@ -188,7 +189,7 @@ class ell_mat:
         counts[0:len(s_counts)] += s_counts
         return counts
 
-    def get_ellcounts(self):
+    def _get_ellcounts(self):
         r"""Number of non-redundant entries in freq map. for each ell, in the rfftmap.
 
             Corresponds roughly to :math:`\ell + \frac 1/2`.
@@ -197,8 +198,12 @@ class ell_mat:
         return self._ell_counts
 
     def get_Nell(self):
-        # Analog of 2ell + 1 on the flat sky
-        Nell = 2 * self.get_ellcounts()
+        """Mode number counts on the flat-sky patch.
+
+            Goes roughly like :math:`2\ell + 1`
+
+        """
+        Nell = 2 * self._get_ellcounts()
         for ell in self.get_ellmat()[self.rfft2_reals()]:
             Nell[ell] -= 1
         return Nell
@@ -207,9 +212,9 @@ class ell_mat:
         return self._nz_counts
 
     def map2cl(self, m, m2=None):
-        r"""Returns Cl estimates from a map.
+        r"""Returns s pseudo-:math:`C_\ell` estimate from a map.
 
-            Returns a cross-cl if m2 is set. Must have compatible shape.
+            Returns a cross-:math:`C_\ell` if m2 is set. Must have compatible shape.
 
         """
         assert m.shape == self.shape, m.shape
@@ -219,7 +224,7 @@ class ell_mat:
         return self._rfft2cl(np.fft.rfft2(m))
 
     def _rfft2cl(self, rfftmap, rfftmap2=None):
-        """Returns Cl estimates from a rfftmap.
+        """Returns a :math:`C_\ell` estimate from a rfftmap.
 
             (e.g. np.fft.rfft2(sim) where sim is the output of this library)
             Must have the same shape then self.rshape
@@ -483,10 +488,6 @@ class ffs_alm(object):
             return
         else:
             return alm * fl[self.reduced_ellmat()]
-
-    def get_unique_ells(self, return_index=False, return_inverse=False, return_counts=False):
-        return np.unique(self.reduced_ellmat(),
-                         return_index=return_index, return_inverse=return_inverse, return_counts=return_counts)
 
     def get_Nell(self):
         r"""Mode number counts on the flat-sky patch.
