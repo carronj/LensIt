@@ -32,13 +32,13 @@ def displacement_frompolm(lib_plm, plm, olm, **kwargs):
 
 
 class ffs_displacement(object):
-    """Flat-sky  deflection-field class
+    r"""Flat-sky deflection-field class
 
         Used to perform lensing on maps and to obtain the inverse deflection for iterative lensing estimation
 
         Args:
-            dx: deflection field, x-component (2d-array or path to array on disk)
-            dy: deflection field, y-component (2d-array or path to array on disk)
+            dx: deflection field, x-component :math:`\alpha_x` (2d-array or path to array on disk)
+            dy: deflection field, y-component :math:`\alpha_y` (2d-array or path to array on disk)
             lsides(tuple): physical size in radians of the flat-sky patch.
             LD_res(optional): to perform inversion or lensing large maps are split into chunks sized these powers of two
             verbose(optional): various prints out
@@ -282,7 +282,7 @@ class ffs_displacement(object):
     def get_det_magn(self):
         r"""Returns magnification determinant map
 
-            :math:`\det \begin{pmatrix} 1 + \frac{\partial \alpha_x}{\partial x} & \frac{\partial \alpha_x}{\partial y}
+            :math:`|M| = \det \begin{pmatrix} 1 + \frac{\partial \alpha_x}{\partial x} & \frac{\partial \alpha_x}{\partial y}
             \\ \frac{\partial \alpha_y}{\partial x} & 1 + \frac{\partial \alpha_y}{\partial y} \end{pmatrix}`
 
         """
@@ -376,7 +376,7 @@ class ffs_displacement(object):
             assert 0, crude
 
     def get_inverse(self, NR_iter=None, use_Pool=0, crude=0, HD_res=None):
-        """Build deflection field inverse
+        """Builds deflection field inverse
 
             The inverse deflection is defined by the condition that forward-deflected points remap to the original points
             under the inverse displacement.
@@ -386,6 +386,8 @@ class ffs_displacement(object):
                 use_Pool(optional): Send the calculation to the GPU if negative
                 crude(optional): Uses some faster but crude method for the inverse (check *get_inverse_crude*)
                 HD_res(optional): Set this to perform the inversion at higher resolution (tuple of powers of two)
+
+            Returns: inverse deflection field as *ffs_displacement* instance
 
         """
         if HD_res is not None:
@@ -542,9 +544,9 @@ class ffs_displacement(object):
         dy = rfft2_utils.degrade(self.get_dy(), LD_shape)
         return ffs_displacement(dx, dy, self.lsides, **kwargs)
 
-    def get_MF(self, lib_qlm):
-        """
-        :return: The (N0-like) unnormalised mean field for noisefree deflection estimates
+    def get_noisefreemf(self, lib_qlm):
+        """Deflection induced mean-field estimate for a noisefree, isotropic experimental setting
+
         """
         alm_magn = lib_qlm.map2alm(1. / self.get_det_magn())
         alm_d0 = lib_qlm.map2alm(self.get_dy())
