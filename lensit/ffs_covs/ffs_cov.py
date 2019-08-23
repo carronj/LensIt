@@ -403,7 +403,7 @@ class ffs_diagcov_alm(object):
                 typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
                 lib_qlm: *ffs_alm* instance describing the lensing alm arrays
                 alwfcl: normalization of the Wiener-filter quadratic estimate (i.e. Wiener-filter times inverse response)
-                clsobs_deconv:
+                clsobs_deconv(dict): emprical beam-deconvolved CMB data spectra.
 
             Returns:
                 (3, 3, lmax +1) array with bias :math:`C_\ell^{ij}, \textrm{ with }i,j \in (T,E,B)`
