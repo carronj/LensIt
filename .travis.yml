@@ -41,6 +41,6 @@ install:
   - export PATH=$PWD/gfortran-symlinks:$PATH
   - export LENSIT=$PWD
   - gfortran --version
-  - pip install -e . --user
+  - pip install -e .
 
 script: pytest --ignore=./scripts --ignore=./lensit
