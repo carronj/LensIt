@@ -43,4 +43,4 @@ install:
   - gfortran --version
   - pip install -e .
 
-script: pytest
+script: pytest --ignore=./scripts --ignore=./lensit
