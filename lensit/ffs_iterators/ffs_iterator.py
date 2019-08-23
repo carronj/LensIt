@@ -668,7 +668,7 @@ class ffs_iterator_pertMF(ffs_iterator):
                                               init_barrier=init_barrier)
 
     def get_mfresp(self, key):
-        return self.isocov.get_MFresplms(self.type, self.lib_qlm, use_cls_len=False)[{'p': 0, 'o': 1}[key.lower()]]
+        return self.isocov.get_mfresplms(self.type, self.lib_qlm, use_cls_len=False)[{'p': 0, 'o': 1}[key.lower()]]
 
     def calc_gradplikpdet(self, it, key):
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
