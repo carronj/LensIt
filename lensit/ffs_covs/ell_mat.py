@@ -87,7 +87,7 @@ class ell_mat:
 
     def get_pixwinmat(self):
         r"""Pixel window function rfft array :math:`\sin(k_x l_{\rm cell, x} / 2) \sin (k_y l_{\rm cell, y} / 2 )`
-        
+
 
         """
         ky = (np.pi/self.shape[0]) * Freq(np.arange(self.shape[0]), self.shape[0])
@@ -426,9 +426,6 @@ class ffs_alm(object):
         filt_func = lambda ell: (self.filt_func(ell) & (ell <= ellmax) & (ell >= ellmin))
         return ffs_alm(LD_ellmat, filt_func=filt_func)
 
-    def get_pixwin(self):
-        return np.sqrt(self.bin_realpart_inell(self.ell_mat.get_pixwinmat()[self._cond()] ** 2))
-
     def fsky(self):
         return np.prod(self.ell_mat.lsides) / 4. / np.pi
 
@@ -455,11 +452,14 @@ class ffs_alm(object):
     def map2rfft(self, _map):
         return np.fft.rfft2(_map)
 
-    def map2alm(self, _map, lib_almin=None):
+    def map2alm(self, m, lib_almin=None):
+        """Computes alm array of input position-space map
+
+        """
         if lib_almin is None or self.shape == lib_almin.shape:
-            return self.rfftmap2alm(self.map2rfft(_map))
+            return self.rfftmap2alm(self.map2rfft(m))
         else:
-            return self.rfftmap2alm(self.map2rfft(supersample(_map, lib_almin.ell_mat.shape)))
+            return self.rfftmap2alm(self.map2rfft(supersample(m, lib_almin.ell_mat.shape)))
 
     def alm2rfft(self, alm):
         assert alm.size == self.alm_size, alm.size
@@ -474,6 +474,10 @@ class ffs_alm(object):
         return ret
 
     def alm2map(self, alm, lib_almout=None):
+        """Returns position-space map from alm array
+
+
+        """
         if lib_almout is None:
             assert alm.size == self.alm_size, alm.size
             return np.fft.irfft2(self.alm2rfft(alm), self.ell_mat.shape)
@@ -481,6 +485,10 @@ class ffs_alm(object):
             return lib_almout.alm2map(lib_almout.udgrade(self, alm))
 
     def almxfl(self, alm, fl, inplace=False):
+        """Multiply :flat-sky math:`a_{\ell lm}` array with isotropic function :math:`f_\ell`
+
+
+        """
         assert alm.size == self.alm_size, (alm.size, self.alm_size)
         assert len(fl) > self.ellmax
         if inplace:
