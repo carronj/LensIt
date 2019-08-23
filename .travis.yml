@@ -1,14 +1,14 @@
+# safelist
+branches:
+  only:
+  - lensitdev
+
 language: python
 
 dist: xenial   # required for Python >= 3.7
 
 git:
   depth: false
-
-# safelist
-branches:
-  only:
-  - lensitdev
 
 matrix:
   include:
