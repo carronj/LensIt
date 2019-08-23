@@ -15,7 +15,9 @@ Welcome to lensit's documentation!
    :caption: Contents:
 
    iterators
+   deflect
    ellmat
+
 
 Indices and tables
 ==================

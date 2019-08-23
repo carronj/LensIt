@@ -159,8 +159,8 @@ class ffs_diagcov_alm(object):
         return get_rootunlPmat_ij(typ, self.lib_skyalm, cls_cmb, i, j)
 
     def get_delensinguncorrbias(self, lib_qlm, clpp_rec, wNoise=True, wCMB=True, recache=False, use_cls_len=True):
-        """
-        Calculate delensing bias given a reconstructed potential map with spectum clpp_rec (includes N0, etc),
+        """Calculate delensing bias given a reconstructed potential map with spectum clpp_rec (includes N0, etc),
+
         (** clpp_rec should not contain clpp if what you really want is the bias ** Put clpp + N0 if what you want is the
          perturbative delensing)
         assuming the noise is independent from the data maps, and the modes given by lib_qlm are reconstructed.

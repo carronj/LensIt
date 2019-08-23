@@ -11,7 +11,9 @@ from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
 from lensit.pbs import pbs
 from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam
 
-LENSITDIR = os.environ.get('LENSIT', './')
+assert 'LENSIT' in os.environ.keys(), 'Set LENSIT env. variable to somewhere safe to write'
+LENSITDIR = os.environ.get('LENSIT')
+#FIXME:
 CLSPATH = os.path.join(LENSITDIR, 'inputs', 'cls')
 
 ellmax_sky = 6000

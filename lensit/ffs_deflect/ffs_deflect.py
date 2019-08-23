@@ -1,5 +1,3 @@
-#FIXME: inverse operation to implement
-
 from __future__ import print_function
 
 import hashlib
@@ -11,32 +9,8 @@ from lensit.bicubic import bicubic
 from lensit.misc import map_spliter
 from lensit.misc import misc_utils as utils
 from lensit.misc import rfft2_utils
-from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq
+from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPowerof2, Freq, flatindices
 from lensit.pbs import pbs
-
-
-def get_GPUbuffers(GPU_res):
-    """
-    Defines the splitting of a big map to smaller chunks if above GPU memory.
-    :param GPU_res: 2 ** GPU_res is the supported size of the map on the GPU.
-    """
-    assert len(GPU_res) == 2
-    # This forces the use of power-of-two-sized input maps
-    LD_res = (GPU_res[0] - 1, GPU_res[1] - 1)
-    buffers = (2 ** (LD_res[0] - 1), 2 ** (LD_res[1] - 1))
-    return LD_res, buffers
-    # FIXME : It looks like the lens and inverse routines on GPU do not work properly for non-power of two shapes,
-    # FIXME : but cant figure out exactly why (textures)
-
-
-def FlatIndices(coord, shape):
-    """
-    Returns the indices in a flattened 'C' convention array of multidimensional indices
-    """
-    ndim = len(shape)
-    idc = coord[ndim - 1, :]
-    for j in range(1, ndim): idc += np.prod(shape[ndim - j:ndim]) * coord[ndim - 1 - j, :]
-    return idc
 
 
 def displacement_fromplm(lib_plm, plm, **kwargs):
@@ -58,13 +32,25 @@ def displacement_frompolm(lib_plm, plm, olm, **kwargs):
 
 
 class ffs_displacement(object):
-    """
-    Full flat sky displacement library. Typically divides things in chunks for the lensing operation
-    and finding the inverse mapping.
+    """Flat-sky  deflection-field class
+
+        Used to perform lensing on maps and to obtain the inverse deflection for iterative lensing estimation
+
+        Args:
+            dx: deflection field, x-component (2d-array or path to array on disk)
+            dy: deflection field, y-component (2d-array or path to array on disk)
+            lsides(tuple): physical size in radians of the flat-sky patch.
+            LD_res(optional): to perform inversion or lensing large maps are split into chunks sized these powers of two
+            verbose(optional): various prints out
+            NR_iter(optional): Number of Newton-Raphson iterations in deflection inversion.
+                                Default works very well for LCDM-like deflection fields
+            cache_magn(optional): optionally caches magnification determinant matrix when needed
+            lib_dir(optional): required only if cache_magn is set
+
+
     """
 
-    def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=False, spline_order=3, rule_for_derivative='4pts',
-                 NR_iter=3, lib_dir=None, cache_magn=False):
+    def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=False, NR_iter=3, lib_dir=None, cache_magn=False):
         """
          dx and dy arrays or path to .npy arrays, x and y displacements. (displaced map(x) = map(x + d(x))
          Note that the first index is 'y' and the second 'x'
@@ -77,7 +63,7 @@ class ffs_displacement(object):
         self.dy = dy
 
         self.verbose = verbose
-        self.rule = rule_for_derivative  # rule for derivatives
+        self.rule = '4pts'  # rule for derivatives
 
         # Checking inputs :
         self.shape = self.get_dx().shape
@@ -104,8 +90,6 @@ class ffs_displacement(object):
         self.N_chks = int(np.prod(2 ** (np.array(self.HD_res) - np.array(self.LD_res))))  # Number of chunks on each side.
         if verbose:
             print('rank %s, ffs_deflect::buffers size, chk_shape' % pbs.rank, (buffer0, buffer1), self.chk_shape)
-
-        self.k = spline_order  # order of the spline for displacement interpolation
 
         self.NR_iter = NR_iter  # Number of NR iterations for inverse displacement.
         self.lib_dir = lib_dir
@@ -142,46 +126,51 @@ class ffs_displacement(object):
     def get_dy_ingridunits(self):
         return self.get_dy() / self.rmin[0]
 
-    def lens_map_crude(self, map, crude):
-        """
-        Crudest lens operation, just rounding to nearest pixel.
-        :param map:
-        :return:
+    def lens_map_crude(self, m, crude):
+        """Performs crude approximations to lens operation
+
+            Args:
+                m: map to lens (2d-array of the right shape)
+                crude: approximation method key
+
+            Now supported are *crude* = 1 (nearest pixel rouding) or 2 (first order series expansion in deflection)
+
         """
         if crude == 1:
             # Plain interpolation to nearest pixel
             ly, lx = np.indices(self.shape)
 
             lx = np.int32(np.round((lx + self.get_dx_ingridunits()).flatten())) % self.shape[1]  # Periodicity
-            ly = np.int32(np.round((ly + self.get_dy_ingridunits())).flatten()) % self.shape[0]  # Periodicity
-            return self.load_map(map).flatten()[FlatIndices(np.array([ly, lx]), self.shape)].reshape(self.shape)
+            ly = np.int32(np.round((ly + self.get_dy_ingridunits())).flatten()) % self.shape[0]
+            return self.load_map(m).flatten()[flatindices(np.array([ly, lx]), self.shape)].reshape(self.shape)
         elif crude == 2:
             # First order series expansion
-            return self.load_map(map) \
-                   + PDP(self.load_map(map), axis=0, h=self.rmin[0],
-                         rule=self.rule) * self.get_dy() \
-                   + PDP(self.load_map(map), axis=1, h=self.rmin[1],
-                         rule=self.rule) * self.get_dx()
+            return self.load_map(m) \
+                   + PDP(self.load_map(m), axis=0, h=self.rmin[0], rule=self.rule) * self.get_dy() \
+                   + PDP(self.load_map(m), axis=1, h=self.rmin[1], rule=self.rule) * self.get_dx()
         else:
             assert 0, crude
 
-    def lens_map(self, map, use_Pool=0, crude=0, do_not_prefilter=False):
-        """
-        Lens the input map according to the displacement fields dx dy. 'map' typically could be (8192 * 8192) np array,
-        or the path to the array on disk.
+    def lens_map(self, m, use_Pool=0, crude=0, do_not_prefilter=False):
+        """Lens the input flat-sky map, using a bicubic spline interpolation algorithm
 
-        Does this by splitting the job in chunks (of typically (256 * 256), as specified by the LD_res parameters)
-        allowing a buffer size to ensure the junctions are properly performed.
+            The task is split in chunks (of typically (2048 * 2048) or specified by the LD_res parameters)
+            with a buffer size to ensure the junctions are properly performed.
 
-        Set use_Pool to a power of two to use explicit threading via the multiprocessing module, or, if < 0,
-        to perform the operation on the GPU.
-        if > 0 'use_Pool' ** 2 is the number of threads. On laptop and Darwin use_Pool = 16 has the best performances.
-        It use_Pool is set, then 'map' must be the path to the map to lens or map will be saved to disk.
+            Args:
+                 m: real-space map to deflect. numpy array, or the path to an array on disk.
+                 use_Pool(optional): set this to < 0 to perform the operation on the GPU
+                 crude(optional): uses an alternative crude approximation to lensing if set (check *lens_map_crude*)
+                 do_not_prefilter(optional): sidesteps the bicubic interpolation prefiltering step.
+                                             Only use this if you know what you are doing
+
+            Returns: deflected real-space map (array)
+
+
         """
-        # TODO : could evaluate the splines at low res.
-        assert self.load_map(map).shape == self.shape, (self.load_map(map).shape, self.shape)
+        assert self.load_map(m).shape == self.shape, (self.load_map(m).shape, self.shape)
         if crude > 0:
-            return self.lens_map_crude(map, crude)
+            return self.lens_map_crude(m, crude)
         if use_Pool < 0:
             # use of GPU :
             try:
@@ -191,9 +180,9 @@ class ffs_displacement(object):
 
             GPU_res = np.array(lens_GPU.GPU_HDres_max)
             if np.all(np.array(self.HD_res) <= GPU_res):
-                return lens_GPU.lens_onGPU(map, self.get_dx_ingridunits(), self.get_dy_ingridunits(),
+                return lens_GPU.lens_onGPU(m, self.get_dx_ingridunits(), self.get_dy_ingridunits(),
                                            do_not_prefilter=do_not_prefilter)
-            LD_res, buffers = get_GPUbuffers(GPU_res)
+            LD_res, buffers = lens_GPU.get_GPUbuffers(GPU_res)
             assert np.all(np.array(buffers) > (np.array(self.buffers) + 5.)), (buffers, self.buffers)
             Nchunks = 2 ** (np.sum(np.array(self.HD_res) - np.array(LD_res)))
             lensed_map = np.empty(self.shape)  # Output
@@ -209,7 +198,7 @@ class ffs_displacement(object):
                 for sLD, sHD in zip(sLDs, sHDs):
                     dx_N[sLD] = self.get_dx()[sHD] / self.rmin[1]
                     dy_N[sLD] = self.get_dy()[sHD] / self.rmin[0]
-                    unl_CMBN[sLD] = self.load_map(map)[sHD]
+                    unl_CMBN[sLD] = self.load_map(m)[sHD]
                 sLDs, sHDs = spliter_lib.get_slices_chk_N(N, LD_res, self.HD_res, buffers, inverse=True)
                 lensed_map[sHDs[0]] = lens_GPU.lens_onGPU(unl_CMBN, dx_N, dy_N, do_not_prefilter=do_not_prefilter)[sLDs[0]]
             return lensed_map
@@ -217,10 +206,10 @@ class ffs_displacement(object):
         elif use_Pool == 0 or use_Pool == 1:
             assert self.shape[0] == self.shape[1], self.shape
             if do_not_prefilter:
-                filtmap = self.load_map(map).astype(np.float64)
+                filtmap = self.load_map(m).astype(np.float64)
             else:
                 # TODO : may want to add pyFFTW here as well
-                filtmap = np.fft.rfft2(self.load_map(map))
+                filtmap = np.fft.rfft2(self.load_map(m))
                 w0 = 6. / (2. * np.cos(2. * np.pi * np.fft.fftfreq(filtmap.shape[0])) + 4.)
                 filtmap *= np.outer(w0, w0[0:filtmap.shape[1]])
                 filtmap = np.fft.irfft2(filtmap, self.shape)
@@ -291,7 +280,10 @@ class ffs_displacement(object):
                                  use_Pool=use_Pool, do_not_prefilter=True)
 
     def get_det_magn(self):
-        """Returns entire magnification determinant map.
+        r"""Returns magnification determinant map
+
+            :math:`\det \begin{pmatrix} 1 + \frac{\partial \alpha_x}{\partial x} & \frac{\partial \alpha_x}{\partial y}
+            \\ \frac{\partial \alpha_y}{\partial x} & 1 + \frac{\partial \alpha_y}{\partial y} \end{pmatrix}`
 
         """
         # FIXME : bad
@@ -329,10 +321,10 @@ class ffs_displacement(object):
         return -0.5 * (dfxdx + dfydy)
 
     def get_omega(self):
-        """Field rotation map
+        r"""Field rotation map
 
             Returns:
-                :math:`\kappa = \frac 12  \left( \frac{\partial \alpha_x}{\partial y} +  \frac{\partial \alpha_y}{\partial x} \right)`
+                :math:`\omega = \frac 12  \left( \frac{\partial \alpha_x}{\partial y} -  \frac{\partial \alpha_y}{\partial x} \right)`
 
         """
         dfxdy = PDP(self.get_dx(), axis=0, h=self.rmin[0], rule=self.rule)
@@ -367,45 +359,50 @@ class ffs_displacement(object):
         rfft_Om[1:] /= (np.outer(ky ** 2, np.ones(rs[1])) + np.outer(np.ones(rs[0]), kx ** 2)).flatten()[1:]
         return np.fft.irfft2(2 * rfft_Om.reshape(rs), self.shape)
 
-    def _get_inverse_crude(self, crude):
+    def get_inverse_crude(self, crude):
         """Crude inversions of the displacement field
+
+            Args:
+                crude: method key
+
+            Supported now is only *crude* = 1, for which the inverse is approximated as the negative deflection
 
         """
         assert crude in [1], crude
         if crude == 1:
             return ffs_displacement(- self.get_dx(), -self.get_dy(), self.lsides, lib_dir=self.lib_dir,
-                                    LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k, NR_iter=self.NR_iter)
+                                    LD_res=self.LD_res, verbose=self.verbose, NR_iter=self.NR_iter)
         else:
             assert 0, crude
 
     def get_inverse(self, NR_iter=None, use_Pool=0, crude=0, HD_res=None):
-        """
+        """Build deflection field inverse
 
-        :param NR_iter:
-        :param use_Pool: if positive, use Python multiprocessing Pool packacge.
-                         if 0, serial calculation
-                         if negative, send it on the GPU.
-        :param crude: Uses some crude scheme
-        :param HD_res: augmente the resolution to perform the inversion.
-        :return:
+            The inverse deflection is defined by the condition that forward-deflected points remap to the original points
+            under the inverse displacement.
+
+            Args:
+                NR_iter(optional): Number of Newton-Raphson iterations. Superseeds the instance NR_iter argument if set
+                use_Pool(optional): Send the calculation to the GPU if negative
+                crude(optional): Uses some faster but crude method for the inverse (check *get_inverse_crude*)
+                HD_res(optional): Set this to perform the inversion at higher resolution (tuple of powers of two)
+
         """
         if HD_res is not None:
             lib_dir = self.lib_dir if self.lib_dir is None else os.path.join(self.lib_dir, 'temp_fup')
             f_up = ffs_displacement(rfft2_utils.upgrade_map(self.get_dx(), HD_res),
                                     rfft2_utils.upgrade_map(self.get_dy(), HD_res), self.lsides,
-                                    LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k,
-                                    rule_for_derivative=self.rule,
+                                    LD_res=self.LD_res, verbose=self.verbose,
                                     NR_iter=self.NR_iter, lib_dir=lib_dir)
             f_up_inv = f_up.get_inverse(NR_iter=NR_iter, use_Pool=use_Pool, crude=crude)
             LD_res = Log2ofPowerof2(self.shape)
             return ffs_displacement(rfft2_utils.subsample(f_up_inv.get_dx(), LD_res),
                                     rfft2_utils.subsample(f_up_inv.get_dy(), LD_res), self.lsides,
-                                    LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k,
-                                    rule_for_derivative=self.rule,
+                                    LD_res=self.LD_res, verbose=self.verbose,
                                     NR_iter=self.NR_iter, lib_dir=self.lib_dir)
 
         if crude > 0:
-            return self._get_inverse_crude(crude)
+            return self.get_inverse_crude(crude)
 
         if NR_iter is None: NR_iter = self.NR_iter
 
@@ -421,19 +418,19 @@ class ffs_displacement(object):
                 dx_inv[sHDs[0]] = dx_inv_N[sLDs[0]]
                 dy_inv[sHDs[0]] = dy_inv_N[sLDs[0]]
             return ffs_displacement(dx_inv, dy_inv, self.lsides, lib_dir=self.lib_dir,
-                                    LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k, NR_iter=self.NR_iter)
+                                    LD_res=self.LD_res, verbose=self.verbose, NR_iter=self.NR_iter)
         elif use_Pool < 0:
             # GPU calculation.
-            from lensit.gpu import inverse_GPU as inverse_GPU
+            from lensit.gpu_old import lens_GPU
+            from lensit.gpu_old import inverse_GPU as inverse_GPU
             GPU_res = np.array(inverse_GPU.GPU_HDres_max)
             if np.all(np.array(self.HD_res) <= GPU_res):
                 # No need to split maps :
                 dx_inv, dy_inv = inverse_GPU.inverse_GPU(self.get_dx(), self.get_dy(), self.rmin, NR_iter)
                 return ffs_displacement(dx_inv, dy_inv, self.lsides, lib_dir=self.lib_dir,
-                                        LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k,
-                                        NR_iter=self.NR_iter)
+                                        LD_res=self.LD_res, verbose=self.verbose,   NR_iter=self.NR_iter)
             else:
-                LD_res, buffers = get_GPUbuffers(GPU_res)
+                LD_res, buffers = lens_GPU.get_GPUbuffers(GPU_res)
                 assert np.all(np.array(buffers) > (np.array(self.buffers) + 5.)), (buffers, self.buffers)
                 Nchunks = 2 ** (np.sum(np.array(self.HD_res) - np.array(LD_res)))
                 dx_N = np.empty((2 ** LD_res[0] + 2 * buffers[0], 2 ** LD_res[1] + 2 * buffers[1]))
@@ -453,9 +450,8 @@ class ffs_displacement(object):
                     dx_inv[sHDs[0]] = dx_inv_N[sLDs[0]]
                     dy_inv[sHDs[0]] = dy_inv_N[sLDs[0]]
 
-                return ffs_displacement(dx_inv, dy_inv, self.lsides, lib_dir=self.lib_dir,
-                                        LD_res=self.LD_res, verbose=self.verbose, spline_order=self.k,
-                                        NR_iter=self.NR_iter)
+                return ffs_displacement(dx_inv, dy_inv, self.lsides,
+                            lib_dir=self.lib_dir, LD_res=self.LD_res, verbose=self.verbose, NR_iter=self.NR_iter)
         elif use_Pool == 100:
             assert 0
         else:

@@ -75,6 +75,16 @@ def extend_cl(_cl, ell_max, fill_val=0.):
         cl[min([len(_cl), ell_max + 1]): len(cl)] = fill_val
     return cl
 
+
+def flatindices(coord, shape):
+    """Returns the indices in a flattened 'C' convention array of multidimensional indices
+
+    """
+    ndim = len(shape)
+    idc = coord[ndim - 1, :]
+    for j in range(1, ndim): idc += np.prod(shape[ndim - j:ndim]) * coord[ndim - 1 - j, :]
+    return idc
+
 class timer:
     def __init__(self, verbose, prefix='', suffix=''):
         self.t0 = time.time()
