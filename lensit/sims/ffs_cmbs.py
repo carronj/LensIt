@@ -141,13 +141,13 @@ class sims_cmb_len:
         if 'p' in self.unlcmbs.fields and 'o' in self.unlcmbs.fields:
             plm = self.get_sim_plm(idx)
             olm = self.get_sim_olm(idx)
-            return ffs_deflect.displacement_frompolm(self.lib_skyalm, plm, olm)
+            return ffs_deflect.displacement_frompolm(self.lib_skyalm, plm, olm, verbose=False)
         elif 'p' in self.unlcmbs.fields:
             plm = self.get_sim_plm(idx)
             return ffs_deflect.displacement_fromplm(self.lib_skyalm, plm)
         elif 'o' in self.unlcmbs.fields:
             olm = self.get_sim_olm(idx)
-            return ffs_deflect.displacement_fromolm(self.lib_skyalm, olm)
+            return ffs_deflect.displacement_fromolm(self.lib_skyalm, olm, verbose=False)
         else:
             assert 0
 

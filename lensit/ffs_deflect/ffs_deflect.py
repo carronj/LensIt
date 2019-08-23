@@ -13,24 +13,6 @@ from lensit.misc.misc_utils import PartialDerivativePeriodic as PDP, Log2ofPower
 from lensit.pbs import pbs
 
 
-def displacement_fromplm(lib_plm, plm, **kwargs):
-    return ffs_displacement(lib_plm.alm2map(plm * lib_plm.get_ikx()),
-                            lib_plm.alm2map(plm * lib_plm.get_iky()),
-                            lib_plm.ell_mat.lsides, **kwargs)
-
-
-def displacement_fromolm(lib_plm, olm, **kwargs):
-    return ffs_displacement(lib_plm.alm2map(-olm * lib_plm.get_iky()),
-                            lib_plm.alm2map(olm * lib_plm.get_ikx()),
-                            lib_plm.ell_mat.lsides, **kwargs)
-
-
-def displacement_frompolm(lib_plm, plm, olm, **kwargs):
-    return ffs_displacement(lib_plm.alm2map(plm * lib_plm.get_ikx() - olm * lib_plm.get_iky()),
-                            lib_plm.alm2map(plm * lib_plm.get_iky() + olm * lib_plm.get_ikx()),
-                            lib_plm.ell_mat.lsides, **kwargs)
-
-
 class ffs_displacement(object):
     r"""Flat-sky deflection-field class
 
@@ -633,3 +615,31 @@ class ffs_id_displacement:
     def rotpol(self, QpiU, **kwargs):
         assert np.iscomplexobj(QpiU) and QpiU.shape == self.shape, (QpiU.shape, np.iscomplexobj(QpiU))
         return QpiU
+
+
+def displacement_fromplm(lib_plm, plm, **kwargs):
+    r"""Returns deflection-field instance from lensing gradient potential
+
+        Args:
+             lib_plm: *ffs_alm* or *ffs_alm_pyFFTW* instance describing the plm array
+             plm: flat-sky lensing gradient potential alm array
+
+        Returns:
+            Deflection field as *ffs_displacement* instance
+
+    """
+    return ffs_displacement(lib_plm.alm2map(plm * lib_plm.get_ikx()),
+                            lib_plm.alm2map(plm * lib_plm.get_iky()),
+                            lib_plm.ell_mat.lsides, **kwargs)
+
+
+def displacement_fromolm(lib_plm, olm, **kwargs):
+    return ffs_displacement(lib_plm.alm2map(-olm * lib_plm.get_iky()),
+                            lib_plm.alm2map(olm * lib_plm.get_ikx()),
+                            lib_plm.ell_mat.lsides, **kwargs)
+
+
+def displacement_frompolm(lib_plm, plm, olm, **kwargs):
+    return ffs_displacement(lib_plm.alm2map(plm * lib_plm.get_ikx() - olm * lib_plm.get_iky()),
+                            lib_plm.alm2map(plm * lib_plm.get_iky() + olm * lib_plm.get_ikx()),
+                            lib_plm.ell_mat.lsides, **kwargs)

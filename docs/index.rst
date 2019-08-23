@@ -17,6 +17,7 @@ Welcome to lensit's documentation!
    iterators
    deflect
    ellmat
+   covs
 
 
 Indices and tables

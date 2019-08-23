@@ -139,8 +139,11 @@ class ffs_diagcov_alm(object):
     def degrade(self, LD_shape, ellmin=None, ellmax=None, lib_dir=None, libtodegrade='sky', **kwargs):
         assert 0, 'FIXME'
 
-    def get_Pmatinv(self, typ, i, j, use_cls_len=True):
-        if i < j: return self.get_Pmatinv(typ, j, i, use_cls_len=use_cls_len)
+    def _get_pmati(self, typ, i, j, use_cls_len=True):
+        r"""Inverse spectral matrix
+
+        """
+        if i < j: return self._get_pmati(typ, j, i, use_cls_len=use_cls_len)
         _str = {True: 'len', False: 'unl'}[use_cls_len]
         fname = os.path.join(self.lib_dir, '%s_Pmatinv_%s_%s%s.npy' % (typ, _str, i, j))
         if not os.path.exists(fname) and self.pbsrank == 0:
@@ -150,22 +153,37 @@ class ffs_diagcov_alm(object):
             for _j in range(len(typ)):
                 for _i in range(_j, len(typ)):
                     np.save(os.path.join(self.lib_dir, '%s_Pmatinv_%s_%s%s.npy' % (typ, _str, _i, _j)), Pmatinv[:, _i, _j])
-                    print("     get_Pmatinv:: cached", os.path.join(self.lib_dir, '%s_Pmatinv_%s_%s%s.npy' % (typ, _str, _i, _j)))
+                    print("     _get_pmati:: cached", os.path.join(self.lib_dir, '%s_Pmatinv_%s_%s%s.npy' % (typ, _str, _i, _j)))
         self.barrier()
         return np.load(fname)
 
-    def get_rootPmatsky(self, typ, i, j, use_cls_len=False):
+    def _get_rootpmatsky(self, typ, i, j, use_cls_len=False):
+        """Root of sky rfft spectra matrix
+
+        """
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
         return get_rootunlPmat_ij(typ, self.lib_skyalm, cls_cmb, i, j)
 
     def get_delensinguncorrbias(self, lib_qlm, clpp_rec, wNoise=True, wCMB=True, recache=False, use_cls_len=True):
-        """Calculate delensing bias given a reconstructed potential map with spectum clpp_rec (includes N0, etc),
+        r"""Calculate delensing bias given a reconstructed potential map spectrum
 
-        (** clpp_rec should not contain clpp if what you really want is the bias ** Put clpp + N0 if what you want is the
-         perturbative delensing)
-        assuming the noise is independent from the data maps, and the modes given by lib_qlm are reconstructed.
-        Returns a (3,3,ellmax) array with bias C_ell^{ij}, i,j in T,E,B.
-        The sign of the output is such that it is a pos. contrib. to C^len - C^del
+            Crudely, the delensing bias is defined as :math:`C_\ell^{\rm lensed} - C_\ell^{\rm delensed}` on Gaussian CMB maps (with lensed power spectrum).
+            More precisely this method calculates the 4-point disconnected contribution (see https://arxiv.org/abs/1701.01712)
+            if no statistical dependence of the lensing tracer reconstruction noise to the CMB maps
+
+            Args:
+                lib_qlm: *ffs_alm* instance describing the lensing alm arrays
+                clpp_rec: lensing tracer power.
+                          For the true bias calculation *clpp_rec* should be reconstruction noise power only.
+                          For perturbative lensing calculation, include the signal power in *clpp_rec*
+                wNoise: include noise spectra in total observed CMB spectra (defaults to True)
+                wCMB: include signal CMB spectra in total observed CMB spectra (defaults to True)
+                use_cls_len: use lensed CMB cls if set, unlensed if not (defaults to True)
+
+
+            Returns:
+                (3, 3, lmax +1) array with bias :math:`C_\ell^{ij}, \textrm{ with }i,j \in (T,E,B)`
+
         """
         # assert len(clpp_rec) > lib_qlm.ellmax,(len(clpp_rec),lib_qlm.ellmax)
         if len(clpp_rec) <= lib_qlm.ellmax: clpp_rec = extend_cl(clpp_rec, lib_qlm.ellmax)
@@ -238,17 +256,7 @@ class ffs_diagcov_alm(object):
         return ret
 
     def get_RDdelensinguncorrbias(self, lib_qlm, clpp_rec, clsobs_deconv, clsobs_deconv2=None, recache=False):
-        """
-        Calculate delensing bias given a reconstructed potential map with spectum clpp_rec (includes N0, etc),
-        (** clpp_rec should not contain clpp if what you really want is the bias ** Put clpp + N0 if what you want is the
-         perturbative delensing)
-        assuming the noise is independent from the data maps, and the modes given by lib_qlm are reconstructed.
-        Returns a (3,3,ellmax) array with bias C_ell^{ij}, i,j in T,E,B.
-        The sign of the output is such that it is a pos. contrib. to C^len - C^del
-
-        putting cls_obs being cls_len + noise / transf ** 2 should give the same thing as get_delensinguncorrbias.
-        cls_obs should be dict. witn tt te ee bb
-        """
+        #putting cls_obs being cls_len + noise / transf ** 2 should give the same thing as get_delensinguncorrbias.
         if len(clpp_rec) <= lib_qlm.ellmax: clpp_rec = extend_cl(clpp_rec, lib_qlm.ellmax)
         fname = None
         if (not False or recache) and self.pbsrank == 0:
@@ -280,27 +288,22 @@ class ffs_diagcov_alm(object):
                     retalms[_i, _j, :] = (self.lib_datalm.map2alm(_map))
             return TQUPmats2TEBcls(self.lib_datalm, retalms) * (- 1. / np.sqrt(np.prod(self.lsides)))
 
-    def get_delensingcorrbias(self, typ, lib_qlm, ALWFcl, CMBonly=False):
+    def get_delensingcorrbias(self, typ, lib_qlm, alwfcl, CMBonly=False):
+        r"""Calculate delensing bias given a reconstructed potential map spectrum
+
+            Crudely, the delensing bias is defined as :math:`C_\ell^{\rm lensed} - C_\ell^{\rm delensed}` on Gaussian CMB maps (with lensed power spectrum).
+            More precisely this method calculates the 4-point disconnected contribution (see https://arxiv.org/abs/1701.01712)
+            from the statistical dependence of the lensing tracer reconstruction noise to the CMB maps
+
+            Args:
+                lib_qlm: *ffs_alm* instance describing the lensing alm arrays
+                alwfcl: normalization of the Wiener-filter quadratic estimate (i.e. Wiener-filter times inverse response)
+                CMBonly: do not include noise spectra if set (defaults to False)
+
+            Returns:
+                (3, 3, lmax +1) array with bias :math:`C_\ell^{ij}, \textrm{ with }i,j \in (T,E,B)`
+
         """
-        Let the unnormalized qest be written as d_a = A^{im} X^i B^{a,l m} X^l
-        with X in T,Q,U beam ** deconvolved ** maps.
-        -> A^{im} = b^2 Cov^{-1}_{m i}
-           B^{a, lm} = [ik_a b^2 C_len  Cov^{-1}]_{m l}
-        WFcl is the filter applied to the qest prior delensing the maps. (e.g. Cpp / (Cpp + N0) for WF filtering)
-
-        See Eq. A19 in 1701.01712.
-
-        The sign of the output is such that is a positive contr. to C^len - C^unl.
-        
-        For template subtraction this is slightly different, since the template is built with (E = E_dat^WF, B = 0) 
-        template. In this case, the leg, with a {,b} on the spectra should be the cross-spectra
-        between (T = T^dat,E^dat,B^dat) and (0,E^WF,0). The other leg is identical, since it pairs a data map and
-        the quadratic estiamtor legs built with the data.
-        can get dat with RDdelensingcorrbias below with custom cl 2
-
-        !NB : norm is N0/2-like, -> AL ~ N0/2
-        """
-
         assert typ in typs, (typ, typs)
 
         t = timer(_timed)
@@ -331,16 +334,16 @@ class ffs_diagcov_alm(object):
             assert (l in range(len(typ))) and (m in range(len(typ))), (l, m)
             ik = self.lib_datalm.get_ikx if a == 1 else self.lib_datalm.get_iky
             ret = get_unlPmat_ij(typ, self.lib_datalm, self.cls_len, m, 0) \
-                  * self.get_Pmatinv(typ, 0, l, use_cls_len=True)
+                  * self._get_pmati(typ, 0, l, use_cls_len=True)
             for _i in range(1, len(typ)):
                 ret += get_unlPmat_ij(typ, self.lib_datalm, self.cls_len, m, _i) \
-                       * self.get_Pmatinv(typ, _i, l, use_cls_len=True)
+                       * self._get_pmati(typ, _i, l, use_cls_len=True)
             return self.lib_datalm.almxfl(ret, self.cl_transf ** 2) * ik()
 
         def _get_Akm(l, m):  # [b^2  Cov^{-1}]_{m k}
             # Here both indices should refer to the qest.
             assert (l in range(len(typ))) and (m in range(len(typ))), (l, m)
-            return self.lib_datalm.almxfl(self.get_Pmatinv(typ, m, l, use_cls_len=True), self.cl_transf ** 2)
+            return self.lib_datalm.almxfl(self._get_pmati(typ, m, l, use_cls_len=True), self.cl_transf ** 2)
 
         def get_BCamj(a, m, j):  # sum_l B^{a, l m} \hat C^{lj}
             # The first index m is one in th qest estimator of type 'typ' and
@@ -371,7 +374,7 @@ class ffs_diagcov_alm(object):
         for a in [0, 1]:
             for b in [0, 1]:
                 t.checkpoint("    Doing axes %s %s" % (a, b))
-                Hab = lib_qlm.alm2map(ALWFcl[lib_qlm.reduced_ellmat()] * ik(a, libalm=lib_qlm) * ik(b, libalm=lib_qlm))
+                Hab = lib_qlm.alm2map(alwfcl[lib_qlm.reduced_ellmat()] * ik(a, libalm=lib_qlm) * ik(b, libalm=lib_qlm))
                 for _i in range(3):  # Building TQU biases, before rotation to Gradient / Curl
                     for _j in range(0, 3):
                         t.checkpoint(
@@ -382,14 +385,12 @@ class ffs_diagcov_alm(object):
                             retalms[_i, _j, :] += self.lib_datalm.map2alm(Hab * _map(Pmat)) * get_BCamj(b, m, _j)
                             Pmat = (get_BCamj(b, m, _i) * ik(a)).conjugate()
                             retalms[_i, _j, :] += self.lib_datalm.map2alm(Hab * _map(Pmat)) * get_ACmj(m, _j)
-        norm = 1. / np.sqrt(np.prod(self.lsides))  # ?
+        norm = 1. / np.sqrt(np.prod(self.lsides))
         # Sure that i - j x-y is the same ?
-        for _i in range(3):  # Building TQU biases, before rotation to Gradient / Curl
-            for _j in range(_i, 3):
-                if _i == 0 and _j == 0:
-                    print("Testing conjecture that in the MV case this is symmetric :")
-                print(typ + ' :', np.allclose(retalms[_j, _i, :].real, retalms[_i, _j, :].real))
-                retalms[_i, _j, :] += retalms[_j, _i, :].conjugate()
+        for i in range(3):  # Building TQU biases, before rotation to Gradient / Curl
+            for j in range(i, 3):
+                print(typ + ' :', np.allclose(retalms[j, i, :].real, retalms[i, j, :].real))
+                retalms[i, j, :] += retalms[j, i, :].conjugate()
 
         return TQUPmats2TEBcls(self.lib_datalm, retalms) * norm
 
@@ -445,16 +446,16 @@ class ffs_diagcov_alm(object):
             assert (l in range(len(typ))) and (m in range(len(typ))), (l, m)
             ik = self.lib_datalm.get_ikx if a == 1 else self.lib_datalm.get_iky
             ret = get_unlPmat_ij(typ, self.lib_datalm, _cls_weights, m, 0) \
-                  * self.get_Pmatinv(typ, 0, l, use_cls_len=True)
+                  * self._get_pmati(typ, 0, l, use_cls_len=True)
             for _i in range(1, len(typ)):
                 ret += get_unlPmat_ij(typ, self.lib_datalm, _cls_weights, m, _i) \
-                       * self.get_Pmatinv(typ, _i, l, use_cls_len=True)
+                       * self._get_pmati(typ, _i, l, use_cls_len=True)
             return self.lib_datalm.almxfl(ret, self.cl_transf ** 2) * ik()
 
         def _get_Akm(l, m):  # [b^2  Cov^{-1}]_{m k}
             # Here both indices should refer to the qest.
             assert (l in range(len(typ))) and (m in range(len(typ))), (l, m)
-            return self.lib_datalm.almxfl(self.get_Pmatinv(typ, m, l, use_cls_len=True), self.cl_transf ** 2)
+            return self.lib_datalm.almxfl(self._get_pmati(typ, m, l, use_cls_len=True), self.cl_transf ** 2)
 
         def get_BCamj(a, m, j):  # sum_l B^{a, l m} \hat C^{lj}
             # The first index m is one in th qest estimator of type 'typ' and
@@ -626,7 +627,7 @@ class ffs_diagcov_alm(object):
         ret = np.zeros_like(alms)
         for i in range(len(typ)):
             for j in range(len(typ)):
-                ret[j] += self.get_Pmatinv(typ, j, i, use_cls_len=use_cls_len) * alms[i]
+                ret[j] += self._get_pmati(typ, j, i, use_cls_len=use_cls_len) * alms[i]
         return ret
 
     def apply_condpseudiagcl(self, typ, alms, use_Pool=0):
@@ -730,20 +731,25 @@ class ffs_diagcov_alm(object):
                 use_cls_len=use_cls_len, cls_obs=cls_obs, cls_weights=cls_weights, cls_filt=cls_filt, cls_obs2=cls_obs2)
             return 2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO))
 
-    def iterateN0cls(self, typ, lib_qlm, Nitmax, Nit=0,return_delCls = False):
-        """
-        Iterates delensing and N0 calculation to estimate the noise levels of the iterative estimator.
-        This uses perturbative approach in Wiener filtered displacement, consistent with box shape and
-        mode structure.
-        See iterateN0cls_camb for alternative approach.
+    def iterateN0cls(self, typ, lib_qlm, itmax, return_delcls=False, _it=0):
+        """Iterative flat-sky :math:`N^{(0)}_L` calculation to estimate the noise levels of the iterative estimator.
+
+            This uses perturbative approach in Wiener-filtered displacement, consistent with box shape and mode structure.
+
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                lib_qlm: *ffs_alm* instance describing the lensing alm arrays
+                itmax: Number of iterations to performs
+                return_delcls: optionally return partially delensed cmb cls as well
+
+
         """
         N0 = self.get_N0cls(typ, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
-        if Nit == Nitmax: return N0 if not return_delCls else (N0,self.cls_len)
+        if _it == itmax: return N0 if not return_delcls else (N0, self.cls_len)
         cpp = np.zeros(lib_qlm.ellmax + 1)
         cpp[:min(len(cpp), len(self.cls_unl['pp']))] = (self.cls_unl['pp'][:min(len(cpp), len(self.cls_unl['pp']))])
         clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])
-        Bl = self.get_delensinguncorrbias(lib_qlm, cpp * (1. - clWF), wNoise=False,
-                                          use_cls_len=False)  # TEB matrix output
+        Bl = self.get_delensinguncorrbias(lib_qlm, cpp * (1. - clWF), wNoise=False, use_cls_len=False)  # TEB matrix output
         cls_delen = {}
         for key in self.cls_len.keys():
             cls_delen[key] = self.cls_unl[key].copy()
@@ -753,8 +759,8 @@ class ffs_diagcov_alm(object):
         for key in self.cls_unl.keys():
             cls_unl[key] = self.cls_unl[key].copy()
         # cls_unl['pp'][0:min(len(cpp), len(cls_unl['pp']))] = (cpp * (1. - clWF))[0:min(len(cpp), len(cls_unl['pp']))]
-        new_libdir = os.path.join(self.lib_dir, '%s_N0iter'%typ, 'N0iter%04d' % (Nit + 1)) if Nit == 0 else \
-            self.lib_dir.replace('N0iter%04d'%Nit, 'N0iter%04d'%(Nit + 1))
+        new_libdir = os.path.join(self.lib_dir, '%s_N0iter' % typ, 'N0iter%04d' % (_it + 1)) if _it == 0 else \
+            self.lib_dir.replace('N0iter%04d' % _it, 'N0iter%04d' % (_it + 1))
 
         try:
             new_cov = ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen, self.cl_transf, self.cls_noise,
@@ -765,7 +771,7 @@ class ffs_diagcov_alm(object):
             new_cov = ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen, self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
 
-        return new_cov.iterateN0cls(typ, lib_qlm, Nitmax, Nit=Nit + 1,return_delCls=return_delCls)
+        return new_cov.iterateN0cls(typ, lib_qlm, itmax, _it=_it + 1, return_delcls=return_delcls)
 
     def get_N0Pk_minimal(self, typ, lib_qlm, use_cls_len=True, cls_obs=None):
         """
@@ -776,20 +782,14 @@ class ffs_diagcov_alm(object):
         return lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO))
 
     def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True):
-        """Lensing quadratic estimator gradient and curl response functions.
+        r"""Lensing quadratic estimator gradient and curl response functions.
 
             Args:
-                cls_filt: CMB spectra used in the filtering procedure ( i.e. those entering Cov^{-1}).
-                          Defaults to self.cls_len if use_cls_len else self.cls_unl
-                cls_weights: CMB spectra used in the QE weights
-                         (those entering the numerator in the usual Okamoto & Hu formulae e.g.)
-                          Defaults to self.cls_len if use_cls_len else self.cls_unl
-                cls_cmb: CMB spectra of the sky
-                         (~contractions of X,b with X ~ il_b Cl^cmb when writing pertub. X ~ X + alpha_b X,b)
-
-
-        -(xi^cmb,b K )_{ab}(z) (xi^w,a K)^{ba}(z)
-         - (K)(z) (xi^w,a K xi^cmb,b)(z)
+                cls_filt: CMB spectra used in the filtering procedure ( i.e. those entering :math:`\rm{Cov}^{-1}`).
+                          Defaults to *self.cls_len* if set else *self.cls_unl*
+                cls_weights(dict): CMB spectra used in the QE weights (those entering the numerator in the usual Okamoto & Hu formulae)
+                          Defaults to *self.cls_len* if set else *self.cls_unl*
+                cls_cmb(dict): CMB spectra of the sky entering the response contractions (in principle lensed cls or grad-lensed cls)
 
         """
         assert typ in typs, (typ, typs)
@@ -1104,7 +1104,7 @@ class ffs_diagcov_alm(object):
         if not os.path.exists(fname) or recache:
             def get_K(i, j):
                 # B Covi B
-                return self.lib_datalm.almxfl(self.get_Pmatinv(typ, i, j, use_cls_len=use_cls_len),
+                return self.lib_datalm.almxfl(self._get_pmati(typ, i, j, use_cls_len=use_cls_len),
                                               self.cl_transf ** 2)
 
             def get_xiK(i, j):
@@ -1194,7 +1194,7 @@ class ffs_diagcov_alm(object):
 
             def K(i, j):
                 return self._upg(
-                    self.lib_datalm.almxfl(self.get_Pmatinv(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+                    self.lib_datalm.almxfl(self._get_pmati(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
 
             xiK = lambda i, j: mu(xi, K, i, j)
             Kxi = lambda i, j: mu(K, xi, i, j)
@@ -1269,7 +1269,7 @@ class ffs_diagcov_alm(object):
         _lib_qlm = lib_qlm
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
         if get_A is None:
-            get_A = self.get_Pmatinv
+            get_A = self._get_pmati
 
         def get_K(i, j):
             # B^t A B
@@ -1331,7 +1331,7 @@ class ffs_diagcov_alm(object):
 
         if K is None:
             K = lambda i, j: (self._upg(
-                self.lib_datalm.almxfl(self.get_Pmatinv(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2)))
+                self.lib_datalm.almxfl(self._get_pmati(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2)))
         if dK is None:
             dxiK = lambda i, j: mu(dxi, K, i, j)
             dK = lambda i, j: (-mu(K, dxiK, i, j))
@@ -1379,9 +1379,9 @@ class ffs_diagcov_alm(object):
         _lib_qlm = lib_qlm
         cls_cmb = self.cls_len if use_cls_len else self.cls_unl
         if get_A1 is None:
-            get_A1 = self.get_Pmatinv
+            get_A1 = self._get_pmati
         if get_A2 is None:
-            get_A2 = self.get_Pmatinv
+            get_A2 = self._get_pmati
 
         def get_K1(i, j):
             return self.lib_datalm.almxfl(get_A1(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2)
@@ -1480,11 +1480,11 @@ class ffs_diagcov_alm(object):
         if K1 is None:
             assert dK1 is None
             K1 = lambda i, j: self._upg(
-                self.lib_datalm.almxfl(self.get_Pmatinv(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+                self.lib_datalm.almxfl(self._get_pmati(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
         if K2 is None:
             assert dK2 is None
             K2 = lambda i, j: self._upg(
-                self.lib_datalm.almxfl(self.get_Pmatinv(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+                self.lib_datalm.almxfl(self._get_pmati(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
 
         xiK1 = lambda i, j: mu(xi, K1, i, j)
         xiK2 = lambda i, j: mu(xi, K2, i, j)
@@ -1587,10 +1587,10 @@ class ffs_diagcov_alm(object):
         if not os.path.exists(fname) or recache:
             def get_dcov(typ, i, j, use_cls_len=True):
                 # Covi (datCov - Cov) = Covi datCov - 1
-                ret = self.get_Pmatinv(typ, i, 0, use_cls_len=use_cls_len) \
+                ret = self._get_pmati(typ, i, 0, use_cls_len=use_cls_len) \
                       * get_datPmat_ij(typ, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, 0, j)
                 for _k in range(1, len(typ)):
-                    ret += self.get_Pmatinv(typ, i, _k, use_cls_len=use_cls_len) \
+                    ret += self._get_pmati(typ, i, _k, use_cls_len=use_cls_len) \
                            * get_datPmat_ij(typ, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, _k, j)
                 if i == j and not dat_only:
                     ret -= 1.
@@ -1599,18 +1599,18 @@ class ffs_diagcov_alm(object):
             def get_dcovd(typ, i, j, use_cls_len=True):
                 # Covi(datCov - Cov)Covi
                 ret = get_dcov(typ, i, 0, use_cls_len=use_cls_len) \
-                      * self.get_Pmatinv(typ, 0, j, use_cls_len=use_cls_len)
+                      * self._get_pmati(typ, 0, j, use_cls_len=use_cls_len)
                 for _k in range(1, len(typ)):
                     ret += get_dcov(typ, i, _k, use_cls_len=use_cls_len) \
-                           * self.get_Pmatinv(typ, _k, j, use_cls_len=use_cls_len)
+                           * self._get_pmati(typ, _k, j, use_cls_len=use_cls_len)
                 return ret
 
             def get_d2cov(typ, i, j, use_cls_len=True):
                 # Cov^-1 (2 datCov - Cov)  = 2 Covi datCov - 1
-                ret = self.get_Pmatinv(typ, i, 0, use_cls_len=use_cls_len) \
+                ret = self._get_pmati(typ, i, 0, use_cls_len=use_cls_len) \
                       * get_datPmat_ij(typ, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, 0, j)
                 for _k in range(1, len(typ)):
-                    ret += self.get_Pmatinv(typ, i, _k, use_cls_len=use_cls_len) \
+                    ret += self._get_pmati(typ, i, _k, use_cls_len=use_cls_len) \
                            * get_datPmat_ij(typ, self.lib_datalm, datcmb_cls, self.cl_transf, self.cls_noise, _k, j)
                 if i == j and not dat_only:
                     return 2 * ret - 1.
@@ -1618,11 +1618,11 @@ class ffs_diagcov_alm(object):
 
             def get_idCi(typ, i, j, use_cls_len=True):
                 # Cov^-1 (2 datCov - Cov) Cov^-1
-                ret = get_d2cov(typ, i, 0, use_cls_len=use_cls_len) * self.get_Pmatinv(typ, 0, j,
-                                                                                         use_cls_len=use_cls_len)
+                ret = get_d2cov(typ, i, 0, use_cls_len=use_cls_len) * self._get_pmati(typ, 0, j,
+                                                                                      use_cls_len=use_cls_len)
                 for _k in range(1, len(typ)):
-                    ret += get_d2cov(typ, i, _k, use_cls_len=use_cls_len) * self.get_Pmatinv(typ, _k, j,
-                                                                                               use_cls_len=use_cls_len)
+                    ret += get_d2cov(typ, i, _k, use_cls_len=use_cls_len) * self._get_pmati(typ, _k, j,
+                                                                                            use_cls_len=use_cls_len)
                 return ret
 
             # First term :
@@ -1666,10 +1666,10 @@ class ffs_diagcov_alm(object):
         if not os.path.exists(fname) or recache:
             def get_dcov(typ, i, j, use_cls_len=use_cls_len):
                 # Covi (datCov - Cov) = Covi datCov - 1
-                ret = self.get_Pmatinv(typ, i, 0, use_cls_len=use_cls_len) \
+                ret = self._get_pmati(typ, i, 0, use_cls_len=use_cls_len) \
                       * get_unlPmat_ij(typ, self.lib_datalm, datcls_obs, 0, j)
                 for _k in range(1, len(typ)):
-                    ret += self.get_Pmatinv(typ, i, _k, use_cls_len=use_cls_len) \
+                    ret += self._get_pmati(typ, i, _k, use_cls_len=use_cls_len) \
                            * get_unlPmat_ij(typ, self.lib_datalm, datcls_obs, _k, j)
                 if i == j and not dat_only:
                     ret -= 1.
@@ -1678,18 +1678,18 @@ class ffs_diagcov_alm(object):
             def get_dcovd(typ, i, j, use_cls_len=use_cls_len):
                 # Covi(datCov - Cov)Covi
                 ret = get_dcov(typ, i, 0, use_cls_len=use_cls_len) \
-                      * self.get_Pmatinv(typ, 0, j, use_cls_len=use_cls_len)
+                      * self._get_pmati(typ, 0, j, use_cls_len=use_cls_len)
                 for _k in range(1, len(typ)):
                     ret += get_dcov(typ, i, _k, use_cls_len=use_cls_len) \
-                           * self.get_Pmatinv(typ, _k, j, use_cls_len=use_cls_len)
+                           * self._get_pmati(typ, _k, j, use_cls_len=use_cls_len)
                 return ret
 
             def get_d2cov(typ, i, j, use_cls_len=use_cls_len):
                 # Cov^-1 (2 datCov - Cov)  = 2 Covi datCov - 1
-                ret = self.get_Pmatinv(typ, i, 0, use_cls_len=use_cls_len) \
+                ret = self._get_pmati(typ, i, 0, use_cls_len=use_cls_len) \
                       * get_unlPmat_ij(typ, self.lib_datalm, datcls_obs, 0, j)
                 for _k in range(1, len(typ)):
-                    ret += self.get_Pmatinv(typ, i, _k, use_cls_len=use_cls_len) \
+                    ret += self._get_pmati(typ, i, _k, use_cls_len=use_cls_len) \
                            * get_unlPmat_ij(typ, self.lib_datalm, datcls_obs, _k, j)
                 if i == j and not dat_only:
                     return 2 * ret - 1.
@@ -1697,11 +1697,11 @@ class ffs_diagcov_alm(object):
 
             def get_idCi(typ, i, j, use_cls_len=use_cls_len):
                 # Cov^-1 (2 datCov - Cov) Cov^-1
-                ret = get_d2cov(typ, i, 0, use_cls_len=use_cls_len) * self.get_Pmatinv(typ, 0, j,
-                                                                                         use_cls_len=use_cls_len)
+                ret = get_d2cov(typ, i, 0, use_cls_len=use_cls_len) * self._get_pmati(typ, 0, j,
+                                                                                      use_cls_len=use_cls_len)
                 for _k in range(1, len(typ)):
-                    ret += get_d2cov(typ, i, _k, use_cls_len=use_cls_len) * self.get_Pmatinv(typ, _k, j,
-                                                                                               use_cls_len=use_cls_len)
+                    ret += get_d2cov(typ, i, _k, use_cls_len=use_cls_len) * self._get_pmati(typ, _k, j,
+                                                                                            use_cls_len=use_cls_len)
                 return ret
 
             # First term :
@@ -1748,7 +1748,7 @@ class ffs_diagcov_alm(object):
 
             dxi = lambda i, j: get_unlPmat_ij(typ, self.lib_skyalm, cmb_dcls, i, j)
             K = lambda i, j: self._upg(
-                self.lib_datalm.almxfl(self.get_Pmatinv(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
+                self.lib_datalm.almxfl(self._get_pmati(typ, i, j, use_cls_len=use_cls_len), self.cl_transf ** 2))
             dxiK = lambda i, j: mu(dxi, K, i, j)
             datKi = lambda i, j: self._upg(
                 self.lib_datalm.almxfl(get_unlPmat_ij(typ, self.lib_datalm, datcls_obs, i, j),
@@ -1783,22 +1783,24 @@ class ffs_diagcov_alm(object):
         # return np.loadtxt(fname).transpose()
 
 class ffs_lencov_alm(ffs_diagcov_alm):
-    """
-    Class for flat sky displaced real_space cov.matrix from full-sky Cls, and deflection field.
-    Must be strictly positive definite.
-    """
+    """Extended *ffs_diagcov_alm* sub-class, adding a deflection field and its inverse
 
+        Args:
+            lib_dir: many things will be saved there
+            lib_datalm: lib_alm instance (see *lensit.ffs_covs.ell_mat* containing mode filtering and flat-sky patch info
+            lib_skyalm: lib_alm instance describing the sky modes.
+            cls_unl(dict): unlensed CMB cls
+            cls_len(dict): lensed CMB cls
+            cl_transf: instrument transfer function
+            cls_noise(dict): 't', 'q' and 'u' noise arrays
+            f: deflection field, forward operation (e.g. *lensit* *ffs_displacement* instance)
+            f_inv: deflection field, backward operation (ideally the inverse f-deflection, *f.get_inverse()*)
+
+
+    """
     def __init__(self, lib_dir, lib_datalm, lib_skyalm, cls_unl, cls_len, cl_transf, cls_noise, f, f_inv,
                  init_rank=pbs.rank, init_barrier=pbs.barrier):
-        """
-        f and finv are displacement field classes. Number of points on each side 2**HD_res,2**HD_res.
-        f and f_inv must have a f.lens_map routine that does the lensing of map 2**HD_res by 2**HD_res.
-        f_inv must also have a f.det_M routine which returns the determinant of the magnification matrix
-        at all points of the map.
-        """
-
-        assert lib_datalm.ell_mat.lsides == lib_skyalm.ell_mat.lsides, \
-            (lib_datalm.ell_mat.lsides, lib_skyalm.ell_mat.lsides)
+        assert lib_datalm.ell_mat.lsides == lib_skyalm.ell_mat.lsides, (lib_datalm.ell_mat.lsides, lib_skyalm.ell_mat.lsides)
 
         super(ffs_lencov_alm, self).__init__(lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
                                              lib_skyalm=lib_skyalm, init_barrier=init_barrier, init_rank=init_rank)
@@ -1905,7 +1907,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         ret = np.zeros_like(alms)  # (B xi B^t + N)^{-1}
         for i in range(len(typ)):
             for j in range(len(typ)):
-                ret[i] += self.get_Pmatinv(typ, i, j) * temp[j]
+                ret[i] += self._get_pmati(typ, i, j) * temp[j]
         del temp
         t.checkpoint("Mult. w. inv Pmat")
 
@@ -2154,9 +2156,9 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
             sim = np.empty((len(typ), self.lib_datalm.alm_size), dtype=complex)
             for _i in range(len(typ)):
-                skysim = self.get_rootPmatsky(typ, _i, 0) * xlms_sky[0]
+                skysim = self._get_rootpmatsky(typ, _i, 0) * xlms_sky[0]
                 for _j in range(1, len(typ)):
-                    skysim += self.get_rootPmatsky(typ, _i, _j) * xlms_sky[_j]
+                    skysim += self._get_rootpmatsky(typ, _i, _j) * xlms_sky[_j]
                 skysim = self.f.lens_alm(self.lib_skyalm, skysim, use_Pool=use_Pool)
                 sim[_i] = self.lib_datalm.udgrade(self.lib_skyalm, skysim)
                 sim[_i] = self.lib_datalm.almxfl(sim[_i], self.cl_transf)
