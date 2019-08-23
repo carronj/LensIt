@@ -19,7 +19,7 @@ setup(
     author='Julien Carron',
     author_email='to.jcarron@gmail.com',
     description='CMB lensing flat-sky quadratic and iterative estimation tools',
-    install_requires=['numpy', 'pyfftw', 'scipy', 'mpi4py'],
+    install_requires=['numpy', 'pyfftw', 'scipy'], #skipped mpi4py for travis
     long_description=long_description,
     configuration=configuration)
 
