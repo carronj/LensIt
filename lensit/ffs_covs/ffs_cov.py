@@ -295,6 +295,7 @@ class ffs_diagcov_alm(object):
             from the statistical dependence of the lensing tracer reconstruction noise to the CMB maps
 
             Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
                 lib_qlm: *ffs_alm* instance describing the lensing alm arrays
                 alwfcl: normalization of the Wiener-filter quadratic estimate (i.e. Wiener-filter times inverse response)
                 CMBonly: do not include noise spectra if set (defaults to False)
@@ -393,27 +394,20 @@ class ffs_diagcov_alm(object):
 
         return pmat.TQUPmats2TEBcls(self.lib_datalm, retalms) * norm
 
-    def get_RDdelensingcorrbias(self, typ, lib_qlm, ALWFcl, clsobs_deconv, clsobs_deconv2=None, cls_weights=None):
-        """
-        Let the unnormalized qest be written as d_a = A^{im} X^i B^{a,l m} X^l
-        with X in T,Q,U beam ** deconvolved ** maps.
-        -> A^{im} = b^2 Cov^{-1}_{m i}
-           B^{a, lm} = [ik_a b^2 C_len  Cov^{-1}]_{m l}
-        and Bias is Hab(z) * [ (AC_m_dai)(-z) (BC_bmj) + (AC_mj)(-z) (BC_bmdai)]
+    def get_RDdelensingcorrbias(self, typ, lib_qlm, alwfcl, clsobs_deconv, clsobs_deconv2=None, cls_weights=None):
+        r"""Calculate delensing bias given a reconstructed potential map spectrum
 
-        WFcl is the filter applied to the qest prior delensing the maps. (e.g. Cpp / (Cpp + N0) for WF filtering)
-        putting cls_obs being cls_len  + noise /bl2 should give the same thing as get_delensingcorrbias.
-        The filtering Cls is always set to Cl len
-        The sign of the output is such that is a positive contr. to C^len - C^unl
+            Same as *get_delensingcorrbias* using empirical input CMB spectra
 
-        If two clsobs are put in, AC is calculate with the first one and BC with the second one.
-        Useful for dcl-leading order deviations of the bias.
-        
-                
-        For template subtraction this is slightly different, since the template is built with (E = E_dat^WF, B = 0) 
-        template. In this case, the leg, with a {,b} on the spectra should be the cross-spectra
-        between (T = T^dat,E^dat,B^dat) and (0,E^WF,0). The other leg is identical, since it pairs a data map and
-        the quadratic estiamtor legs built with the data.
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                lib_qlm: *ffs_alm* instance describing the lensing alm arrays
+                alwfcl: normalization of the Wiener-filter quadratic estimate (i.e. Wiener-filter times inverse response)
+                clsobs_deconv:
+
+            Returns:
+                (3, 3, lmax +1) array with bias :math:`C_\ell^{ij}, \textrm{ with }i,j \in (T,E,B)`
+
         """
 
         assert typ in typs, (typ, typs)
@@ -485,7 +479,7 @@ class ffs_diagcov_alm(object):
         for a in [0, 1]:
             for b in [0, 1]:
                 t.checkpoint("  Doing axes %s %s" % (a, b))
-                Hab = lib_qlm.alm2map(ALWFcl[lib_qlm.reduced_ellmat()] * ik(a, libalm=lib_qlm) * ik(b, libalm=lib_qlm))
+                Hab = lib_qlm.alm2map(alwfcl[lib_qlm.reduced_ellmat()] * ik(a, libalm=lib_qlm) * ik(b, libalm=lib_qlm))
                 for _i in range(3):  # Building TQU biases, before rotation to Gradient / Curl
                     for _j in range(0, 3):
                         t.checkpoint("    Doing %s" % ({0: 'T', 1: 'Q', 2: 'U'}[_i] + {0: 'T', 1: 'Q', 2: 'U'}[_j]))
@@ -545,9 +539,19 @@ class ffs_diagcov_alm(object):
         return np.array([self.lib_skyalm.udgrade(self.lib_datalm, _alm) for _alm in ilms])
 
     def get_iblms(self, typ, datalms, use_cls_len=True, use_Pool=0, **kwargs):
-        """
-         Returns P^{-1} maximum likelihood sky CMB modes.
-         (inputs to quadratc estimator routines)
+        r"""Inverse-variance filters input CMB maps
+
+            Produces :math:`B^t \rm{Cov}^{-1} X^{\rm dat}` (inputs to quadratic estimator routines)
+            This instance applies isotropic filtering, with no deflection field
+
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                datalms: data alms array
+                use_cls_len: use lensed cls in filtering (defaults to True)
+
+            Returns:
+                inverse-variance filtered alms (T and/or Q, Ulms)
+
         """
         if datalms.shape == ((len(typ), self.dat_shape[0], self.dat_shape[1])):
             _datalms = np.array([self.lib_datalm.map2alm(_m) for _m in datalms])
@@ -1895,14 +1899,14 @@ class ffs_lencov_alm(ffs_diagcov_alm):
     def get_iblms(self, typ, datalms, use_cls_len=False, use_Pool=0, **kwargs):
         """Inverse-variance filters input CMB maps
 
-            Produces :math`B^t F^t \rm{Cov}^{-1}X^{\rm dat}` (inputs to quadratic estimator routines)
+            Produces :math`B^t F^t \rm{Cov_\alpha}^{-1}X^{\rm dat}` (inputs to quadratic estimator routines)
 
-            The covariance matrix here includes lensing deflections as given by the *self.f* *self.f_inv* instances.
+            The covariance matrix here includes lensing deflections :math:`\alpha` as given by the *self.f* *self.f_inv* instances.
 
         """
         assert use_cls_len == False, 'not implemented'
         if typ == 'QU':
-            return self.get_iblms_new(typ, datalms, use_cls_len=use_cls_len, use_Pool=use_cls_len, **kwargs)
+            return self._get_iblms_v2(typ, datalms, use_cls_len=use_cls_len, use_Pool=use_cls_len, **kwargs)
         if datalms.shape == (len(typ), self.dat_shape[0], self.dat_shape[1]):
             _datalms = np.array([self.lib_datalm.map2alm(_m) for _m in datalms])
             return self.get_iblms(typ, _datalms, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
@@ -1914,20 +1918,8 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             ret[_i] = self._upg(self.lib_datalm.almxfl(ilms[_i], self.cl_transf))
         return ret, it
 
-    def get_iblms_new(self, typ, datalms, use_cls_len=False, use_Pool=0, **kwargs):
-        """
-         Returns B^t F^t Cov^{-1} alms
-          = B^t N^-1(datmaps - B D X^WF)
-         (inputs to quadratc estimator routines)
-         Ouput of lib_skalm shape
-         All **kwargs to cd_solve
-         output TQU sky-shaped alms
-        """
-        # FIXME : some weird things happening with very low noise T ?
-        # if datmaps.shape ==  self._datalms_shape(typ):
-        #    _datmaps = np.array([self.lib_datalm.alm2map(_m) for _m in datmaps])
-        #    return self.get_iblms(typ, _datmaps, use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs)
-        # assert datmaps.shape == (len(typ), self.dat_shape[0], self.dat_shape[1]),(datmaps.shape,self.dat_shape)
+    def _get_iblms_v2(self, typ, datalms, use_cls_len=False, use_Pool=0, **kwargs):
+        # some weird things happening with very low noise T ?
         assert use_cls_len == False, 'not implemented'
         MLTQUlms = SM.TEB2TQUlms(typ, self.lib_skyalm,self.get_MLlms_new(typ, datalms,
                             use_cls_len=use_cls_len, use_Pool=use_Pool, **kwargs))
