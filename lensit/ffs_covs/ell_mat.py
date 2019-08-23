@@ -71,7 +71,7 @@ class ell_mat:
 
     @staticmethod
     def k2ell(k):
-        r"""Mapping of 2d-frequency to multipole :math:`\ell`
+        r"""Mapping of 2d-frequency :math:`k` to multipole :math:`\ell`
 
             :math:`\ell = \rm{int}\left(|k| - \frac 12 \right)`
 

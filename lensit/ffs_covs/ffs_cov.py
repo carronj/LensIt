@@ -48,6 +48,19 @@ def xylms_to_phiOmegalm(lib_alm, Fxx, Fyy, Fxy, Fyx=None):
 
 
 class ffs_diagcov_alm(object):
+    """Library for flat-sky calculations of various lensing biases, responses, etc. in a idealized, isotropic case
+
+        Args:
+            lib_dir: many things will be saved there
+            lib_datalm: lib_alm instance (see *lensit.ffs_covs.ell_mat* containing mode filtering and flat-sky patch info
+            cls_unl(dict): unlensed CMB cls
+            cls_len(dict): lensed CMB cls
+            cl_transf: instrument transfer function
+            cls_noise(dict): 't', 'q' and 'u' noise arrays
+            lib_skyalm(optional): lib_alm instance describing the sky mode. Irrelevant with some exceptions. Defaults to lib_datalm
+
+
+    """
     def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
                  lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier):
 
