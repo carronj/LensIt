@@ -10,7 +10,6 @@ Similarly the mean field can be written as the diagonal
 
 """
 from __future__ import print_function
-import healpy as hp
 import numpy as np
 
 from lensit.misc.misc_utils import timer
@@ -317,7 +316,7 @@ def get_MFqlms(_type, MFkey, lib_dat, lib_sky, pix_phas, TQUMlik_pha, cl_transf,
         def Right(id, ax):
             assert ax in [0, 1], ax
             kfunc = lib_sky.get_ikx if ax == 1 else lib_sky.get_iky
-            return f.alm2lenmap(lib_sky, hp.almxfl(TQUMlik_pha[id] * kfunc(), cl_transf * norm), use_Pool=use_Pool)
+            return f.alm2lenmap(lib_sky, lib_sky.almxfl(TQUMlik_pha[id] * kfunc(), cl_transf * norm), use_Pool=use_Pool)
     else:
         assert 0, 'not implemented'
     retdx = Left(0) * Right(0, 1)
