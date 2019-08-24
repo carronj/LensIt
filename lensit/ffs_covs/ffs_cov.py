@@ -576,19 +576,7 @@ class ffs_diagcov_alm(object):
 
     def cd_solve(self, typ, alms, cond='3', maxiter=50, ulm0=None,
                  use_Pool=0, tol=1e-5, tr_cd=cd_solve.tr_cg, cd_roundoff=25, d0=None):
-        """
-
-        Solves for (F B D xi_unl D^t B^t F^t + N)^-1 dot input alms
-
-        :param cond: conditioner type.
-        :param maxiter: maximal number of cg iterations
-        :param ulm0: Start guess
-        :param use_Pool: See displacements.py
-        :param tol: tolerance on the norm of the residual (! w.r.t. the initial guess, or d0)
-        :param tr_cd: see cd_solve.py for meaning of this.
-        :param cd_roundoff: Number of cg steps before recalculation of the residual.
-        :param d0: The criterion for stopping the cg search is np.sum(residual ** 2) * d0 < tol
-        """
+        #Solves for (F B D xi_unl D^t B^t F^t + N)^-1 dot input alms
         assert alms.shape == self._datalms_shape(typ), (alms.shape, self._datalms_shape(typ))
         if ulm0 is not None:
             assert ulm0.shape == self._datalms_shape(typ), (ulm0.shape, self._datalms_shape(typ))
@@ -617,9 +605,9 @@ class ffs_diagcov_alm(object):
         criterion = cd_monitors.monitor_basic(dot_op, iter_max=maxiter, eps_min=tol, d0=d0)
         print("++ ffs_cov cd_solve: starting, cond %s " % cond)
 
-        iter = cd_solve.cd_solve(ulm0, alms, fwd_op, [pre_ops], dot_op, criterion, tr_cd,
+        it = cd_solve.cd_solve(ulm0, alms, fwd_op, [pre_ops], dot_op, criterion, tr_cd,
                                               roundoff=cd_roundoff)
-        return ulm0, iter
+        return ulm0, it
 
     def _apply_cond3(self, typ, alms, use_Pool=0):
         return self.apply_conddiagcl(typ, alms, use_Pool=use_Pool)
@@ -1284,18 +1272,24 @@ class ffs_diagcov_alm(object):
         facunits = 1. / np.sqrt(np.prod(self.lsides))
         return xylms_to_phiOmegalm(_lib_qlm, Fxx * facunits, Fyy * facunits, Fxy * facunits)
 
-    def get_dlndetcurv(self, typ, cmb_dcls, lib_qlm, K=None, dK=None, use_cls_len=False, recache=False):
-        """
+    def get_dlndetcurv(self, typ, cmb_dcls, lib_qlm, K=None, dK=None, use_cls_len=False):
+        r"""Variation of *get_lndetcurv* with respect to CMB spectra variation
 
-        1/2 Tr K \frac{\delta^2}{\delta dx_a \delta dx_b} Cov at phi == 0.
-        if K is not set, A is cov^-1 and the output reduces to second term of the 2nd variation of 1/2 ln det Cov
-        = -1/2 Tr dCov Covi dCov Covi + 1/2 Tr Covi d^2Cov 
+        *get_lndetcurv* is the harmonic transform of :math:`\frac 1 2 \rm{Tr} A \frac{\delta^2 \rm{Cov}}{\delta \alpha(x) \delta \alpha(y)}` for vanishing deflection
 
-        N0-like normalisation.
-        -(xi,ab)(K) --> -(dxi,ab)(K) - (xi,ab)(dK)
-        
-        Finite difference test ok.
+
+        Args:
+            typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+            cmb_dcls(dict): CMB spectra variation
+            lib_qlm: *ffs_alm* instance describing the lensing alm arrays
+
+            use_cls_len: use lensed or unlensed cls in QE weights (numerator), defaults to lensed cls
+
+        Returns:
+            gradient and curl Fourier components
+
         """
+        #Finite differences test ok.
         _lib_qlm = lib_qlm
         if K is None: assert dK is None
         if K is not None: assert dK is not None
@@ -1562,17 +1556,21 @@ class ffs_diagcov_alm(object):
         return xylms_to_phiOmegalm(_lib_qlm, Fxx * facunits, Fyy * facunits, Fxy * facunits, Fyx=Fyx * facunits)
 
     def get_plmlikcurvcls(self, typ, datcmb_cls, lib_qlm, use_cls_len=True, recache=False, dat_only=False):
-        """
-        returns second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat,
-        where dat Cls does not match the fiducial Cls of this instance.
-        If they do match, the result should be 1/N_0.
-        
-        datcls includes only cmb cls
-        
-        This can be written as (see rPDF notes)
-        1/2 Tr (2Covi Covdat - 1) Covi dCov Covi dCov  (Fisher trace)
-        -1/2 Tr (Covi Covdat -1) Covi d2Cov  (lndet curv)
-        N0-like normalisation 
+        r"""Returns realization-dependent second variation (curvature) of lensing deflection likelihood
+
+            Second variation of
+
+             :math:`\frac 12 X^{\rm dat} \rm{Cov_\alpha}^{-1} X^{\rm dat} + \frac 1 2 \ln \det \rm{Cov_\alpha}`
+
+             with respect to deflection for custom data CMB spectra. See https://arxiv.org/abs/1808.10349
+
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                datcmb_cls(dict): data CMB spectra  (if they do match lensed cls attribute, the result should be inverse lensing Gaussian noise bias)
+                lib_qlm: *ffs_alm* instance describing the lensing alm's arrays.
+                use_cls_len: use lensed cls in filtering (defaults to True)
+
+
         """
         fname = os.path.join(self.lib_dir, '%splmlikcurv_cls%s_cldat' % (typ, {True: 'len', False: 'unl'}[use_cls_len]) \
                 + cls_hash(datcmb_cls, lmax=self.lib_datalm.ellmax) +  '.dat')
@@ -1632,18 +1630,21 @@ class ffs_diagcov_alm(object):
 
     def get_plmRDlikcurvcls(self, typ, datcls_obs, lib_qlm, use_cls_len=True, use_cls_len_D=None, recache=False,
                             dat_only=False):
-        """
-        returns second variation (curvature) of <1/2Xdat Covi Xdat + 1/2 ln det Cov>_dat,
-        where dat Cls does not match the fiducial Cls of this instance.
-        If they do match, the result should be 1/N_0.
+        r"""Returns realization-dependent second variation (curvature) of lensing deflection likelihood
 
-        datcls includes transfer fct and noise (bl**2 Cl + noise)
+            Second variation of
 
-        This can be written as (see rPDF notes)
-        1/2 Tr (2Covi Covdat - 1) Covi dCov Covi dCov  (Fisher trace)
-        -1/2 Tr (Covi Covdat -1) Covi d2Cov  (lndet curv)
-        N0-like normalisation 
-        The data-independent part must be the var. of 1/2 ln det Cov i.e. the MF response.
+             :math:`\frac 12 X^{\rm dat} \rm{Cov_\alpha}^{-1} X^{\rm dat} + \frac 1 2 \ln \det \rm{Cov_\alpha}`
+
+             with respect to deflection for custom data spectra. See https://arxiv.org/abs/1808.10349
+
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                datcls_obs(dict): data (beam-convovled) CMB and noise spectra
+                lib_qlm: *ffs_alm* instance describing the lensing alm's arrays
+                use_cls_len: use lensed cls in filtering (defaults to True)
+
+
         """
         # FIXME : The rel . agreement with 1/N0 is only 1e-6 not double prec., not sure what is going on.
         fname = os.path.join(self.lib_dir, '%splmRDlikcurv_cls%s_cldat' % (typ, {True: 'len', False: 'unl'}[use_cls_len]) \
@@ -1779,18 +1780,18 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
         Args:
             lib_dir: many things will be saved there
-            lib_datalm: lib_alm instance (see *lensit.ffs_covs.ell_mat* containing mode filtering and flat-sky patch info
-            lib_skyalm: lib_alm instance describing the sky modes.
+            lib_datalm: *ffs_alm* instance containing mode filtering and flat-sky patch info
+            lib_skyalm: *ffs_alm* instance describing the sky modes.
             cls_unl(dict): unlensed CMB cls
             cls_len(dict): lensed CMB cls
             cl_transf: instrument transfer function
             cls_noise(dict): 't', 'q' and 'u' noise arrays
-            f: deflection field, forward operation (e.g. *lensit* *ffs_displacement* instance)
-            f_inv: deflection field, backward operation (ideally the inverse f-deflection, *f.get_inverse()*)
+            f: deflection field, forward operation (e.g. *ffs_displacement* instance)
+            fi: deflection field, backward operation (ideally the inverse f-deflection, *f.get_inverse()*)
 
 
     """
-    def __init__(self, lib_dir, lib_datalm, lib_skyalm, cls_unl, cls_len, cl_transf, cls_noise, f, f_inv,
+    def __init__(self, lib_dir, lib_datalm, lib_skyalm, cls_unl, cls_len, cl_transf, cls_noise, f, fi,
                  init_rank=pbs.rank, init_barrier=pbs.barrier):
         assert lib_datalm.ell_mat.lsides == lib_skyalm.ell_mat.lsides, (lib_datalm.ell_mat.lsides, lib_skyalm.ell_mat.lsides)
 
@@ -1805,9 +1806,9 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
         for cl in self.cls_unl.values():   assert len(cl) > lib_skyalm.ellmax
 
-        assert f.shape == self.sky_shape and f_inv.shape == self.sky_shape, (f.shape, f_inv.shape, self.sky_shape)
-        assert f.lsides == self.lsides and f_inv.lsides == self.lsides, (f.lsides, f_inv.lsides, self.lsides)
-        self.f_inv = f_inv  # inverse displacement
+        assert f.shape == self.sky_shape and fi.shape == self.sky_shape, (f.shape, fi.shape, self.sky_shape)
+        assert f.lsides == self.lsides and fi.lsides == self.lsides, (f.lsides, fi.lsides, self.lsides)
+        self.fi = fi  # inverse displacement
         self.f = f  # displacement
 
     def hashdict(self):
@@ -1821,11 +1822,19 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         h['cl_transf'] =  npy_hash(self.cl_transf)
         return h
 
-    def set_ffinv(self, f, finv):
+    def set_ffinv(self, f, fi):
+        """Replace deflection-field attributes and its inverse
+
+            Args:
+                f: new deflection-field instance
+                fi: new inverse deflection-field instance
+
+        """
         assert f.shape == self.sky_shape and f.lsides == self.lsides, (f.shape, f.lsides)
-        assert finv.shape == self.sky_shape and finv.lsides == self.lsides, (finv.shape, finv.lsides)
-        self.f = f
-        self.f_inv = finv
+        assert fi.shape == self.sky_shape and fi.lsides == self.lsides, (fi.shape, fi.lsides)
+        assert hasattr(self, 'f') and  hasattr(self, 'fi')
+        setattr(self, 'f', f)
+        setattr(self, 'fi', fi)
 
     def apply(self, typ, alms, use_Pool=0):
         assert alms.shape == self._datalms_shape(typ), (alms.shape, self._datalms_shape(typ))
@@ -1841,7 +1850,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             from lensit.gpu import apply_GPU
             ablms = np.array([self.lib_datalm.almxfl(_a, self.cl_transf) for _a in alms])
             apply_GPU.apply_FDxiDtFt_GPU_inplace(typ, self.lib_datalm, self.lib_skyalm, ablms,
-                                                 self.f, self.f_inv, self.cls_unl)
+                                                 self.f, self.fi, self.cls_unl)
             for i in range(len(typ)):
                 ret[i] = self.lib_datalm.almxfl(ablms[i], self.cl_transf)
             return ret
@@ -1851,9 +1860,9 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
         tempalms = np.empty(self._skyalms_shape(typ), dtype=complex)
         for _i in range(len(typ)):  # Lens with inverse and mult with determinant magnification.
-            tempalms[_i] = self.f_inv.lens_alm(self.lib_skyalm,
-                                               self._upg(self.lib_datalm.almxfl(alms[_i], self.cl_transf)),
-                                               lib_alm_out=self.lib_skyalm, mult_magn=True, use_Pool=use_Pool)
+            tempalms[_i] = self.fi.lens_alm(self.lib_skyalm,
+                                            self._upg(self.lib_datalm.almxfl(alms[_i], self.cl_transf)),
+                                            lib_alm_out=self.lib_skyalm, mult_magn=True, use_Pool=use_Pool)
         # NB : 7 new full sky alms for TQU in this routine - > 4 GB total for full sky lmax_sky =  6000.
         t.checkpoint("backward lens + det magn")
 
@@ -1884,11 +1893,11 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             # FIXME !! lib_sky vs lib_dat
             from lensit.gpu.apply_cond3_GPU import apply_cond3_GPU_inplace as c3GPU
             ret = alms.copy()
-            c3GPU(typ, self.lib_datalm, ret, self.f, self.f_inv, self.cls_unl, self.cl_transf, self.cls_noise)
+            c3GPU(typ, self.lib_datalm, ret, self.f, self.fi, self.cls_unl, self.cl_transf, self.cls_noise)
             return ret
         temp = np.empty_like(alms)  # Cond. must not change their arguments
         for i in range(len(typ)):  # D^{-1}
-            temp[i] = self._deg(self.f_inv.lens_alm(self.lib_skyalm, self._upg(alms[i]), use_Pool=use_Pool))
+            temp[i] = self._deg(self.fi.lens_alm(self.lib_skyalm, self._upg(alms[i]), use_Pool=use_Pool))
 
         t.checkpoint("Lensing with inverse")
 
@@ -1911,7 +1920,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
             Produces :math:`B^t \rm{Cov_\alpha}^{-1}X^{\rm dat}` (inputs to quadratic estimator routines)
 
-            The covariance matrix here includes the lensing deflection field :math:`\alpha` as given by the *self.f* and *self.f_inv* attributes
+            The covariance matrix here includes the lensing deflection field :math:`\alpha` as given by the *self.f* and *self.fi* attributes
 
         """
         assert use_cls_len == False, 'not implemented'
@@ -1953,7 +1962,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         r"""Returns maximum likelihood sky CMB modes.
 
             This instance uses anisotropic filtering, with lensing deflections as defined by
-            *self.f* and *self.f_inv*
+            *self.f* and *self.fiv*
 
             Args:
                 typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
@@ -1978,8 +1987,8 @@ class ffs_lencov_alm(ffs_diagcov_alm):
 
         cmb_cls = self.cls_len if use_cls_len else self.cls_unl
         filt = ffs_ninv_filt_ideal.ffs_ninv_filt_wl(self.lib_datalm, self.lib_skyalm,
-                                                                 cmb_cls, self.cl_transf, nlev_t, nlev_p, self.f,
-                                                                 self.f_inv, lens_pool=use_Pool)
+                                                    cmb_cls, self.cl_transf, nlev_t, nlev_p, self.f,
+                                                    self.fi, lens_pool=use_Pool)
         opfilt = opfilt_cinv
         opfilt.typ = typ
         chain = chain_samples.get_isomgchain(self.lib_skyalm.ellmax, self.lib_datalm.shape, **kwargs)
@@ -2022,8 +2031,8 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         t.checkpoint("  get_likgrad::just started ")
 
         for _j in range(len(typ)):  # apply Dt and back to harmonic space :
-            almsky1[_j] = self.f_inv.lens_alm(self.lib_skyalm, iblms[_j],
-                                              mult_magn=True, use_Pool=use_Pool)
+            almsky1[_j] = self.fi.lens_alm(self.lib_skyalm, iblms[_j],
+                                           mult_magn=True, use_Pool=use_Pool)
 
         t.checkpoint("  get_likgrad::Forward lensing maps, (%s map(s)) " % len(typ))
         almsky2 = np.zeros((len(typ), self.lib_skyalm.alm_size), dtype=complex)
@@ -2067,7 +2076,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                                    lib_skyalm=lib_skyalmLD)
 
         fLD = self.f.degrade(LD_shape, no_lensing)
-        finvLD = self.f_inv.degrade(LD_shape, no_lensing)
+        finvLD = self.fi.degrade(LD_shape, no_lensing)
         return ffs_lencov_alm(lib_dir, lib_datalmLD, lib_skyalmLD,
                               self.cls_unl, self.cls_len, self.cl_transf, self.cls_noise, fLD, finvLD)
 
@@ -2083,25 +2092,28 @@ class ffs_lencov_alm(ffs_diagcov_alm):
         Olm *= ROO
         return np.array([plm, Olm])
 
-    def evalMF(self, typ, MFkey, xlms_sky, xlms_dat, lib_qlm, use_Pool=0, **kwargs):
-        """
-        All kwargs to cd_solve
-        Sign of the output plm-like, not gradient-like
-        :param typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+    def eval_mf(self, typ, mfkey, xlms_sky, xlms_dat, lib_qlm, use_Pool=0, **kwargs):
+        """Delfection-induced mean-field estimation from input random phases
 
-        :param MFkey:
-        :param xlms_sky: unit spectra random phases with sky_alm shape (Not always necessary)
-        :param xlms_dat: unit spectra random phases with dat_alm shape
-        :param lib_qlm:
-        :return:
+            Args:
+                typ: 'T', 'QU', 'TQU' for temperature-only, polarization-only or joint analysis
+                mfkey: mean-field estimator key
+                xlms_sky: i.i.d. sky modes random phases (if relevant)
+                xlms_dat: i.i.d. data modes random phases (if relevant)
+                lib_qlm: *ffs_alm* instance describing the lensing alm arrays
+
+            Returns:
+                mean-field estimate (gradient and curl component)
+
+
         """
         assert lib_qlm.ell_mat.lsides == self.lsides, (self.lsides, lib_qlm.ell_mat.lsides)
         assert typ in typs, (typ, typs)
         times = timer(_timed)
         ikx = lambda: self.lib_skyalm.get_ikx()
         iky = lambda: self.lib_skyalm.get_iky()
-        times.checkpoint('Just started eval MF %s %s' % (typ, MFkey))
-        if MFkey == 14:
+        times.checkpoint('Just started eval MF %s %s' % (typ, mfkey))
+        if mfkey == 14:
             # W1 =  B^t F^t l^{1/2},  W2 = D daxi  D^t B^t F^t Cov_f^{-1}l^{-1/2}
             assert np.all([(_x.size == self.lib_datalm.alm_size) for _x in xlms_dat])
 
@@ -2124,7 +2136,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             skyalms = np.empty((len(typ), self.lib_skyalm.alm_size), dtype=complex)
             for _i in range(len(typ)):
                 skyalms[_i] = self.lib_skyalm.udgrade(self.lib_datalm, ilms[_i])
-                skyalms[_i] = self.f_inv.lens_alm(self.lib_skyalm, skyalms[_i], mult_magn=True, use_Pool=use_Pool)
+                skyalms[_i] = self.fi.lens_alm(self.lib_skyalm, skyalms[_i], mult_magn=True, use_Pool=use_Pool)
             del ilms
             times.checkpoint('   Done with first lensing')
 
@@ -2143,7 +2155,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             times.checkpoint('   Done with second lensing. Done.')
             del skyalms, tempalms
 
-        elif MFkey == 0:
+        elif mfkey == 0:
             # Std qest. We build the sim and use the std methods
             assert np.all([(_x.size == self.lib_skyalm.alm_size) for _x in xlms_sky])
             assert np.all([(_x.size == self.lib_datalm.alm_size) for _x in xlms_dat])
@@ -2180,7 +2192,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
             dx = 0
             dy = 0
             it = 0
-            assert 0, 'MFkey %s not implemented' % MFkey
+            assert 0, 'mfkey %s not implemented' % mfkey
 
         dphi = dx * lib_qlm.get_ikx() + dy * lib_qlm.get_iky()
         dOm = -dx * lib_qlm.get_iky() + dy * lib_qlm.get_ikx()
