@@ -290,7 +290,7 @@ def TQUPmats2TEBcls(lib_alm, TQUpmat):
     """
     Turns a 3x3x ellmax matrix with T,Q,U ell,m spectra to T,E,B ell only spectra
     """
-    assert TQUpmat.shape == ((3, 3, lib_alm.alm_size)), ((3, 3, lib_alm.alm_size), TQUpmat.shape)
+    assert TQUpmat.shape == (3, 3, lib_alm.alm_size), ((3, 3, lib_alm.alm_size), TQUpmat.shape)
     ret = np.zeros((3, 3, lib_alm.ellmax + 1), dtype=float)
     # E = cos Q + sin U
     # B = -sin Q + cos U
