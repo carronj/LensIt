@@ -437,11 +437,8 @@ class ffs_iterator(object):
         return ret + yt_v ** 2 / yt_s - st_Bv ** 2 / st_Bs
 
     def get_lndetcurv_update(self, k, key, alphak):
-        """
-        Let B be the curvature matrix, B0 ~ 1/Cpp + 1/N0. and H its inverse
-        With BFGS holds ln|B_k + 1| = ln |B_k| + ln(1 - 1/alpha_k g_k+1 H g_k / (gk H gk))
-        where alpha_k is the newton step length at this step.
-        """
+        #Builds update to the BFGS log-determinant
+
         H = self.get_Hessian(k, key)
         Hgk = H.get_mHkgk(self.lib_qlm.alm2rlm(self.load_total_grad(k, key)), k)
         denom = np.sum(self.lib_qlm.alm2rlm(self.load_total_grad(k, key)) * Hgk)
@@ -449,23 +446,27 @@ class ffs_iterator(object):
         assert 1. - num / denom / alphak > 0.
         return np.log(1. - num / denom / alphak)
 
-    def get_Gaussnoisesample(self, k, key,plm_noisephas, real_space=False, verbose=False):
-        """
-        Produce a Gaussian random field from the approximate covariance (H, from Broyden) and mean at iteration k
-        plm_pha: unit spectra random pha.
-        Recall that the curvature matrix B_1 requires two gradients on disk.
-        Makes use of s_k and y_k from 0 to k-1 -> gradient information up to k
+    def get_Gaussnoisesample(self, it, key,plm_noisephas, real_space=False, verbose=False):
+        """Produce a Gaussian random field from the approximate BFGS covariance
+
+            Args:
+                it: iteration index
+                key: 'p' or 'o' for lensing gradient or curl iteration
+                plm_noisepha: unit spectra random phases of the right shape
+                real_space: produces random field in real space if set, otherwise alm array
+
+
         """
         assert key.lower() in ['p', 'o'], key  # potential or curl potential.
         assert plm_noisephas.shape == (self.lib_qlm.alm_size,),(plm_noisephas.shape,self.lib_qlm.alm_size)
 
         alm_0 = self.lib_qlm.almxfl(plm_noisephas, np.sqrt(self.get_H0(key)))
-        ret = self.get_Hessian(max(k,0), key).sample_Gaussian(k, self.lib_qlm.alm2rlm(alm_0))
+        ret = self.get_Hessian(max(it,0), key).sample_Gaussian(it, self.lib_qlm.alm2rlm(alm_0))
         return self.lib_qlm.alm2map(self.lib_qlm.rlm2alm(ret)) if real_space else self.lib_qlm.rlm2alm(ret)
 
 
     def get_Hessian(self, it, key):
-        """Build the L-BFGS Hessian at iteration *k*
+        """Build the L-BFGS Hessian at iteration *it*
 
 
         """
