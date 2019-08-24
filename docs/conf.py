@@ -19,6 +19,11 @@ import sphinx_rtd_theme
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('../LensIt'))
+sys.path.insert(0, os.path.abspath('./lensit/ffs_covs'))
+sys.path.insert(0, os.path.abspath('./lensit/ffs_deflect'))
+sys.path.insert(0, os.path.abspath('./lensit/ffs_iterators'))
+sys.path.insert(0, os.path.abspath('./lensit/ffs_qlms'))
+sys.path.insert(0, os.path.abspath('./lensit/sims'))
 
 
 # -- Project information -----------------------------------------------------
