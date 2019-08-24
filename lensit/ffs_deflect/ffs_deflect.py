@@ -4,7 +4,12 @@ import hashlib
 import os
 import numpy as np
 
-from lensit.bicubic import bicubic
+try:
+    from lensit.bicubic import bicubic
+except ImportError:
+    print("***could not import bicubic fortran module")
+    print("***I wont be able to lens maps or invert a deflection field")
+    bicubic = 'could not import bicubic fortran module'
 
 from lensit.misc import map_spliter
 from lensit.misc import misc_utils as utils
