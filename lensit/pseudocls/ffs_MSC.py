@@ -8,7 +8,9 @@ from lensit.ffs_covs import ell_mat, ffs_specmat
 
 
 def apodize(lib_datalm, mask, sigma_fwhm_armin=12., lmax=None, method='hybrid', mult_factor=3, min_factor=0.1):
-    """ Flat sky apodizer directly adapted from Anthony curved sky libaml.apodize """
+    """Flat sky apodizer directly adapted from AL curved sky libaml.apodize
+
+    """
     if sigma_fwhm_armin <= 0.: return mask
     lmax = lmax or lib_datalm.ell_mat.ellmax
     libalm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
@@ -28,8 +30,8 @@ def apodize(lib_datalm, mask, sigma_fwhm_armin=12., lmax=None, method='hybrid', 
 
 
 class MSC_T:
-    """
-    Masked sky coupling pseudoCl deconvolution library.
+    """Masked sky coupling pseudoCl deconvolution library.
+
     For temperature only. See MSC_P for polarization only.
 
     Set pedges and/or weights to bin the pCl part of the matrix.
@@ -123,9 +125,9 @@ class MSC_T:
         return
 
 
-class MSC_P():
-    """
-    Masked sky coupling pseudoCl deconvolution library.
+class MSC_P:
+    """Masked sky coupling pseudoCl deconvolution library.
+
     For polarization only. See MSC_T for temperature only.
 
     Set pedges and/or weights to bin the pCl part of the matrix (EE BB and EB separately).
@@ -134,6 +136,8 @@ class MSC_P():
     If the coupling matrix is not square the deconvolution if performed via np.lstsq.
 
     MSC_P.map2cls(qumap) outputs estimated clEE,clBB and clEB up to MSC_P.lmax
+
+
     """
 
     def __init__(self, lib_datalm, apomask, lmax, cache_dir,
@@ -256,12 +260,14 @@ class MSC_P():
 
 
 def apply_MSC(_type, cl, lib_datalm, mask):
-    """
-    Fast application of the cut-sky coupling matrix to cl vector, using 2D FFT methods.
+    """Fast application of the cut-sky coupling matrix to cl vector, using 2D FFT methods.
+
     For polarization cl input is clEE,clBB,clEB.
     This uses on the flat sky:
         M_ll'^{AB,A'B'} = (bin in m, sum in m') |W_l-l'|^2 R_l AX R_l^*BY R_l XA' R_l^*YB'
     evaluating this in real space with 2D FFTs. (R is the rotation between X =T, Q,U and A in T,E,B.)
+
+
     """
     assert _type in ['T', 'QU', 'TQU']
     libalm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell >= 0)

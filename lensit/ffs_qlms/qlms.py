@@ -17,10 +17,10 @@ from lensit.ffs_deflect.ffs_deflect import ffs_id_displacement
 from lensit.ffs_covs import ffs_specmat as SM
 
 verbose = False
-_types = ['T', 'QU', 'TQU']
+typs = ['T', 'QU', 'TQU']
 
 
-def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 =None, use_Pool=0, **kwargs):
+def get_qlms_wl(typ, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 =None, use_Pool=0, **kwargs):
     """
     Stand alone qlm estimator starting from lib_sky and unlensed Cls
     Likelihood gradient (from the quadratic part).
@@ -47,37 +47,37 @@ def get_qlms_wl(_type, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 
     ( B^t Ni (data - B D Xmap))(z)    (D ika Xmap)(z)
     """
     lib_sky2 = lib_sky if lib_sky2 is None else lib_sky
-    if _type in ['EE','EB','BE','BB']:
+    if typ in ['EE','EB','BE','BB']:
         TEB_Mlik = lib_sky.QUlms2EBalms(TQU_Mlik)
         TEB_Res = lib_sky.QUlms2EBalms(ResTQU_Mlik)
-        TEB_Mlik[{'E':1,'B':0}[_type[0]]] *= 0.
-        TEB_Res[{'E':1,'B':0}[_type[1]]] *= 0.
+        TEB_Mlik[{'E':1,'B':0}[typ[0]]] *= 0.
+        TEB_Res[{'E':1,'B':0}[typ[1]]] *= 0.
         return get_qlms_wl('QU',lib_sky,lib_sky.EBlms2QUalms(TEB_Mlik),lib_sky2.EBlms2QUalms(TEB_Res),lib_qlm,
                            f = f,use_Pool=use_Pool,lib_sky2 = lib_sky2)
 
-    assert len(TQU_Mlik) == len(_type) and len(ResTQU_Mlik) == len(_type)
+    assert len(TQU_Mlik) == len(typ) and len(ResTQU_Mlik) == len(typ)
     t = timer(verbose, prefix=__name__)
     if f is None: f = ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
 
     def left(id):
-        assert id in range(len(_type)), (id, _type)
+        assert id in range(len(typ)), (id, typ)
         return lib_sky.alm2map(ResTQU_Mlik[id])
 
     def Right(S_id, axis):
-        assert S_id in range(len(_type)), (S_id, _type)
+        assert S_id in range(len(typ)), (S_id, typ)
         assert axis in [0, 1]
         kfunc = lib_sky2.get_ikx if axis == 1 else lib_sky2.get_iky
         return f.alm2lenmap(lib_sky2, TQU_Mlik[S_id] * kfunc(), use_Pool=use_Pool)
 
     retdx = left(0) * Right(0, 1)
-    for _i in range(1, len(_type)): retdx += left(_i) * Right(_i, 1)
+    for _i in range(1, len(typ)): retdx += left(_i) * Right(_i, 1)
     retdx = lib_qlm.map2alm(retdx)
-    t.checkpoint("get_likgrad::Cart. gr. x done. (%s map(s) lensed, %s fft(s)) " % (len(_type), 2 * len(_type) + 1))
+    t.checkpoint("get_likgrad::Cart. gr. x done. (%s map(s) lensed, %s fft(s)) " % (len(typ), 2 * len(typ) + 1))
 
     retdy = left(0) * Right(0, 0)
-    for _i in range(1, len(_type)): retdy += left(_i) * Right(_i, 0)
+    for _i in range(1, len(typ)): retdy += left(_i) * Right(_i, 0)
     retdy = lib_qlm.map2alm(retdy)
-    t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (len(_type), 2 * len(_type) + 1))
+    t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (len(typ), 2 * len(typ) + 1))
 
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
                        retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest
@@ -96,27 +96,27 @@ def _Mlik2ResTQUMlik_diag(field, ninv_filt, TQUMlik, data, f, fi):
     ninv_filt.set_ffi(f_id, f_id)
     return ninv_filt.apply_Rt(field, _map)
 
-def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
+def get_response(typ,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
                  wAl = None,wBl = None,fAl = None,fBl = None,lib_qlm = None):
     """ Q. estimator response """
-    assert _type[0] in ['T','E','B'] and _type[1] in ['T','E','B']
-    assert _type[0] in ['E','B'] and _type[1] in ['E','B'], "T not implemented"
+    assert typ[0] in ['T','E','B'] and typ[1] in ['T','E','B']
+    assert typ[0] in ['E','B'] and typ[1] in ['E','B'], "T not implemented"
     assert 'eb' not in cls_len.keys() and 'be' not in cls_len.keys()
     assert 'tb' not in cls_len.keys() and 'bt' not in cls_len.keys()
 
     lmax = lib_datalm.ellmax
     if wAl is None: wAl = np.ones(lmax + 1,dtype = float)
-    if wBl is None: wBl = cls_len[(_type[1] + _type[1]).lower()][:lmax + 1]
+    if wBl is None: wBl = cls_len[(typ[1] + typ[1]).lower()][:lmax + 1]
     if fAl is None:
-        Nlev = NlevT_uKamin if _type[0] == 'T' else NlevP_uKamin
+        Nlev = NlevT_uKamin if typ[0] == 'T' else NlevP_uKamin
         ii = np.where(cl_transf[:lmax + 1] > 0.)
         fAl = np.zeros(lmax + 1,dtype = float)
-        fAl[ii] = 1./ (cls_len[(_type[0] + _type[0]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
+        fAl[ii] = 1./ (cls_len[(typ[0] + typ[0]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
     if fBl is None:
-        Nlev = NlevT_uKamin if _type[1] == 'T' else NlevP_uKamin
+        Nlev = NlevT_uKamin if typ[1] == 'T' else NlevP_uKamin
         ii = np.where(cl_transf[:lmax + 1] > 0.)
         fBl = np.zeros(lmax + 1,dtype = float)
-        fBl[ii] = 1./ (cls_len[(_type[1] + _type[1]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
+        fBl[ii] = 1./ (cls_len[(typ[1] + typ[1]).lower()][ii] + ( (Nlev / 60. /180. * np.pi)/ cl_transf[ii]) ** 2)
 
     if lib_qlm is None: lib_qlm = lib_datalm
 
@@ -161,21 +161,21 @@ def get_response(_type,lib_datalm,cls_len,NlevT_uKamin,NlevP_uKamin,cl_transf,
     ikx = lambda : lib_datalm.get_ikx()
     iky = lambda: lib_datalm.get_iky()
 
-    clB = wBl * fBl * cls_len[(_type[1] + _type[1]).lower()][:lmax + 1]
+    clB = wBl * fBl * cls_len[(typ[1] + typ[1]).lower()][:lmax + 1]
     clA = wAl * fAl
     for i, j in [(1, 1),(1, 2),(2, 1),(2, 2)]:
-        retxx += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(ikx() ** 2 * get_pmat(_type[1],j,i,clB ))
-        retyy += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(iky() ** 2 * get_pmat(_type[1],j,i,clB ))
-        retxy += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(ikx() * iky() * get_pmat(_type[1],j,i,clB ))
-        retyx += _2map(get_pmat(_type[0],i,j, clA))  *  _2map(ikx() * iky() * get_pmat(_type[1],j,i,clB ))
+        retxx += _2map(get_pmat(typ[0],i,j, clA))  *  _2map(ikx() ** 2 * get_pmat(typ[1],j,i,clB ))
+        retyy += _2map(get_pmat(typ[0],i,j, clA))  *  _2map(iky() ** 2 * get_pmat(typ[1],j,i,clB ))
+        retxy += _2map(get_pmat(typ[0],i,j, clA))  *  _2map(ikx() * iky() * get_pmat(typ[1],j,i,clB ))
+        retyx += _2map(get_pmat(typ[0],i,j, clA))  *  _2map(ikx() * iky() * get_pmat(typ[1],j,i,clB ))
 
     clB = wBl * fBl
-    clA = wAl * fAl * cls_len[(_type[0] + _type[0]).lower()][:lmax + 1]
+    clA = wAl * fAl * cls_len[(typ[0] + typ[0]).lower()][:lmax + 1]
     for i, j in [(1, 1), (1, 2), (2, 1), (2, 2)]:
-        retxx += _2map(ikx() * get_pmat(_type[0], i, j, clA)) * _2map(ikx() * get_pmat(_type[1], j, i, clB))
-        retyy += _2map(iky() * get_pmat(_type[0], i, j, clA)) * _2map(iky() * get_pmat(_type[1], j, i, clB))
-        retxy += _2map(ikx() * get_pmat(_type[0], i, j, clA)) * _2map(iky() * get_pmat(_type[1], j, i, clB))
-        retyx += _2map(iky() * get_pmat(_type[0], i, j, clA)) * _2map(ikx() * get_pmat(_type[1], j, i, clB))
+        retxx += _2map(ikx() * get_pmat(typ[0], i, j, clA)) * _2map(ikx() * get_pmat(typ[1], j, i, clB))
+        retyy += _2map(iky() * get_pmat(typ[0], i, j, clA)) * _2map(iky() * get_pmat(typ[1], j, i, clB))
+        retxy += _2map(ikx() * get_pmat(typ[0], i, j, clA)) * _2map(iky() * get_pmat(typ[1], j, i, clB))
+        retyx += _2map(iky() * get_pmat(typ[0], i, j, clA)) * _2map(ikx() * get_pmat(typ[1], j, i, clB))
     fac = 1. / np.sqrt(np.prod(lib_datalm.lsides))
     _2alm = lambda _map : lib_qlm.map2alm(_map)
     retxx = _2alm(retxx)
@@ -201,11 +201,11 @@ class MFestimator:
     def npix(self):
         return self.ninv_filt.npix
 
-    def get_MFqlms(self, _type, MFkey, idx, soltn=None):
+    def get_MFqlms(self, typ, MFkey, idx, soltn=None):
         lib_sky = self.ninv_filt.lib_skyalm
         lib_dat = self.ninv_filt.lib_datalm
         assert lib_sky.lsides == lib_dat.lsides
-        self.opfilt._type = _type
+        self.opfilt.typ = typ
         if hasattr(self.ninv_filt, 'f'):
             print("******* I am using displacement for ninvfilt in MFest")
         else:
@@ -215,9 +215,9 @@ class MFestimator:
             # B^t M^t X (x) (D ika P D^t B^t Covi X )(x). Second term are just the deflected gradients of the recontructed
             assert self.pix_pha is not None
             if soltn is None:
-                soltn = np.zeros((self.opfilt.TEBlen(_type), self.ninv_filt.lib_skyalm.alm_size), dtype=complex)
-            phas = self.pix_pha.get_sim(idx)[0:len(_type)]
-            for i, _f in enumerate(_type): phas[i] *= self.ninv_filt.get_mask(_f.lower())
+                soltn = np.zeros((self.opfilt.TEBlen(typ), self.ninv_filt.lib_skyalm.alm_size), dtype=complex)
+            phas = self.pix_pha.get_sim(idx)[0:len(typ)]
+            for i, _f in enumerate(typ): phas[i] *= self.ninv_filt.get_mask(_f.lower())
             self.mchain.solve(soltn, phas, finiop='MLIK')
             TQUMlik = self.opfilt.soltn2TQUMlik(soltn, self.ninv_filt)
             norm = np.prod(lib_dat.shape) / (np.prod(lib_dat.lsides))
@@ -236,12 +236,12 @@ class MFestimator:
             # B X given in input
 
             norm = np.prod(lib_dat.shape) / (np.prod(lib_sky.lsides))
-            phas = self.pix_pha.get_sim(idx)[0:len(_type)]
+            phas = self.pix_pha.get_sim(idx)[0:len(typ)]
             if soltn is None:
-                soltn = np.zeros((self.opfilt.TEBlen(_type), self.ninv_filt.lib_skyalm.alm_size), dtype=complex)
+                soltn = np.zeros((self.opfilt.TEBlen(typ), self.ninv_filt.lib_skyalm.alm_size), dtype=complex)
             inp = np.array([lib_sky.almxfl(lib_sky.map2alm(_p), self.ninv_filt.cl_transf) for _p in phas])
             inp = np.array([lib_dat.alm2map(lib_dat.udgrade(lib_sky, _p)) * self.ninv_filt.get_mask(_f) for _p, _f in
-                            zip(inp, _type)])
+                            zip(inp, typ)])
             self.mchain.solve(soltn, inp, finiop='MLIK')
             soltn = self.opfilt.soltn2TQUMlik(soltn, self.ninv_filt)
 
@@ -258,16 +258,16 @@ class MFestimator:
         else:
             assert 'not implemented'
         retdx = Left(0) * Right(0, 1)
-        for i in range(1, len(_type)): retdx += Left(i) * Right(i, 1)
+        for i in range(1, len(typ)): retdx += Left(i) * Right(i, 1)
         retdx = self.lib_qlm.map2alm(retdx)
         retdy = Left(0) * Right(0, 0)
-        for i in range(1, len(_type)): retdy += Left(i) * Right(i, 0)
+        for i in range(1, len(typ)): retdy += Left(i) * Right(i, 0)
         retdy = self.lib_qlm.map2alm(retdy)
         return np.array([- retdx * self.lib_qlm.get_ikx() - retdy * self.lib_qlm.get_iky(),
                          retdx * self.lib_qlm.get_iky() - retdy * self.lib_qlm.get_ikx()])  # N0  * output is normalized qest
 
 
-def get_MFqlms(_type, MFkey, lib_dat, lib_sky, pix_phas, TQUMlik_pha, cl_transf, lib_qlm, f=None, use_Pool=0):
+def get_MFqlms(typ, MFkey, lib_dat, lib_sky, pix_phas, TQUMlik_pha, cl_transf, lib_qlm, f=None, use_Pool=0):
     assert lib_dat.lsides == lib_sky.lsides
     if f is None: f = ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
     if MFkey == 12:
@@ -320,16 +320,16 @@ def get_MFqlms(_type, MFkey, lib_dat, lib_sky, pix_phas, TQUMlik_pha, cl_transf,
     else:
         assert 0, 'not implemented'
     retdx = Left(0) * Right(0, 1)
-    for i in range(1, len(_type)): retdx += Left(i) * Right(i, 1)
+    for i in range(1, len(typ)): retdx += Left(i) * Right(i, 1)
     retdx = lib_qlm.map2alm(retdx)
     retdy = Left(0) * Right(0, 0)
-    for i in range(1, len(_type)): retdy += Left(i) * Right(i, 0)
+    for i in range(1, len(typ)): retdy += Left(i) * Right(i, 0)
     retdy = lib_qlm.map2alm(retdy)
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
                      retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is unnormalized qest
 
 
-def get_qlms(_type, lib_sky, Res_TEBlms, cls_unl, lib_qlm, Res_TEBlms2=None, f=None, use_Pool=0, **kwargs):
+def get_qlms(typ, lib_sky, Res_TEBlms, cls_unl, lib_qlm, Res_TEBlms2=None, f=None, use_Pool=0, **kwargs):
     # FIXME : Seems to work but D_f to Reslm is a super small scale map in close to in configuration with little noise.
     # FIXME : The map B^t Covi d has spec 1 / (P + N/B^2) which can peak at a farily small scale.
     # FIXME there is probably a better way.
@@ -359,32 +359,32 @@ def get_qlms(_type, lib_sky, Res_TEBlms, cls_unl, lib_qlm, Res_TEBlms2=None, f=N
     ( B^t Ni (data - B D Xmap))(z)    (D Xmap)(z)
     """
     _Res_TEBlms2 = Res_TEBlms if Res_TEBlms2 is None else Res_TEBlms2
-    assert len(Res_TEBlms) == len(_type) and len(_Res_TEBlms2) == len(_type)
+    assert len(Res_TEBlms) == len(typ) and len(_Res_TEBlms2) == len(typ)
     t = timer(verbose, prefix=__name__)
     if f is not None: print(" qlms.py :: consider using get_qlms_wl for qlms with lensing, to avoid lensing noisy maps")
     if f is None: f = ffs_id_displacement(lib_sky.shape, lib_sky.lsides)
 
-    TQUmlik = SM.TEB2TQUlms(_type, lib_sky, SM.apply_TEBmat(_type, lib_sky, cls_unl, _Res_TEBlms2))
+    TQUmlik = SM.TEB2TQUlms(typ, lib_sky, SM.apply_TEBmat(typ, lib_sky, cls_unl, _Res_TEBlms2))
 
     def left(S_id):
-        assert S_id in range(len(_type)), (S_id, _type)
-        return f.alm2lenmap(lib_sky, SM.get_SlmfromTEBlms(_type, lib_sky, Res_TEBlms, _type[S_id]), use_Pool=use_Pool)
+        assert S_id in range(len(typ)), (S_id, typ)
+        return f.alm2lenmap(lib_sky, SM.get_SlmfromTEBlms(typ, lib_sky, Res_TEBlms, typ[S_id]), use_Pool=use_Pool)
 
     def Right(S_id, axis):
-        assert S_id in range(len(_type)), (S_id, _type)
+        assert S_id in range(len(typ)), (S_id, typ)
         assert axis in [0, 1]
         kfunc = lib_sky.get_ikx if axis == 1 else lib_sky.get_iky
         return f.alm2lenmap(lib_sky, TQUmlik[S_id] * kfunc(), use_Pool=use_Pool)
 
     retdx = left(0) * Right(0, 1)
-    for _i in range(1, len(_type)): retdx += left(_i) * Right(_i, 1)
+    for _i in range(1, len(typ)): retdx += left(_i) * Right(_i, 1)
     retdx = lib_qlm.map2alm(f.mult_wmagn(retdx))
-    t.checkpoint("get_likgrad::Cart. gr. x done. (%s map(s) lensed, %s fft(s)) " % (2 * len(_type), 2 * len(_type) + 1))
+    t.checkpoint("get_likgrad::Cart. gr. x done. (%s map(s) lensed, %s fft(s)) " % (2 * len(typ), 2 * len(typ) + 1))
 
     retdy = left(0) * Right(0, 0)
-    for _i in range(1, len(_type)): retdy += left(_i) * Right(_i, 0)
+    for _i in range(1, len(typ)): retdy += left(_i) * Right(_i, 0)
     retdy = lib_qlm.map2alm(f.mult_wmagn(retdy))
-    t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (2 * len(_type), 2 * len(_type) + 1))
+    t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (2 * len(typ), 2 * len(typ) + 1))
 
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
                      retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest

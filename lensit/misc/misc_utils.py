@@ -4,7 +4,6 @@ import sys
 import time
 
 import numpy as np
-import os
 import hashlib
 from lensit.pbs import pbs
 
@@ -109,17 +108,6 @@ class timer:
                                  '%02d:%02d:%02d' % (dhi, dmi, dsi)) + "]) " + msg + ' %s \n' % self.suffix)
 
 
-def read_params(paramfile):
-    """
-    Reads a parameter file with lines of the form key = value as a dictionary
-    """
-    assert os.path.exists(paramfile), paramfile
-    params = {}
-    with open(paramfile) as f:
-        for line in f:
-            (key, equal, val) = line.split()
-            params[key] = val
-    return params
 
 def enumerate_progress(list, label=''):
     # Taken boldly from Duncan Hanson lpipe :
@@ -147,18 +135,18 @@ def enumerate_progress(list, label=''):
 
 
 def IsPowerOfTwo(i):
-    """
-        Returns true if all entries of i are powers of two.
-        False otherwise.
+    """True if all entries of i are powers of two False otherwise.
+
+
     """
     return (i & (i - 1)) == 0 and i != 0
 
 
 def Log2ofPowerof2(shape):
+    """Returns powers of two exponent for each element of shape
+
+
     """
-    Returns powers of two exponent for each element of shape
-    """
-    # There must be a better way, such as the first non zero byte.
     res = np.array(shape)
     for i in range(res.size):
         n = shape[i]
@@ -172,16 +160,14 @@ def Log2ofPowerof2(shape):
 
 
 def int_tabulated(x, y, **kwargs):
-    # Emulates IDL int_tabulated fct for the moment with scipy.integrate.sims
     from scipy.integrate import simps
     return simps(y, x=x, **kwargs)
 
 
 class stats:
-    """
-    Simple minded routines for means and averages of sims .
-    Calculates means as 1/N sum()
-    and Cov as 1/(N-1)sum(x - mean)(x - mean)^t
+    """Simple minded routines for means and averages of sims .
+
+
     """
 
     def __init__(self, size, xcoord=None, do_cov=True, dtype=float):
@@ -205,11 +191,6 @@ class stats:
         return self.sum / self.N
 
     def cov(self):
-        """
-        1/(N-1) sum_i = 1^N (X_i - bX)(X_i - bX)
-        = Mom / (N-1) + N/(N-1) bX bX^t - 2 N / (N-1) bX bX^t
-        = Mom / (N-1) - N/(N-1) bX bX^t
-        """
         assert (self.N > 0)
         assert self.do_cov
         if self.N == 1: return np.zeros((self.size, self.size))
@@ -274,8 +255,8 @@ class stats:
 
 
 def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean'):
-    """
-    nzell: ells to consider. Use this e.g. to exclude modes with zero counts in flat sky maps.
+    """Bins a cl array according to bin edges and multipole to consider
+
     """
     assert meanorsum in ['mean', 'sum']
     if meanorsum == 'sum': assert not return_err, 'not implemented'
@@ -299,13 +280,13 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
         return ret
     return ret, err
 
-class binner():
+class binner:
     def __init__(self, bins_l, bins_r):
-        """
-        Binning routines. Left and right inclusive.
-        For most general situation
+        """Binning routines. Left and right inclusive.
+
         :param bins_l: left edges (inclusive)
         :param bins_r: right edges (inclusive)
+
         """
         assert (len(bins_l) == len(bins_r)), "inconsistent inputs"
         assert (np.all(bins_r - bins_l > 0.)), "inconsistent input"
@@ -335,7 +316,7 @@ class binner():
 
 
 def rfft2_sum(rfft_map):
-    """ Implementation of \sum_k map_k when using rfft arrays : (for odd number of points set only [:,0]) """
+    """Implementation of \sum_k map_k when using rfft arrays : (for odd number of points set only [:,0]) """
     assert len(rfft_map.shape) == 2
     if rfft_map.shape[1] % 2 == 0:
         return 2 * np.sum(rfft_map) - np.sum(rfft_map[:, [-1, 0]])
@@ -344,10 +325,10 @@ def rfft2_sum(rfft_map):
 
 
 def PartialDerivativePeriodic(arr, axis, h=1., rule='4pts'):
-    """
-    Returns the partial derivative of the arr along axis 'axis',
-    following a 2pts or 4pts rule, reinventing the wheel.
-    Uses periodic boundary conditions.
+    """Returns the partial derivative of the arr along axis 'axis'
+
+    This follows a 2pts or 4pts rule using periodic boundary conditions.
+
     """
     if rule == '4pts':  # O(h**4) rule
         idc = [-2, -1, 1, 2]
@@ -363,41 +344,6 @@ def PartialDerivativePeriodic(arr, axis, h=1., rule='4pts'):
     grad = np.roll(arr, idc[0], axis=axis) * weights[0]
     for i, w in zip(idc[1:], weights[1:]): grad += np.roll(arr, i, axis=axis) * w
     return grad
-
-
-def outerproducts(vs):
-    """
-    vs is a list of 1d numpy arrays, not necessarily of the same size.
-    Return a matrix A_i1_i2..i_ndim = vi1_vi2_..v_indim.
-    Use np.outer recursively on flattened arrays.
-    """
-
-    # check input and infer new shape  :
-    assert (isinstance(vs, list)), "Want list of 1d arrays"
-    ndim = len(vs)
-    if ndim == 1: return vs[0]
-    shape = ()
-    for i in range(ndim):
-        assert (vs[i].ndim == 1), "Want list of 1d arrays"
-        shape += (vs[i].size,)
-
-    B = vs[ndim - 1]
-
-    for i in range(1, ndim): B = np.outer(vs[ndim - 1 - i], B).flatten()
-    return B.reshape(shape)
-
-
-def square_pixwin_map(shape):
-    """
-    pixel window function of square top hat for any dimension.
-    k*lcell / 2
-    """
-
-    vs = []
-    for ax in range(len(shape)):
-        lcell_ka = 0.5 * Freq(np.arange(shape[ax]), shape[ax]) * (2. * np.pi / shape[ax])
-        vs.append(np.insert(np.sin(lcell_ka[1:]) / lcell_ka[1:], 0, 1.))
-    return outerproducts(vs)
 
 
 def Freq(i, N):

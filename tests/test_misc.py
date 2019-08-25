@@ -50,9 +50,6 @@ def test_iters4():
     from lensit.qcinv import ffs_ninv_filt_ideal, chain_samples
     from lensit.ffs_covs import ell_mat
     def get_starting_point(idx):
-        """
-        This returns initial data for simulation index 'idx' from a CMB-S4 simulation library.
-        """
         sims = li.get_maps_lib('S4', 10, 11, nsims=1)  # Simulation-library for configuration 'S4'.
         # Parameters 10, 11 produces data on 645 sq. deg,
         # with lensed CMB's generated at 0.75 arcmin resolution,
@@ -88,10 +85,6 @@ def test_iters4():
 
     def get_itlib(lib_dir, plm0, lib_qlm, datalms, lib_datalm, H0, beam_fwhmamin=3., NlevT_filt=1.5,
                   NlevP_filt=1.5 * np.sqrt(2.)):
-        """
-        This returns an iterator instance from the input data maps, lensing map starting point,
-        likelihood curvature guess and choice of filtering parameters (ideally close to those of the data).
-        """
         if not os.path.exists(lib_dir):
             os.makedirs(lib_dir)
         # Prior on lensing power spectrum, and CMB spectra for the filtering at each iteration step.

@@ -4,9 +4,8 @@ import numpy as np
 
 
 def IsPowerOfTwo(i):
-    """
-        Returns true if all entries of i are powers of two.
-        False otherwise.
+    """Returns true if all entries of i are powers of two, False otherwise.
+
     """
     return (i & (i - 1)) == 0 and i != 0
 
@@ -28,97 +27,31 @@ def Log2ofPowerof2(shape):
 
 
 def Freq(i, N):
-    """
-     Outputs the absolute integers frequencies [0,1,...,N/2,N/2-1,...,1]
+    """Outputs the absolute integers frequencies [0,1,...,N/2,N/2-1,...,1]
+
      in numpy fft convention as integer i runs from 0 to N-1.
      Inputs can be numpy arrays e.g. i (i1,i2,i3) with N (N1,N2,N3)
                                   or i (i1,i2,...) with N
      Both inputs must be integers.
      All entries of N must be even.
+
+
     """
     assert (np.all(N % 2 == 0)), "This routine only for even numbers of points"
     return i - 2 * (i >= (N / 2)) * (i % (N / 2))
 
 
-def FlatIndices(coord, shape):
-    """
-    Returns the indices in a flattened 'C' convention array of multidimensional indices
-    """
-    ndim = len(shape)
-    idc = coord[ndim - 1, :]
-    for j in xrange(1, ndim): idc += np.prod(shape[ndim - j:ndim]) * coord[ndim - 1 - j, :]
-    return idc
-
-
 def rfft2_reals(shape):
-    """ Pure reals modes in 2d rfft array. (from real map shape, not rfft array) """
+    """Pure reals modes in 2d rfft array. (from real map shape, not rfft array)
+
+    """
     N0, N1 = shape
-    fx = [0];
+    fx = [0]
     fy = [0]
-    if N1 % 2 == 0: fx.append(0); fy.append(N1 / 2)
+    if N1 % 2 == 0: fx.append(0); fy.append(N1 // 2)
     if N0 % 2 == 0: fx.append(N0 / 2); fy.append(0)
-    if N1 % 2 == 0 and N0 % 2 == 0: fx.append(N0 / 2); fy.append(N1 / 2)
+    if N1 % 2 == 0 and N0 % 2 == 0: fx.append(N0 // 2); fy.append(N1 // 2)
     return np.array(fx), np.array(fy)
-
-
-def rfft2Pk_minimal(rfft2map):
-    """
-    Super-overkill power spectrum estimaition on the grid, with strictly minimal binning (only exact same frequencies)
-    Many bins will have only number count 4 or something.
-    Outputs a list with integer array of squared frequencies,integer array number counts, and Pk estimates.
-    (only non zero counts frequencies)
-    """
-    assert len(rfft2map.shape) == 2
-    assert 2 * (rfft2map.shape[1] - 1) == rfft2map.shape[0], 'Only for square maps'
-
-    N0, N1 = rfft2map.shape
-    weights = rfft2map.real.flatten() ** 2 + rfft2map.imag.flatten() ** 2
-
-    l02 = Freq(np.arange(N0, dtype=int), N0) ** 2
-    l12 = Freq(np.arange(N1, dtype=int), 2 * (N1 - 1)) ** 2
-    sqd_freq = (np.outer(l02, np.ones(N1, dtype=int)) + np.outer(np.ones(N0, dtype=int), l12)).flatten()
-    counts = np.bincount(sqd_freq)
-
-    # The following frequencies have their opposite in the map and should not be double counted.
-    for i in sqd_freq.reshape(N0, N1)[N0 / 2 + 1:, [-1, 0]]: counts[i] -= 1
-    Pk = np.bincount(sqd_freq, weights=weights)
-    sqd_freq = np.where(counts > 0)[0]  # This is the output array with the squared frequencies
-    return sqd_freq, counts[sqd_freq], Pk[sqd_freq] / counts[sqd_freq]
-
-
-def k2ell(k):
-    """ Send flat sky wave number k (float) to full sky ell (int64) according to k = ell + 1/2 """
-    return np.int64(np.round(k - 0.5))
-
-
-def map2cl(map, lsides):
-    return rfft2cl(np.fft.rfft2(map), lsides)
-
-
-def rfft2cl(rfft2map, lsides):
-    """
-    Cl estimator from flat sky maps, assigning k to ell k2ell().
-    Returns ell, counts, and Cl. Quick and dirty. No binning in ell, but there might be 'holes' in the ell output
-    due to zero counts.
-    Input must be the output of np.fft.irfft2(map). Specify the sides of the rectangle if not the full flat sky.
-    """
-    assert len(rfft2map.shape) == 2
-    N0, N1 = rfft2map.shape
-    weights = rfft2map.real.flatten() ** 2 + rfft2map.imag.flatten() ** 2
-
-    kmin0, kmin1 = 2. * np.pi / np.array(lsides)
-    l02 = kmin0 ** 2 * Freq(np.arange(N0, dtype=int), N0) ** 2
-    l12 = kmin1 ** 2 * Freq(np.arange(N1, dtype=int), 2 * (N1 - 1)) ** 2
-    ells = k2ell(np.sqrt(np.outer(l02, np.ones(N1)) + np.outer(np.ones(N0), l12))).flatten()
-    counts = np.bincount(ells)
-
-    # These frequencies have their opposite in the map :
-    for freq in ells.reshape(N0, N1)[N0 / 2 + 1:, [-1, 0]]: counts[freq] -= 1
-    Npix = float(N0 * (2 * (N1 - 1)))
-    Cl = np.bincount(ells, weights=weights) * np.prod(lsides) / Npix ** 2
-    ell = np.where(counts > 0)[0]
-    Cl[ell] /= counts[ell]
-    return counts, Cl
 
 
 def upgrade_map(LD_map, HD_res):
@@ -144,11 +77,8 @@ def upgrade_map(LD_map, HD_res):
 
 
 def subsample(HD_map, LD_res):
-    """
-    Simple subsampling of map.
-    :param HD_map:
-    :param LD_res:
-    :return:
+    """Simple subsampling of map.
+
     """
     HD_res = Log2ofPowerof2(HD_map.shape)
     if np.all(LD_res == HD_res): return HD_map.copy()
@@ -157,13 +87,9 @@ def subsample(HD_map, LD_res):
 
 
 def supersample(LD_map, HD_shape):
+    """Simple hypersampling of map.
+
     """
-    Simple subsampling of map.
-    :param HD_map:
-    :param LD_res:
-    :return:
-    """
-    # FIXME : no need for this
     if LD_map.shape == HD_shape: return LD_map.copy()
     assert np.all(np.array(HD_shape) > np.array(LD_map.shape))
     assert np.all(np.array(HD_shape) % np.array(LD_map.shape) == 0.)

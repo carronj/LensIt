@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import numpy as np
 
-from lensit.ffs_covs import ell_mat
 from lensit.misc.misc_utils import enumerate_progress
 
 def get_dcllendclunl_pert(_type, ell_mat,lmaxlen,lmaxunl,clpp):
@@ -167,13 +166,9 @@ def get_dcllendclphi_pert(_type, ell_mat, lmaxlen, lmaxunl, cl_unl, BBonly = Fal
         assert 0, '%s not implemented' % _type
     return M * fac
 
-def build_BBcov_pert(ellmat, lmaxBB, cl_unl, clBBobs, lmax_unl = 6000):
-    """
-    Approximation to the BB covariance.
-    :param ellmat:
-    :param lmaxBB:
-    :param cl_unl:
-    :return:
+def build_BBcov_pert(ellmat, lmaxBB, cl_unl, clBBobs, lmax_unl=6000):
+    """Approximation to the BB covariance matrix.
+
     """
     Nell = ellmat.get_Nell()[:max(lmax_unl,lmaxBB) + 1]
     elllen, = Nell[:lmaxBB + 1].nonzero()
@@ -204,10 +199,11 @@ def build_BBcov_pert(ellmat, lmaxBB, cl_unl, clBBobs, lmax_unl = 6000):
 
 
 def _EBcls2QUPmatij(lib_alm, TEBcls, i, j, c=None, s=None):
-    """
-    Turns E,B spectra into Q,U spectral matrices according to
+    """Turns E,B spectra into Q,U spectral matrices according to
+
         E = cos Q + sin U
         B = -sin Q + cos U
+
     """
     assert TEBcls.ndim == 3 and TEBcls.shape[0] == 2 and TEBcls.shape[1] == 2, (TEBcls.shape)
     fl = lambda alm, i, j: lib_alm.almxfl(alm, TEBcls[i, j])
@@ -224,10 +220,11 @@ def _EBcls2QUPmatij(lib_alm, TEBcls, i, j, c=None, s=None):
 
 
 def _QUPmats2EBcls(lib_alm, QUpmat, c=None, s=None):
-    """
-    Turns Q,U spectral matrices into E,B cls, according to
+    """Turns Q,U spectral matrices into E,B cls, according to
+
         E = cos Q + sin U
         B = -sin Q + cos U
+
     """
     assert QUpmat.shape == (2, 2, lib_alm.alm_size), ((2, 2, lib_alm.alm_size), QUpmat.shape)
     ret = np.zeros((2, 2, lib_alm.ellmax + 1), dtype=float)

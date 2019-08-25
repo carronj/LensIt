@@ -1,5 +1,6 @@
-"""
-jcarron wrapper to mpi4py to adapt pypar based DH code with minimal changes
+"""mpi4py wrapper
+
+
 """
 from __future__ import print_function
 import os
