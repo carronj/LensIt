@@ -1,4 +1,4 @@
-"""This __init__ module contains some convenience functions for quick startup.
+"""This lensit package contains some convenience functions in its __init__.py for quick startup.
 
 """
 from __future__ import print_function
@@ -11,80 +11,15 @@ from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
 from lensit.pbs import pbs
 from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam
 
-#FIXME:
-ellmax_sky = 6000
-
-
-def get_config(exp):
-    sN_uKaminP = None
-    if exp == 'Planck':
-        sN_uKamin = 35.
-        Beam_FWHM_amin = 7.
-        ellmin = 10
-        ellmax = 2048
-    elif exp == 'Planck_65':
-        sN_uKamin = 35.
-        Beam_FWHM_amin = 6.5
-        ellmin = 100
-        ellmax = 2048
-    elif exp == 'S4':
-        sN_uKamin = 1.5
-        Beam_FWHM_amin = 3.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'S5':
-        sN_uKamin = 1.5 / 4.
-        Beam_FWHM_amin = 3.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'S6':
-        sN_uKamin = 1.5 / 4. / 4.
-        Beam_FWHM_amin = 3.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'SO':
-        sN_uKamin = 3.
-        Beam_FWHM_amin = 3.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'SOb1':
-        sN_uKamin = 3.
-        Beam_FWHM_amin = 1.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'PB85':
-        sN_uKamin = 8.5 /np.sqrt(2.)
-        Beam_FWHM_amin = 3.5
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'PB5':
-        sN_uKamin = 5. / np.sqrt(2.)
-        Beam_FWHM_amin = 3.5
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'fcy_mark':
-        sN_uKamin = 5.
-        Beam_FWHM_amin = 1.4
-        ellmin=10
-        ellmax=3000
-    else:
-        sN_uKamin = 0
-        Beam_FWHM_amin = 0
-        ellmin = 0
-        ellmax = 0
-        assert 0, '%s not implemented' % exp
-    sN_uKaminP = sN_uKaminP or np.sqrt(2.) * sN_uKamin
-    return sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax
 
 def _get_lensitdir():
     assert 'LENSIT' in os.environ.keys(), 'Set LENSIT env. variable to somewhere safe to write'
     LENSITDIR = os.environ.get('LENSIT')
-    #FIXME:
-    CLSPATH = os.path.join(LENSITDIR, 'inputs', 'cls')
+    CLSPATH = os.path.join(os.path.dirname(__file__), 'data', 'cls')
     return LENSITDIR, CLSPATH
 
 
-def get_fidcls(ellmax_sky=ellmax_sky):
+def get_fidcls(ellmax_sky=6000):
     r"""Returns *lensit* fiducial CMB spectra (Planck 2015 cosmology)
 
     Args:
@@ -106,7 +41,7 @@ def get_fidcls(ellmax_sky=ellmax_sky):
     return cls_unl, cls_len
 
 
-def get_fidtenscls(ellmax_sky=ellmax_sky):
+def get_fidtenscls(ellmax_sky=6000):
     cls = {}
     cls_tens = camb_clfile(os.path.join(_get_lensitdir()[1], 'fiducial_tensCls.dat'))
     for key in cls_tens.keys():
@@ -213,6 +148,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
 
 
     """
+    ellmax_sky = 6000
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
 
@@ -227,3 +163,69 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
 
     lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'LD%sHD%s' % (LD_res, HD_res))
     return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)
+
+
+
+def get_config(exp):
+    """Returns noise levels, beam size and multipole cuts for some configurations
+
+    """
+    sN_uKaminP = None
+    if exp == 'Planck':
+        sN_uKamin = 35.
+        Beam_FWHM_amin = 7.
+        ellmin = 10
+        ellmax = 2048
+    elif exp == 'Planck_65':
+        sN_uKamin = 35.
+        Beam_FWHM_amin = 6.5
+        ellmin = 100
+        ellmax = 2048
+    elif exp == 'S4':
+        sN_uKamin = 1.5
+        Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S5':
+        sN_uKamin = 1.5 / 4.
+        Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S6':
+        sN_uKamin = 1.5 / 4. / 4.
+        Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'SO':
+        sN_uKamin = 3.
+        Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'SOb1':
+        sN_uKamin = 3.
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'PB85':
+        sN_uKamin = 8.5 /np.sqrt(2.)
+        Beam_FWHM_amin = 3.5
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'PB5':
+        sN_uKamin = 5. / np.sqrt(2.)
+        Beam_FWHM_amin = 3.5
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'fcy_mark':
+        sN_uKamin = 5.
+        Beam_FWHM_amin = 1.4
+        ellmin=10
+        ellmax=3000
+    else:
+        sN_uKamin = 0
+        Beam_FWHM_amin = 0
+        ellmin = 0
+        ellmax = 0
+        assert 0, '%s not implemented' % exp
+    sN_uKaminP = sN_uKaminP or np.sqrt(2.) * sN_uKamin
+    return sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax
