@@ -85,6 +85,15 @@ def _get_lensitdir():
 
 
 def get_fidcls(ellmax_sky=ellmax_sky):
+    r"""Returns *lensit* fiducial CMB spectra (Planck 2015 cosmology)
+
+    Args:
+        ellmax_sky: optionally reduces outputs spectra :math:`\ell_{\rm max}`
+
+    Returns:
+        unlensed and lensed CMB spectra (dicts)
+
+    """
     cls_unl = {}
     cls_unlr = camb_clfile(os.path.join(_get_lensitdir()[1], 'fiducial_flatsky_lenspotentialCls.dat'))
     for key in cls_unlr.keys():
@@ -104,15 +113,16 @@ def get_fidtenscls(ellmax_sky=ellmax_sky):
         cls[key] = cls_tens[key][0:ellmax_sky + 1]
     return cls
 
-def get_ellmat(LD_res, HD_res=14):
-    """
-    Standardized ellmat instances.
-    Returns ellmat with 2 ** LD_res squared points with
-    lcell = 0.745 * (2 ** (HD_res - LD_res)) and lsides lcell * 2 ** LD_res.
-    Set HD_res to 14 for full sky ell_mat.
-    :param LD_res:
-    :param HD_res:
-    :return:
+def get_ellmat(LD_res, HD_res):
+    r"""Default ellmat instances.
+
+
+    Returns:
+        *ell_mat* instance describing a flat-sky square patch of physical size :math:`\sim 0.74 *2^{\rm HDres}` arcmin,
+        sampled with :math:`2^{\rm LDres}` points on a side.
+
+    The patch area is :math:`4\pi` if *HD_res* = 14
+
     """
     assert HD_res <= 14 and LD_res <= 14, (LD_res, HD_res)
     lcell_rad = (np.sqrt(4. * np.pi) / 2 ** 14) * (2 ** (HD_res - LD_res))
@@ -123,10 +133,19 @@ def get_ellmat(LD_res, HD_res=14):
 
 
 def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))):
-    """
-    Default simulation library of 120 lensed CMB sims.
-    Lensing is always performed at lcell 0.745 amin or so, and lensed CMB are generated on a square with sides lcell 2 ** res
-    Will build all phases at the very first call if not already present.
+    r"""Default lensed CMB simulation library
+
+    Lensing is always performed at resolution of :math:`0.75` arcmin
+
+    Args:
+        res: lensed CMBs are generated on a square box with of physical size  :math:`\sim 0.74 \cdot 2^{\rm res}` arcmin
+        cache_sims: saves the lensed CMBs when produced for the first time
+        nsims: number of simulations in the library
+        num_threads: number of threads used by the pyFFTW fft-engine.
+
+    Note:
+        All simulations random phases will be generated at the very first call if not performed previously; this might take some time
+
     """
     HD_ellmat = get_ellmat(res, HD_res=res)
     ellmax_sky = 6000
@@ -146,13 +165,20 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.envir
 
 def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
                  nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))):
-    """
-    Default simulation library of 120 full flat sky sims for exp 'exp' at resolution LDres.
-    Different exp at same resolution share the same random phases both in CMB and noise
-        Will build all phases at the very first call if not already present.
-    :param exp: 'Planck', 'S4' ... See get_config
-    :param LDres: 14 : cell length is 0.745 amin, 13 : 1.49 etc.
-    :return: sim library instance
+    r"""Default CMB data maps simulation library
+
+    Args:
+        exp: experimental configuration (see *get_config*)
+        LDres: the data is generated on a square patch with :math` 2^{\rm LDres}` pixels on a side
+        HDres: The physical size of the path is :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin
+        cache_lenalms: saves the lensed CMBs when produced for the first time (defaults to True)
+        cache_maps: saves the data maps when produced for the first time (defaults to False)
+        nsims: number of simulations in the library
+        num_threads: number of threads used by the pyFFTW fft-engine.
+
+    Note:
+        All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
+
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
@@ -178,8 +204,14 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
 
 
 def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1))):
-    """
-    Set HD_res to 14 for full sky sampled at res LD.
+    r"""Default *ffs_cov.ffs_diagcov_alm* instances.
+
+
+    Returns:
+        *ffs_cov.ffs_diagcov_alm* instance on a flat-sky square patch of physical size :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin,
+        sampled with :math:`2^{\rm LDres}` points on a side.
+
+
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)

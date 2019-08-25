@@ -14,6 +14,7 @@ Welcome to lensit's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   lensit
    iterators
    deflect
    ellmat
