@@ -95,12 +95,7 @@ class ffs_iterator(object):
 
         self.newton_step_length = newton_step_length
         self.soltn0 = soltn0
-        # Default tolerance function(it,key)
-        # FIXME Put tolerance and maxit in chain descrt
-        # def tol_func(it, key, **kwargs):
-        #    return 1e-3
 
-        # self.tol_func = tol_func
         f_id = ffs_deflect.ffs_id_displacement(filt.lib_skyalm.shape, filt.lib_skyalm.lsides)
         if not hasattr(filt, 'f') or not hasattr(filt, 'fi'):
             self.cov = filt.turn2wlfilt(f_id, f_id)

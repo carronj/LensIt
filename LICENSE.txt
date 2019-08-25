@@ -2,6 +2,8 @@ MIT License
 
 Copyright (c) 2019 Julien Carron
 
+This software has benefited from pervious work by Duncan Hanson.
+
 You are licensed to use this software free of charge within the terms of the MIT license (see below), with the
 additional condition that if you identify any bugs you report them as soon as confirmed.
 
