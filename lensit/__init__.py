@@ -169,7 +169,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
 
     Args:
         exp: experimental configuration (see *get_config*)
-        LDres: the data is generated on a square patch with :math` 2^{\rm LDres}` pixels on a side
+        LDres: the data is generated on a square patch with :math:` 2^{\rm LDres}` pixels on a side
         HDres: The physical size of the path is :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin
         cache_lenalms: saves the lensed CMBs when produced for the first time (defaults to True)
         cache_maps: saves the data maps when produced for the first time (defaults to False)
