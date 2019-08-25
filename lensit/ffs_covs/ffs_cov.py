@@ -147,7 +147,7 @@ class ffs_diagcov_alm(object):
         fname = os.path.join(self.lib_dir, '%s_Pmatinv_%s_%s%s.npy' % (typ, _str, i, j))
         if not os.path.exists(fname) and self.pbsrank == 0:
             cls_cmb = self.cls_len if use_cls_len else self.cls_unl
-            Pmatinv = pmat.pmat.get_Pmat(typ, self.lib_datalm, cls_cmb,
+            Pmatinv = pmat.get_Pmat(typ, self.lib_datalm, cls_cmb,
                                cl_transf=self.cl_transf, cls_noise=self.cls_noise, inverse=True)
             for _j in range(len(typ)):
                 for _i in range(_j, len(typ)):

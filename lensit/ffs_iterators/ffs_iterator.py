@@ -39,6 +39,8 @@ class ffs_iterator(object):
             Plm0: Starting point for the iterative search. alm array consistent with *lib_qlm*
             H0: initial isotropic likelihood curvature approximation (roughly, inverse lensing noise bias :math:`N^{(0)}_L`)
             cpp_prior: fiducial lensing power spectrum, used for the prior part of the posterior density.
+            chain_descr: multigrid conjugate gradient inversion chain description
+
 
     """
     def __init__(self, lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
@@ -47,7 +49,7 @@ class ffs_iterator(object):
                  **kwargs):
 
         assert typ in _types
-        assert self.chain_descr is not None
+        assert chain_descr is not None
         assert opfilt is not None
         assert filt.lib_skyalm.lsides == lib_qlm.lsides
 
