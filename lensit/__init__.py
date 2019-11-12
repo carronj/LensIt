@@ -3,15 +3,16 @@ Contains some pure convenience functions for quick startup.
 """
 import numpy as np
 import healpy as hp
-import os,sys
-import shts
+import os
+import sys
+#import shts
 
-#try:
+# try:
 #    import gpu
-#except:
+# except:
 #    print "NB : import of GPU module unsuccessful"
-
-import ffs_covs
+import lensit.ffs_covs as ffs_covs
+#import ffs_covs
 import ffs_iterators
 import ffs_deflect
 import curvedskylensing
@@ -70,7 +71,7 @@ def get_config(exp):
         ellmin = 10
         ellmax = 3000
     elif exp == 'PB85':
-        sN_uKamin = 8.5 /np.sqrt(2.)
+        sN_uKamin = 8.5 / np.sqrt(2.)
         Beam_FWHM_amin = 3.5
         ellmin = 10
         ellmax = 3000
@@ -82,14 +83,31 @@ def get_config(exp):
     elif exp == 'fcy_mark':
         sN_uKamin = 5.
         Beam_FWHM_amin = 1.4
-        ellmin=10
-        ellmax=3000
+        ellmin = 10
+        ellmax = 3000
+    # Added by Chen Heinrich for LensNet (2019/10)
+    elif exp == 'deepCMB1T':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin=1
+        ellmax=6000
+    elif exp == 'deepCMB1P':
+       sN_uKamin = 1. / np.sqrt(2.)
+       Beam_FWHM_amin = 1.
+       ellmin=1
+       ellmax=6000 
+    elif exp == 'deepCMB_noiseless':
+       sN_uKamin = 0.
+       Beam_FWHM_amin = 1.
+       ellmin=1
+       ellmax=6000    
+    # End adding       
     else:
         sN_uKamin = 0
         Beam_FWHM_amin = 0
         ellmin = 0
         ellmax = 0
-        assert 0, '%s not implemented' % exp
+        assert 0, '%s not implemented' % exp    
     sN_uKaminP = sN_uKaminP or np.sqrt(2.) * sN_uKamin
     return sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax
 
@@ -97,25 +115,31 @@ def get_config(exp):
 def get_fidcls(ellmax_sky=ellmax_sky):
     cls_unl = {}
     for key, cl in misc.jc_camb.spectra_fromcambfile(
-                    LENSITDIR + '/inputs/cls/fiducial_flatsky_lenspotentialCls.dat').iteritems():
+            LENSITDIR + '/inputs/cls/fiducial_flatsky_lenspotentialCls.dat').iteritems():
         cls_unl[key] = cl[0:ellmax_sky + 1]
-        if key == 'pp': cls_unl[key] = cl[:]  # might need this one
+        if key == 'pp':
+            cls_unl[key] = cl[:]  # might need this one
     cls_len = {}
     for key, cl in misc.jc_camb.spectra_fromcambfile(
-                    LENSITDIR + '/inputs/cls/fiducial_flatsky_lensedCls.dat').iteritems():
+            LENSITDIR + '/inputs/cls/fiducial_flatsky_lensedCls.dat').iteritems():
         cls_len[key] = cl[0:ellmax_sky + 1]
     return cls_unl, cls_len
 
-def get_partiallylenfidcls(w,ellmax_sky=ellmax_sky):
+
+def get_partiallylenfidcls(w, ellmax_sky=ellmax_sky):
     # Produces spectra lensed with w_L * cpp_L
-    params = misc.jc_camb.read_params(LENSITDIR + '/inputs/cls/fiducial_flatsky_params.ini')
+    params = misc.jc_camb.read_params(
+        LENSITDIR + '/inputs/cls/fiducial_flatsky_params.ini')
     params['lensing_method'] = 4
-    #FIXME : this would anyway not work in MPI mode beacause lensing method 4 does not.
-    params['output_root'] = os.path.abspath(LENSITDIR + '/temp/camb_rank%s' % pbs.rank)
-    ell = np.arange(len(w),dtype = int)
-    np.savetxt(misc.jc_camb.PathToCamb + '/cpp_weights.txt', np.array([ell, w]).transpose(), fmt=['%i', '%10.5f'])
+    # FIXME : this would anyway not work in MPI mode beacause lensing method 4 does not.
+    params['output_root'] = os.path.abspath(
+        LENSITDIR + '/temp/camb_rank%s' % pbs.rank)
+    ell = np.arange(len(w), dtype=int)
+    np.savetxt(misc.jc_camb.PathToCamb + '/cpp_weights.txt',
+               np.array([ell, w]).transpose(), fmt=['%i', '%10.5f'])
     misc.jc_camb.run_camb_fromparams(params)
-    cllen = misc.jc_camb.spectra_fromcambfile(params['output_root'] + '_' + params['lensed_output_file'])
+    cllen = misc.jc_camb.spectra_fromcambfile(
+        params['output_root'] + '_' + params['lensed_output_file'])
     ret = {}
     for key, cl in cllen.iteritems():
         ret[key] = cl[0:ellmax_sky + 1]
@@ -127,6 +151,7 @@ def get_fidtenscls(ellmax_sky=ellmax_sky):
     for key, cl in misc.jc_camb.spectra_fromcambfile(LENSITDIR + '/inputs/cls/fiducial_tensCls.dat').iteritems():
         cls[key] = cl[0:ellmax_sky + 1]
     return cls
+
 
 def get_ellmat(LD_res, HD_res=14):
     """
@@ -168,8 +193,35 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=4):
                                       cls_unl,
                                       lib_pha=skypha, cache_lens=cache_sims)
 
+def get_lencmbs_lib_tensor(res=14, cache_sims=True, nsims=120, num_threads=4):
+    """
+    Default simulation library of 120 lensed CMB sims.
+    Lensing is always performed at lcell 0.745 amin or so, and lensed CMB are generated on a square with sides lcell 2 ** res
+    Will build all phases at the very first call if not already present.
+    """
+    HD_ellmat = get_ellmat(res, HD_res=res)
+    ellmax_sky = 6000
+    fsky = int(np.round(np.prod(HD_ellmat.lsides) / 4. / np.pi * 1000.))
+    lib_skyalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(HD_ellmat, num_threads=num_threads,
+                                                 filt_func=lambda ell: ell <= ellmax_sky)
+    skypha = sims.ffs_phas.ffs_lib_phas(LENSITDIR + '/temp/%s_sims/fsky%04d/len_alms_tens/skypha/' % (nsims, fsky), 4,
+                                        lib_skyalm,
+                                        nsims_max=nsims)
+    if not skypha.is_full() and pbs.rank == 0:
+        for _i, idx in misc.misc_utils.enumerate_progress(np.arange(nsims), label='Generating CMB phases'):
+            skypha.get_sim(idx)
+    pbs.barrier()
+    #  cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
+    cls_unl = get_fidtenscls(ellmax_sky=ellmax_sky)
+    return sims.ffs_cmbs.sims_cmb_len(LENSITDIR + '/temp/%s_sims/fsky%04d/len_alms_tens/' % (nsims, fsky), lib_skyalm,
+                                      cls_unl,
+                                      lib_pha=skypha, cache_lens=cache_sims, 
+                                      do_tensor_only=True) # added
 
-def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4):
+# Added by Chen Heinrich for Lensnet (2019/10)
+#def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4):
+def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsims=120, num_threads=4, do_tensor_only=False):
+# end CH
     """
     Default simulation library of 120 full flat sky sims for exp 'exp' at resolution LDres.
     Different exp at same resolution share the same random phases both in CMB and noise
@@ -179,13 +231,26 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsi
     :return: sim library instance
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
+    # Added by Chen Heinrich for Lensnet (2019/10)
+    #len_cmbs = get_lencmbs_lib(
+    #    #res=HDres, cache_sims=cache_lenalms, nsims=nsims)
+    if do_tensor_only == False:
+        len_cmbs = get_lencmbs_lib(
+            res=HDres, cache_sims=cache_lenalms, nsims=nsims) #CH19
+    else:
+        len_cmbs = get_lencmbs_lib_tensor(
+            res=HDres, cache_sims=cache_lenalms, nsims=nsims, \
+            num_threads=num_threads) #CH19    
+    # end CH
     lmax_sky = len_cmbs.lib_skyalm.ellmax
-    cl_transf = hp.gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
+    cl_transf = hp.gauss_beam(
+        Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
     lib_datalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
                                                  num_threads=num_threads)
-    fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
-    vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
+    fsky = int(
+        np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
+    vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / \
+        np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
     nTpix = sN_uKamin / np.sqrt(vcell_amin2)
     nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
 
@@ -195,7 +260,13 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False, nsi
         for _i, idx in misc.misc_utils.enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
             pixpha.get_sim(idx)
     pbs.barrier()
-    lib_dir = LENSITDIR + '/temp/%s_sims/fsky%04d/res%s/%s/maps' % (nsims, fsky, LDres, exp)
+    # CH: takes care of different map location if maps are cached
+    if do_tensor_only == True:
+        lib_dir = LENSITDIR + \
+        '/temp/%s_sims/fsky%04d/res%s/%s/maps_tens' % (nsims, fsky, LDres, exp)
+    else:
+        lib_dir = LENSITDIR + \
+            '/temp/%s_sims/fsky%04d/res%s/%s/maps' % (nsims, fsky, LDres, exp)
     return sims.ffs_maps.lib_noisemap(lib_dir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps)
 
@@ -208,12 +279,17 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=4):
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
 
     cls_noise = {}
-    cls_noise['t'] = (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)  # simple flat noise Cls
-    cls_noise['q'] = (sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)  # simple flat noise Cls
-    cls_noise['u'] = (sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)  # simple flat noise Cls
-    cl_transf = hp.gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=ellmax_sky)
+    cls_noise['t'] = (sN_uKamin * np.pi / 180. / 60.) ** 2 * \
+        np.ones(ellmax_sky + 1)  # simple flat noise Cls
+    cls_noise['q'] = (sN_uKaminP * np.pi / 180. / 60.) ** 2 * \
+        np.ones(ellmax_sky + 1)  # simple flat noise Cls
+    cls_noise['u'] = (sN_uKaminP * np.pi / 180. / 60.) ** 2 * \
+        np.ones(ellmax_sky + 1)  # simple flat noise Cls
+    cl_transf = hp.gauss_beam(
+        Beam_FWHM_amin / 60. * np.pi / 180., lmax=ellmax_sky)
     lib_alm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
-                                              filt_func=lambda ell: (ell >= ellmin) & (ell <= ellmax),
+                                              filt_func=lambda ell: (
+                                                  ell >= ellmin) & (ell <= ellmax),
                                               num_threads=pyFFTWthreads)
     lib_skyalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                                                  filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
