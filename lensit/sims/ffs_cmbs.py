@@ -99,7 +99,10 @@ class sim_cmb_unl():
         return self.lib_skyalm.EBlms2QUalms(np.array([self.get_sim_elm(idx), self.get_sim_blm(idx)]))
 
 class sims_cmb_len():
-    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False):
+    # Edited by Chen Heinrich for Lensnet(2019/10)
+    #def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False):
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, \
+        cache_lens=False, do_tensor_only=False):
         if not os.path.exists(lib_dir) and pbs.rank == 0:
             os.makedirs(lib_dir)
         pbs.barrier()
@@ -120,6 +123,9 @@ class sims_cmb_len():
         fs.sims.sims_generic.hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
         self.lib_dir = lib_dir
         self.fields = fields
+        # Edited by Chen Heinrich for Lensnet(2019/10)
+        self.do_tensor_only = do_tensor_only
+
 
     def hashdict(self):
         return {'unl_cmbs': self.unlcmbs.hashdict()}
@@ -173,15 +179,35 @@ class sims_cmb_len():
             np.save(fname, Tlm)
         return np.load(fname)
 
+    # Edited by Chen Heinrich for Lensnet(2019/10)
     def get_sim_qulm(self, idx):
+        # CH: input lib_dir to class needs to have tensor postfix 
         fname = self.lib_dir + '/sim_%04d_qulm.npy' % idx
         if not os.path.exists(fname):
             Qlm, Ulm = self.lib_skyalm.EBlms2QUalms(
                 np.array([self.unlcmbs.get_sim_elm(idx), self.unlcmbs.get_sim_blm(idx)]))
-            f = self._get_f(idx)
-            Qlm = f.lens_alm(self.lib_skyalm, Qlm, use_Pool=self.Pool)
-            Ulm = f.lens_alm(self.lib_skyalm, Ulm, use_Pool=self.Pool)
+            # Edited by Chen Heinrich for Lensnet(2019/10)
+            #f = self._get_f(idx)
+            #Qlm = f.lens_alm(self.lib_skyalm, Qlm, use_Pool=self.Pool)
+            #Ulm = f.lens_alm(self.lib_skyalm, Ulm, use_Pool=self.Pool)
+            #if not self.cache_lens: return np.array([Qlm, Ulm])
+            #np.save(fname, np.array([Qlm, Ulm]))
+        #return np.load(fname)
+            if self.do_tensor_only == False: # perform lensing for scalars
+                f = self._get_f(idx)
+                Qlm = f.lens_alm(self.lib_skyalm, Qlm, use_Pool=self.Pool)
+                Ulm = f.lens_alm(self.lib_skyalm, Ulm, use_Pool=self.Pool)
+        #TODO caching for tensors may be overwriting?
+            print('ffs_cmbs.py: fname = %s'%fname)
             if not self.cache_lens: return np.array([Qlm, Ulm])
             np.save(fname, np.array([Qlm, Ulm]))
         return np.load(fname)
 
+    # Added by Chen Heinrich for Lensnet (2019/10), not completed
+    def get_sim_qulm_unlensed(self, idx):
+        # do not cache
+        #fname = self.lib_dir + '/sim_%04d_qulm.npy' % idx
+        if not os.path.exists(fname):
+            Qlm, Ulm = self.lib_skyalm.EBlms2QUalms(
+                np.array([self.unlcmbs.get_sim_elm(idx), self.unlcmbs.get_sim_blm(idx)]))
+            return np.array([Qlm, Ulm])
