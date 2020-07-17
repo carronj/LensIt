@@ -286,15 +286,18 @@ def get_noisePmat(typ, lib_alm, cls_noise, inverse=False):
     return ret if not inverse else np.linalg.inv(ret)
 
 
-def TQUPmats2TEBcls(lib_alm, TQUpmat):
+def TQUPmats2TEBcls(lib_alm, TQUpmat, nobin=False):
     """
     Turns a 3x3x ellmax matrix with T,Q,U ell,m spectra to T,E,B ell only spectra
     """
     assert TQUpmat.shape == (3, 3, lib_alm.alm_size), ((3, 3, lib_alm.alm_size), TQUpmat.shape)
-    ret = np.zeros((3, 3, lib_alm.ellmax + 1), dtype=float)
+    ret = np.zeros((3, 3, (lib_alm.ellmax + 1) if not nobin else lib_alm.alm_size), dtype=float)
     # E = cos Q + sin U
     # B = -sin Q + cos U
-    bin2cl = lambda _alm: lib_alm.bin_realpart_inell(_alm)[0:lib_alm.ellmax + 1]
+    if nobin:
+        bin2cl = lambda _alm: _alm.real
+    else:
+        bin2cl = lambda _alm: lib_alm.bin_realpart_inell(_alm)[0:lib_alm.ellmax + 1]
     ret[0, 0, :] = bin2cl(TQUpmat[0, 0, :])
     # TE : -> cos TQ + sin TU
     cos, sin = lib_alm.get_cossin_2iphi()
@@ -365,10 +368,14 @@ def TEBPmat2TQUPmatij(typ, lib_alm, TEBclmat, i, j):
             return fl(c * s, 0, 0) - fl(c * s, 1, 1) - fl(s ** 2, 0, 1) + fl(c ** 2, 1, 0)
         assert 0, (i, j)
     elif typ == 'TQU':
-        if i == 0 or j == 0:
+        if i == 0 and j == 0:
             return TEBclmat[i, j].copy()
         fl = lambda alm, i, j: alm * TEBclmat[i, j]
         c, s = lib_alm.get_cossin_2iphi()
+        if (i == 0 and j == 1) or (i == 1 and j == 0):
+            return fl(c, 0, 1) #FIXME: TB etc..
+        if (i == 0 and j == 2) or (i == 2 and j == 0):
+            return fl(s, 0, 1)
         if i == 1 and j == 1:
             return fl(c ** 2, 1, 1) + fl(s ** 2, 2, 2) - fl(c * s, 1, 2) - fl(c * s, 2, 1)
         if i == 2 and j == 2:
@@ -405,12 +412,15 @@ def TEBcls2TQUPmatij(typ, lib_alm, TEBcls, i, j):
             return fl(c * s, 0, 0) - fl(c * s, 1, 1) - fl(s ** 2, 0, 1) + fl(c ** 2, 1, 0)
         assert 0, (i, j)
     elif typ == 'TQU':
-
         fl = lambda alm, i, j: lib_alm.almxfl(alm,TEBcls[i, j])
-        if i == 0 or j == 0:
+        if i == 0 and j == 0:
             ret = np.ones((1, 1, lib_alm.alm_size), dtype=complex)
             return fl(ret,0,0)
         c, s = lib_alm.get_cossin_2iphi()
+        if (i == 0 and j == 1) or (i == 1 and j == 0):
+            return fl(c, 0, 1) #FIXME: TB etc..
+        if (i == 0 and j == 2) or (i == 2 and j == 0):
+            return fl(s, 0, 1)
         if i == 1 and j == 1:
             return fl(c ** 2, 1, 1) + fl(s ** 2, 2, 2) - fl(c * s, 1, 2) - fl(c * s, 2, 1)
         if i == 2 and j == 2:
