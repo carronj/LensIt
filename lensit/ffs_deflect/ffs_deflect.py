@@ -242,7 +242,7 @@ class ffs_displacement(object):
             m *= self.get_det_magn()
             return
 
-    def alm2lenmap(self, lib_alm, alm, use_Pool=0):
+    def alm2lenmap(self, lib_alm, alm, use_Pool=0, crude=0):
         """Return deflected position-space map from its unlensed input harmonic coeffients.
 
             Args:
@@ -264,7 +264,7 @@ class ffs_displacement(object):
                                                  do_not_prefilter=True)
         else:
             return self.lens_map(lib_alm.alm2map(lib_alm.bicubic_prefilter(alm)),
-                                 use_Pool=use_Pool, do_not_prefilter=True)
+                                 use_Pool=use_Pool, do_not_prefilter=True, crude=crude)
 
     def get_det_magn(self):
         r"""Returns magnification determinant map
