@@ -1990,7 +1990,7 @@ class ffs_lencov_alm(ffs_diagcov_alm):
                                                     cmb_cls, self.cl_transf, nlev_t, nlev_p, self.f,
                                                     self.fi, lens_pool=use_Pool)
         opfilt = opfilt_cinv
-        opfilt.typ = typ
+        opfilt._type = typ
         chain = chain_samples.get_isomgchain(self.lib_skyalm.ellmax, self.lib_datalm.shape, **kwargs)
         mchain =multigrid.multigrid_chain(opfilt, typ, chain, filt)
         soltn = np.zeros((opfilt.TEBlen(typ), self.lib_skyalm.alm_size), dtype=complex)
