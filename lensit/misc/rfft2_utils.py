@@ -49,7 +49,7 @@ def rfft2_reals(shape):
     fx = [0]
     fy = [0]
     if N1 % 2 == 0: fx.append(0); fy.append(N1 // 2)
-    if N0 % 2 == 0: fx.append(N0 / 2); fy.append(0)
+    if N0 % 2 == 0: fx.append(N0 // 2); fy.append(0)
     if N1 % 2 == 0 and N0 % 2 == 0: fx.append(N0 // 2); fy.append(N1 // 2)
     return np.array(fx), np.array(fy)
 
@@ -138,11 +138,11 @@ def udgrade_rfft2(rfft2map, shape, norm=False):
 
 
 def _degrade_rfft2(rfft2map, LDshape):
-    ret = np.zeros((LDshape[0], LDshape[0] / 2 + 1), dtype=complex)
-    ret[0:LDshape[0] / 2 + 1, :] = rfft2map[0:LDshape[0] / 2 + 1, 0:ret.shape[1]]
-    ret[LDshape[0] / 2::] = rfft2map[rfft2map.shape[0] - LDshape[0] / 2:, 0:ret.shape[1]]
+    ret = np.zeros((LDshape[0], LDshape[0] // 2 + 1), dtype=complex)
+    ret[0:LDshape[0] // 2 + 1, :] = rfft2map[0:LDshape[0] // 2 + 1, 0:ret.shape[1]]
+    ret[LDshape[0] // 2::] = rfft2map[rfft2map.shape[0] - LDshape[0] // 2:, 0:ret.shape[1]]
     # Corrections for pure reals and (-k) = k* :
-    ret[LDshape[0] / 2 + 1:, -1] = ret[1:LDshape[0] / 2, -1][::-1].conj()
+    ret[LDshape[0] // 2 + 1:, -1] = ret[1:LDshape[0] // 2, -1][::-1].conj()
     ret[rfft2_reals(LDshape)].imag = 0.
     return ret
 
@@ -150,8 +150,8 @@ def _degrade_rfft2(rfft2map, LDshape):
 def _upgrade_rfft2(rfft2map, HDshape):
     ret = np.zeros((HDshape[0], HDshape[0] / 2 + 1), dtype=complex)
     # positive 0axis frequencies : (including N/2 + 1, which is pure real.
-    ret[0:rfft2map.shape[0] / 2 + 1, 0:rfft2map.shape[1]] = rfft2map[0:rfft2map.shape[0] / 2 + 1, 0:rfft2map.shape[1]]
+    ret[0:rfft2map.shape[0] // 2 + 1, 0:rfft2map.shape[1]] = rfft2map[0:rfft2map.shape[0] // 2 + 1, 0:rfft2map.shape[1]]
     # Negative 0axis freq.
-    ret[HDshape[0] - rfft2map.shape[0] / 2:HDshape[0], 0:rfft2map.shape[1]] \
-        = rfft2map[rfft2map.shape[0] / 2:, 0:rfft2map.shape[1]]
+    ret[HDshape[0] - rfft2map.shape[0] // 2:HDshape[0], 0:rfft2map.shape[1]] \
+        = rfft2map[rfft2map.shape[0] // 2:, 0:rfft2map.shape[1]]
     return ret
