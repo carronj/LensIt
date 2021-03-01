@@ -24,7 +24,9 @@ def get_fields(cls):
 
 
 class sim_cmb_unl:
-    def __init__(self, cls_unl, lib_pha):
+    def __init__(self, cls_unl, lib_pha, alpha_cpp=1.):
+        self.cls_unl = cls_unl
+        self.alpha_cpp = alpha_cpp
         lib_alm = lib_pha.lib_alm
         fields = get_fields(cls_unl)
         Nf = len(fields)
@@ -102,7 +104,7 @@ class sim_cmb_unl:
         return self.lib_skyalm.EBlms2QUalms(np.array([self.get_sim_elm(idx), self.get_sim_blm(idx)]))
 
 class sims_cmb_len:
-    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False):
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.):
         if not os.path.exists(lib_dir) and pbs.rank == 0:
             os.makedirs(lib_dir)
         pbs.barrier()
@@ -114,7 +116,7 @@ class sims_cmb_len:
             assert lib_pha.lib_alm == lib_skyalm
         pbs.barrier()
 
-        self.unlcmbs = sim_cmb_unl(cls_unl, lib_pha)
+        self.unlcmbs = sim_cmb_unl(cls_unl, lib_pha, alpha_cpp=alpha_cpp)
         self.Pool = use_Pool
         self.cache_lens = cache_lens
         fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
@@ -189,3 +191,33 @@ class sims_cmb_len:
             np.save(fname, np.array([Qlm, Ulm]))
         return np.load(fname)
 
+
+class sim_cmb_unl_fixed_phi(sim_cmb_unl):
+    def __init__(self, cls_unl, lib_pha, alpha_cpp=1.):
+        super(sim_cmb_unl_fixed_phi, self).__init__(cls_unl, lib_pha, alpha_cpp=1.)
+        
+    def _get_sim_alm(self, idx, idf):
+        # We set the phi field to always return the same index (0)
+        ret = np.zeros(self.lib_skyalm.alm_size, dtype=complex)
+        for i in range(len(self.fields)):
+            if idf == self.fields.index('p'):
+                print('Get alm of {} for simu {} from simu idx 0'.format(idf, idx))
+                ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(0, idf=i), self.rmat[:, idf, i])
+            else:
+                print('Get alm of {} for simu {}'.format(idf, idx))
+                ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(idx, idf=i), self.rmat[:, idf, i])
+        return ret
+    
+    
+    # def get_sim_plm(self, idx):
+    #     assert 'p' in self.fields, self.fields
+    #     return self._get_sim_alm(idx, self.fields.index('p'))
+
+
+class sim_cmb_len_fixed_phi(sims_cmb_len):
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.):
+        super(sim_cmb_len_fixed_phi, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.)
+        
+        self.unlcmbs = sim_cmb_unl_fixed_phi(cls_unl, lib_pha, alpha_cpp=alpha_cpp)
+        print("Created sim lib with plm from simu idx 0")
+        

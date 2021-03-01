@@ -138,7 +138,7 @@ class lib_noisevmap:
             return self._build_sim_qumap(idx)
 
 class lib_noisemap:
-    def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, nTpix, nQpix, nUpix, pix_pha=None, cache_sims=True):
+    def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, nTpix, nQpix, nUpix, pix_pha=None, cache_sims=True, nsims=None):
         """
         Library for sims with pixel to pixel independent noise with specified noise variance maps.
         :param lib_dir:
@@ -150,6 +150,7 @@ class lib_noisemap:
         :param nUpix:  pixel noise rms noise in U
         :param pix_pha: random for phases for the noise maps
         :param cache_sims: does cache ims on disk if set
+        :param nsims: number of sims
         """
         self.lencmbs = lib_lencmb
         self.lib_datalm = lib_datalm
@@ -158,7 +159,8 @@ class lib_noisemap:
         self.cl_transf[:min(len(self.cl_transf), len(cl_transf))] = cl_transf[:min(len(self.cl_transf), len(cl_transf))]
         self.lib_dir = lib_dir
         self.cache_sims = cache_sims
-
+        self.nsims = nsims
+        
         if not os.path.exists(lib_dir) and pbs.rank == 0:
             os.makedirs(lib_dir)
         pbs.barrier()

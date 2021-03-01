@@ -9,7 +9,7 @@ import os
 from lensit.ffs_covs import ffs_cov, ell_mat
 from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
 from lensit.pbs import pbs
-from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam
+from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam, cl_inverse
 
 
 def _get_lensitdir():
@@ -19,12 +19,13 @@ def _get_lensitdir():
     return LENSITDIR, CLSPATH
 
 
-def get_fidcls(ellmax_sky=6000):
+def get_fidcls(ellmax_sky=6000, alpha_cpp=1.):
     r"""Returns *lensit* fiducial CMB spectra (Planck 2015 cosmology)
 
     Args:
         ellmax_sky: optionally reduces outputs spectra :math:`\ell_{\rm max}`
-
+        alpha_cpp: Multiplicative factor for Cl_pp, in order to test response 
+                of the estimator to a linear change of the input Cl_pp
     Returns:
         unlensed and lensed CMB spectra (dicts)
 
@@ -33,13 +34,46 @@ def get_fidcls(ellmax_sky=6000):
     cls_unlr = camb_clfile(os.path.join(_get_lensitdir()[1], 'fiducial_flatsky_lenspotentialCls.dat'))
     for key in cls_unlr.keys():
         cls_unl[key] = cls_unlr[key][0:ellmax_sky + 1]
-        if key == 'pp': cls_unl[key] = cls_unlr[key][:]  # might need this one to higher lmax
+        if key == 'pp': cls_unl[key] = cls_unlr[key][:] * alpha_cpp  # might need this one to higher lmax
     cls_len = {}
-    cls_lenr = camb_clfile(os.path.join(_get_lensitdir()[1], 'fiducial_flatsky_lensedCls.dat'))
+    
+    if alpha_cpp == 1.:
+        cls_lenr = camb_clfile(os.path.join(_get_lensitdir()[1], 'fiducial_flatsky_lensedCls.dat'))
+    else:
+        from camb.correlations import lensed_cls
+        cls_unlr, cldd = cls2dls(cls_unl)
+        cls_lenr = dls2cls(lensed_cls(cls_unlr, cldd))
     for key in cls_lenr.keys():
         cls_len[key] = cls_lenr[key][0:ellmax_sky + 1]
+    
     return cls_unl, cls_len
 
+
+
+def cls2dls(cls):
+    """Turns cls dict. into camb cl array format"""
+    keys = ['tt', 'ee', 'bb', 'te']
+    lmax = np.max([len(cl) for cl in cls.values()]) - 1
+    dls = np.zeros((lmax + 1, 4), dtype=float)
+    refac = np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float) / (2. * np.pi)
+    for i, k in enumerate(keys):
+        cl = cls.get(k, np.zeros(lmax + 1, dtype=float))
+        sli = slice(0, min(len(cl), lmax + 1))
+        dls[sli, i] = cl[sli] * refac[sli]
+    cldd = np.copy(cls.get('pp', None))
+    if cldd is not None:
+        cldd *= np.arange(len(cldd)) ** 2 * np.arange(1, len(cldd) + 1, dtype=float) ** 2 /  (2. * np.pi)
+    return dls, cldd
+
+def dls2cls(dls):
+    """Inverse operation to cls2dls"""
+    assert dls.shape[1] == 4
+    lmax = dls.shape[0] - 1
+    cls = {}
+    refac = 2. * np.pi * cl_inverse( np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float))
+    for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
+        cls[k] = dls[:, i] * refac
+    return cls
 
 def get_fidtenscls(ellmax_sky=6000):
     cls = {}
@@ -67,7 +101,7 @@ def get_ellmat(LD_res, HD_res):
     return ell_mat.ell_mat(lib_dir, shape, lsides)
 
 
-def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))):
+def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1.):
     r"""Default lensed CMB simulation library
 
     Lensing is always performed at resolution of :math:`0.75` arcmin
@@ -77,7 +111,8 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.envir
         cache_sims: saves the lensed CMBs when produced for the first time
         nsims: number of simulations in the library
         num_threads: number of threads used by the pyFFTW fft-engine.
-
+        alpha_cpp: Multiplicative factor for input Cl_pp, in order to test response 
+                of the estimator to a linear change of the input Cl_pp
     Note:
         All simulations random phases will be generated at the very first call if not performed previously; this might take some time
 
@@ -93,13 +128,16 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.envir
         for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
             skypha.get_sim(int(idx))
     pbs.barrier()
-    cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
-    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms')
-    return ffs_cmbs.sims_cmb_len(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims)
+    cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, alpha_cpp=alpha_cpp)
+    print("Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
+
+    # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms')
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'len_alms')
+    return ffs_cmbs.sims_cmb_len(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims, alpha_cpp=alpha_cpp)
 
 
 def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
-                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))):
+                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1.):
     r"""Default CMB data maps simulation library
 
     Args:
@@ -110,16 +148,18 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
         cache_maps: saves the data maps when produced for the first time (defaults to False)
         nsims: number of simulations in the library
         num_threads: number of threads used by the pyFFTW fft-engine.
-
+        alpha_cpp: Multiplicative factor for input Cl_pp, in order to test response 
+                of the estimator to a linear change of the input Cl_pp
     Note:
         All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
 
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
+    print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
+    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
-    lib_datalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
+    lib_datalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
                                                  num_threads=num_threads)
     fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
     vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
@@ -133,12 +173,94 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
         for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
             pixpha.get_sim(idx)
     pbs.barrier()
-    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
+    # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'res%s'%LDres,'%s'%exp, 'maps')
+    print(sims_libdir)
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
-                                      pix_pha=pixpha, cache_sims=cache_maps)
+                                      pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
 
 
-def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1))):
+def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1.):
+    r"""Default lensed CMB simulation library
+
+    Lensing is always performed at resolution of :math:`0.75` arcmin
+
+    Args:
+        res: lensed CMBs are generated on a square box with of physical size  :math:`\sim 0.74 \cdot 2^{\rm res}` arcmin
+        cache_sims: saves the lensed CMBs when produced for the first time
+        nsims: number of simulations in the library
+        num_threads: number of threads used by the pyFFTW fft-engine.
+        alpha_cpp: Multiplicative factor for input Cl_pp, in order to test response 
+                of the estimator to a linear change of the input Cl_pp
+    Note:
+        All simulations random phases will be generated at the very first call if not performed previously; this might take some time
+
+    """
+    HD_ellmat = get_ellmat(res, HD_res=res)
+    ellmax_sky = 6000
+    fsky = int(np.round(np.prod(HD_ellmat.lsides) / 4. / np.pi * 1000.))
+    lib_skyalm = ell_mat.ffs_alm_pyFFTW(HD_ellmat, num_threads=num_threads,
+                                                 filt_func=lambda ell: ell <= ellmax_sky)
+    skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'len_alms', 'skypha')
+    skypha = ffs_phas.ffs_lib_phas(skypha_libdir, 4, lib_skyalm, nsims_max=nsims)
+    if not skypha.is_full() and pbs.rank == 0:
+        for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
+            skypha.get_sim(int(idx))
+    pbs.barrier()
+    cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, alpha_cpp=alpha_cpp)
+    print("Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
+
+    # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms')
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'len_alms')
+    return ffs_cmbs.sim_cmb_len_fixed_phi(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims, alpha_cpp=alpha_cpp)
+
+
+def get_maps_lib_fixed_phi(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
+                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1.):
+    r"""Default CMB data maps simulation library
+
+    Args:
+        exp: experimental configuration (see *get_config*)
+        LDres: the data is generated on a square patch with :math:` 2^{\rm LDres}` pixels on a side
+        HDres: The physical size of the path is :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin
+        cache_lenalms: saves the lensed CMBs when produced for the first time (defaults to True)
+        cache_maps: saves the data maps when produced for the first time (defaults to False)
+        nsims: number of simulations in the library
+        num_threads: number of threads used by the pyFFTW fft-engine.
+        alpha_cpp: Multiplicative factor for input Cl_pp, in order to test response 
+                of the estimator to a linear change of the input Cl_pp
+    Note:
+        All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
+
+    """
+    sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
+    print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
+    len_cmbs = get_lencmbs_lib_fixed_phi(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp)
+    lmax_sky = len_cmbs.lib_skyalm.ellmax
+    cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
+    lib_datalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
+                                                 num_threads=num_threads)
+    fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
+    vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
+    nTpix = sN_uKamin / np.sqrt(vcell_amin2)
+    nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
+
+    pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
+    pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+
+    if not pixpha.is_full() and pbs.rank == 0:
+        for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
+            pixpha.get_sim(idx)
+    pbs.barrier()
+    # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'res%s'%LDres,'%s'%exp, 'maps')
+    print(sims_libdir)
+    return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
+                                      pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
+
+
+
+def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1.):
     r"""Default *ffs_cov.ffs_diagcov_alm* instances.
 
 
@@ -150,7 +272,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     """
     ellmax_sky = 6000
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
+    cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, alpha_cpp=alpha_cpp)
 
     cls_noise = {'t': (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
                  'q':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
@@ -161,7 +283,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                         filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
 
-    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'LD%sHD%s' % (LD_res, HD_res))
+    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'alpha_cpp_%s' % (alpha_cpp), 'LD%sHD%s' % (LD_res, HD_res))
     return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)
 
 
@@ -176,6 +298,12 @@ def get_config(exp):
         Beam_FWHM_amin = 7.
         ellmin = 10
         ellmax = 2048
+    if exp == 'Planck_euclid':
+        sN_uKamin = 23.
+        sN_uKaminP = 42
+        Beam_FWHM_amin = 7.
+        ellmin = 2
+        ellmax = 2048
     elif exp == 'Planck_65':
         sN_uKamin = 35.
         Beam_FWHM_amin = 6.5
@@ -185,6 +313,11 @@ def get_config(exp):
         sN_uKamin = 1.5
         Beam_FWHM_amin = 3.
         ellmin = 10
+        ellmax = 3000
+    elif exp == 'S4_euclid':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin = 2
         ellmax = 3000
     elif exp == 'S5':
         sN_uKamin = 1.5 / 4.
@@ -200,6 +333,21 @@ def get_config(exp):
         sN_uKamin = 3.
         Beam_FWHM_amin = 3.
         ellmin = 10
+        ellmax = 3000
+    elif exp == 'SO_euclid3':
+        sN_uKamin = 10.
+        Beam_FWHM_amin = 4.
+        ellmin = 2
+        ellmax = 3000
+    elif exp == 'SO_euclid4':
+        sN_uKamin = 12.
+        Beam_FWHM_amin = 4.
+        ellmin = 2
+        ellmax = 3000
+    elif exp == 'SO_euclid2':
+        sN_uKamin = 8.
+        Beam_FWHM_amin = 4.5
+        ellmin = 2
         ellmax = 3000
     elif exp == 'SOb1':
         sN_uKamin = 3.
