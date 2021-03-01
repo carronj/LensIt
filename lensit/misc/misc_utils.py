@@ -254,10 +254,11 @@ class stats:
         return newstats
 
 
-def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean'):
+def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean', error='ste'):
     """Bins a cl array according to bin edges and multipole to consider
 
     """
+    assert error in ['ste', 'std']
     assert meanorsum in ['mean', 'sum']
     if meanorsum == 'sum': assert not return_err, 'not implemented'
     sumfunc = np.mean if meanorsum == 'mean' else np.sum
@@ -275,7 +276,12 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
         if (bins_u[i] < arr.size) and (len(arr[bins_l[i]:bins_u[i] + 1]) >= 1):
             ii = np.where((nzell >= bins_l[i]) & (nzell <= bins_u[i]))
             ret[i] = sumfunc(arr[nzell[ii]])
-            err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
+            if error=='ste':
+                # Standard error (to get confidence interval on the unknown mean)
+                err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
+            elif error=='std':
+                # Standard deviation (to get std of values inside the bin)
+                err[i] = np.std(arr[nzell[ii]])
     if not return_err:
         return ret
     return ret, err
