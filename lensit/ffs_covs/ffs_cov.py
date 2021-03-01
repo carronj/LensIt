@@ -257,8 +257,11 @@ class ffs_diagcov_alm(object):
     def get_RDdelensinguncorrbias(self, lib_qlm, clpp_rec, clsobs_deconv, clsobs_deconv2=None, recache=False):
         #putting cls_obs being cls_len + noise / transf ** 2 should give the same thing as get_delensinguncorrbias.
         if len(clpp_rec) <= lib_qlm.ellmax: clpp_rec = extend_cl(clpp_rec, lib_qlm.ellmax)
-        fname = None
-        if (not False or recache) and self.pbsrank == 0:
+        fname = os.path.join(self.lib_dir, 'TEBdelensUncorrBias_RD_%s_%s.dat' \
+                               % (npy_hash(clpp_rec[lib_qlm.ellmin:lib_qlm.ellmax + 1]),
+                                  lib_qlm.filt_hash()))
+        
+        if (not os.path.exists(fname) or recache) and self.pbsrank == 0:
             def ik_q(a):
                 assert a in [0, 1], a
                 return lib_qlm.get_ikx() if a == 1 else lib_qlm.get_iky()
@@ -273,7 +276,7 @@ class ffs_diagcov_alm(object):
                     _map = np.zeros(self.dat_shape, dtype=float)
                     Pmat1 = pmat.get_unlPmat_ij('TQU', self.lib_datalm, clsobs_deconv, _i, _j)
                     Pmat2 = Pmat1 if clsobs_deconv2 is None else  pmat.get_unlPmat_ij('TQU', self.lib_datalm, clsobs_deconv2,
-                                                                                 _i, _j)
+                                                                                _i, _j)
                     for a in [0, 1]:
                         for b in [0, 1][a:]:
                             facab = (2. - (a == b))
@@ -285,7 +288,36 @@ class ffs_diagcov_alm(object):
                                 _map -= (_phiab[0, 0]) * self.lib_datalm.alm2map(Pmat2 * ik_d(a) * ik_d(b))
 
                     retalms[_i, _j, :] = (self.lib_datalm.map2alm(_map))
-            return pmat.TQUPmats2TEBcls(self.lib_datalm, retalms) * (- 1. / np.sqrt(np.prod(self.lsides)))
+                
+                
+            retalms = pmat.TQUPmats2TEBcls(self.lib_datalm, retalms) * (- 1. / np.sqrt(np.prod(self.lsides)))
+            save_arr = np.zeros((6, self.lib_datalm.ellmax + 1), dtype=float)
+            k = 0
+            for _i in range(3):
+                for _j in range(_i, 3):
+                    save_arr[k, :] = retalms[_i, _j]
+                    k += 1
+            header = datetime.datetime.now().strftime("%I:%M%p on %B %d, %Y") + '\n' + __file__
+            header += "\n Delensing Uncorr. Bias. qlm ell-range (%s - %s)" % (lib_qlm.ellmin, lib_qlm.ellmax)
+            header += "\n Performed with (%s %s) on fsky = %s" % (
+                self.lib_datalm.shape[0], self.lib_datalm.shape[1], np.round(self.lib_datalm.fsky(), 2))
+            header += "\n Positive Contr. to C(len) - C(del)."
+            header += "\n TT TE TB EE EB BB"
+            np.savetxt(fname, save_arr.transpose(), fmt=['%.8e'] * 6, header=header)
+            print("Cached " + fname)
+        cls = np.loadtxt(fname).transpose()
+        ret = np.zeros((3, 3, self.lib_datalm.ellmax + 1), dtype=float)
+        ret[0, 0] = cls[0]
+        ret[0, 1] = cls[1]
+        ret[1, 0] = cls[1]
+        ret[0, 2] = cls[2]
+        ret[2, 0] = cls[2]
+        ret[1, 1] = cls[3]
+        ret[1, 2] = cls[4]
+        ret[2, 1] = cls[4]
+        ret[2, 2] = cls[5]
+        return ret  
+            # return pmat.TQUPmats2TEBcls(self.lib_datalm, retalms) * (- 1. / np.sqrt(np.prod(self.lsides)))
 
     def get_delensingcorrbias(self, typ, lib_qlm, alwfcl, CMBonly=False):
         r"""Calculate delensing bias given a reconstructed potential map spectrum
@@ -730,11 +762,22 @@ class ffs_diagcov_alm(object):
             cl[1] *= lib_qlm.filt_func(np.arange(len(cl[1])))
             return cl
         else:
-            Rpp, ROO = self._get_qlm_resprlm(typ, lib_qlm,
-                                             use_cls_len=use_cls_len, cls_obs=cls_obs, cls_weights=cls_weights, cls_filt=cls_filt, cls_obs2=cls_obs2)
-            return 2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO))
+            fname = self.lib_dir + '/%s_RDN0cls_%sCls_%s_%s.dat' % (typ, {True: 'len', False: 'unl'}[use_cls_len], 
+                npy_hash(cls_obs['tt'][lib_qlm.ellmin:lib_qlm.ellmax + 1]), lib_qlm.filt_hash())
+            if not os.path.exists(fname):
+                if self.pbsrank == 0:
+                    Rpp, ROO = self._get_qlm_resprlm(typ, lib_qlm,
+                                                    use_cls_len=use_cls_len, cls_obs=cls_obs, cls_weights=cls_weights, cls_filt=cls_filt, cls_obs2=cls_obs2)
+                    header = datetime.datetime.now().strftime("%I:%M%p on %B %d, %Y") + '\n' + __file__
+                
+                    np.savetxt(fname, np.array((2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO)))).transpose(), fmt=['%.8e'] * 2, header=header)
+                self.barrier()
+            cl = np.loadtxt(fname).transpose()[:, 0:lib_qlm.ellmax + 1]
+            cl[0] *= lib_qlm.filt_func(np.arange(len(cl[0])))
+            cl[1] *= lib_qlm.filt_func(np.arange(len(cl[1])))
+            return cl
 
-    def iterateN0cls(self, typ, lib_qlm, itmax, return_delcls=False, _it=0):
+    def iterateN0cls(self, typ, lib_qlm, itmax, return_delcls=False, _it=0, cls_obs=None):
         """Iterative flat-sky :math:`N^{(0)}_L` calculation to estimate the noise levels of the iterative estimator.
 
             This uses perturbative approach in Wiener-filtered displacement, consistent with box shape and mode structure.
@@ -747,22 +790,48 @@ class ffs_diagcov_alm(object):
 
 
         """
-        N0 = self.get_N0cls(typ, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
-        if _it == itmax: return N0 if not return_delcls else (N0, self.cls_len)
+        N0 = self.get_N0cls(typ, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]  # get fiducail N0
+        # if cls_obs is not None:
+        #     RDN0 = self.get_N0cls(typ, lib_qlm, use_cls_len=True, cls_obs = cls_obs)[0][:lib_qlm.ellmax + 1] # get RDN0 
+        
+        if _it == itmax:  
+            if cls_obs is None:
+                return N0 if not return_delcls else (N0, self.cls_len)
+            else:
+                RDN0 = N0**2 * cl_inverse(self.get_N0cls(typ, lib_qlm, use_cls_len=True, cls_obs = cls_obs)[0][:lib_qlm.ellmax + 1]) # get RDN0 
+                return RDN0 if not return_delcls else (RDN0, self.cls_len)
+
         cpp = np.zeros(lib_qlm.ellmax + 1)
         cpp[:min(len(cpp), len(self.cls_unl['pp']))] = (self.cls_unl['pp'][:min(len(cpp), len(self.cls_unl['pp']))])
-        clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])
-        Bl = self.get_delensinguncorrbias(lib_qlm, cpp * (1. - clWF), wNoise=False, use_cls_len=False)  # TEB matrix output
+        
+        # Always use N0 fiducial for the WF
+        clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])   
+        if cls_obs is None:
+            Bl = self.get_delensinguncorrbias(lib_qlm, cpp * (1. - clWF), wNoise=False, use_cls_len=False)  # TEB matrix output
+        else :
+            Bl = self.get_RDdelensinguncorrbias(lib_qlm, cpp * (1. - clWF), cls_obs, clsobs_deconv2=cls_obs, recache=False)
+        
         cls_delen = {}
         for key in self.cls_len.keys():
-            cls_delen[key] = self.cls_unl[key].copy()
             _Bl = Bl[{'t': 0, 'e': 1, 'b': 2}[key[0]], {'t': 0, 'e': 1, 'b': 2}[key[1]]]
-            cls_delen[key][:min(len(cls_delen[key]),len(_Bl))] -= _Bl[:min(len(cls_delen[key]),len(_Bl))]
+            if cls_obs is None:
+                cls_delen[key] = self.cls_unl[key].copy()
+                cls_delen[key][:min(len(cls_delen[key]),len(_Bl))] -= _Bl[:min(len(cls_delen[key]),len(_Bl))]
+            else:               
+                # cls_delen[key] = cls_obs[key].copy() + self.cls_unl[key].copy() - self.cls_len[key].copy()
+                cls_delen[key] = self.cls_unl[key].copy()
+                cls_delen[key][:min(len(cls_delen[key]),len(_Bl))] -= _Bl[:min(len(cls_delen[key]),len(_Bl))]
+        
         cls_unl = {}
         for key in self.cls_unl.keys():
             cls_unl[key] = self.cls_unl[key].copy()
         # cls_unl['pp'][0:min(len(cpp), len(cls_unl['pp']))] = (cpp * (1. - clWF))[0:min(len(cpp), len(cls_unl['pp']))]
-        new_libdir = os.path.join(self.lib_dir, '%s_N0iter' % typ, 'N0iter%04d' % (_it + 1)) if _it == 0 else \
+
+        if cls_obs is None:        
+            new_libdir = os.path.join(self.lib_dir, '%s_N0iter' % typ, 'N0iter%04d' % (_it + 1)) if _it == 0 else \
+                self.lib_dir.replace('N0iter%04d' % _it, 'N0iter%04d' % (_it + 1))
+        else:
+            new_libdir = os.path.join(self.lib_dir, '%s_RDN0iter_%s' % (typ, npy_hash(cls_obs['tt'][lib_qlm.ellmin:lib_qlm.ellmax + 1])), 'N0iter%04d' % (_it + 1)) if _it == 0 else \
             self.lib_dir.replace('N0iter%04d' % _it, 'N0iter%04d' % (_it + 1))
 
         try:
@@ -773,8 +842,15 @@ class ffs_diagcov_alm(object):
             shutil.rmtree(new_libdir)
             new_cov = ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen, self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
-
-        return new_cov.iterateN0cls(typ, lib_qlm, itmax, _it=_it + 1, return_delcls=return_delcls)
+        if cls_obs is None:
+            return new_cov.iterateN0cls(typ, lib_qlm, itmax, _it=_it + 1, return_delcls=return_delcls, cls_obs=None)
+        else:
+            _cls_obs = {}
+            for key in self.cls_len.keys():
+                _cls_obs[key] = cls_obs[key].copy() - self.cls_len[key].copy() + self.cls_unl[key].copy()
+                # _cls_obs[key] = cls_obs[key].copy() 
+                _cls_obs[key][:min(len(cls_delen[key]),len(_Bl))] -= _Bl[:min(len(cls_delen[key]),len(_Bl))]
+            return new_cov.iterateN0cls(typ, lib_qlm, itmax, _it=_it + 1, return_delcls=return_delcls, cls_obs=_cls_obs)
 
     def get_N0Pk_minimal(self, typ, lib_qlm, use_cls_len=True, cls_obs=None):
         # Same as N0cls but binning only in exactly identical frequencies.
