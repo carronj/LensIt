@@ -510,7 +510,8 @@ class ffs_iterator(object):
         sk_fname = os.path.join(self.lib_dir, 'Hessian', 'rlm_sn_%s_%s.npy' % (k, key))
         step = 0.
         if not os.path.exists(sk_fname):
-            print("rank %s calculating descent direction" % self.PBSRANK)
+            # print("rank %s calculating descent direction" % self.PBSRANK)
+            print("rank %s calculating descent direction" % pbs.rank)
             t0 = time.time()
             incr = BFGS.get_mHkgk(self.lib_qlm.alm2rlm(gradn), k)
             norm_inc = self._calc_norm(self.lib_qlm.rlm2alm(incr)) / self._calc_norm(self.get_Plm(0, key))
@@ -662,7 +663,8 @@ class ffs_iterator_pertMF(ffs_iterator):
 
         self.isocov = ffs_cov.ffs_diagcov_alm(os.path.join(lib_dir, 'isocov'),
                                               filt.lib_skyalm, filt.cls, filt.cls, filt.cl_transf, cls_noise,
-                                              lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
+                                              lib_skyalm=filt.lib_skyalm, init_rank=self.PBSRANK,
+                                            #   lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
                                               init_barrier=init_barrier)
 
     def get_mfresp(self, key):
