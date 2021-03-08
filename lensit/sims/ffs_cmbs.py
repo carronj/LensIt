@@ -193,19 +193,27 @@ class sims_cmb_len:
 
 
 class sim_cmb_unl_fixed_phi(sim_cmb_unl):
-    def __init__(self, cls_unl, lib_pha, alpha_cpp=1.):
+    def __init__(self, cls_unl, lib_pha, alpha_cpp=1., phimap=None):
         super(sim_cmb_unl_fixed_phi, self).__init__(cls_unl, lib_pha, alpha_cpp=1.)
-        
+        self.phimap = phimap
+    
+    
     def _get_sim_alm(self, idx, idf):
-        # We set the phi field to always return the same index (0)
+        print(self.phimap)
+        # We set the phi field to always return the same index (0) or phimap if phimap is not None
         ret = np.zeros(self.lib_skyalm.alm_size, dtype=complex)
         for i in range(len(self.fields)):
             if idf == self.fields.index('p'):
-                print('Get alm of {} for simu {} from simu idx 0'.format(idf, idx))
-                ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(0, idf=i), self.rmat[:, idf, i])
+                # print('Get alm of {} for simu {} from simu idx 0'.format(idf, idx))
+                if self.phimap is not None:
+                    # print('phimap')
+                    ret = self.phimap
+                else:
+                    ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(0, idf=i), self.rmat[:, idf, i])
             else:
-                print('Get alm of {} for simu {}'.format(idf, idx))
+                # print('Get alm of {} for simu {}'.format(idf, idx))
                 ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(idx, idf=i), self.rmat[:, idf, i])
+
         return ret
     
     
@@ -215,9 +223,13 @@ class sim_cmb_unl_fixed_phi(sim_cmb_unl):
 
 
 class sim_cmb_len_fixed_phi(sims_cmb_len):
-    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.):
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1., phimap=None):
         super(sim_cmb_len_fixed_phi, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.)
-        
-        self.unlcmbs = sim_cmb_unl_fixed_phi(cls_unl, lib_pha, alpha_cpp=alpha_cpp)
-        print("Created sim lib with plm from simu idx 0")
-        
+
+        # print(phimap)
+        self.unlcmbs = sim_cmb_unl_fixed_phi(cls_unl, lib_pha, alpha_cpp=alpha_cpp, phimap=phimap)
+        if phimap is not None:
+            print("Created sim lib with given plm")
+        else:
+            print("Created sim lib with plm from simu idx 0")
+
