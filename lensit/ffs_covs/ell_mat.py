@@ -38,14 +38,15 @@ class ell_mat:
         self.mmap_mode = None
         self.cache=cache
 
-        fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
-        if pbs.rank == 0:
+        if pbs.rank == 0 and self.cache > 0:
+            fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
             if not os.path.exists(lib_dir): os.makedirs(lib_dir)
             if not os.path.exists(fn_hash):
                 pk.dump(self.hash_dict(), open(fn_hash, 'wb'), protocol=2)
         pbs.barrier()
 
-        hash_check(pk.load(open(fn_hash, 'rb')), self.hash_dict())
+        if self.cache > 0:
+            hash_check(pk.load(open(fn_hash, 'rb')), self.hash_dict())
 
         if pbs.rank == 0 and self.cache > 0 and not os.path.exists(os.path.join(self.lib_dir, 'ellmat.npy')):
                 print('ell_mat:caching ells in ' + os.path.join(self.lib_dir, 'ellmat.npy'))

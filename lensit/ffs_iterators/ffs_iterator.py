@@ -656,15 +656,19 @@ class ffs_iterator_pertMF(ffs_iterator):
         super(ffs_iterator_pertMF, self).__init__(lib_dir, typ, filt, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                                                   PBSSIZE=1, PBSRANK=0,  # so that all proc. act independently
                                                   **kwargs)
-        lmax_sky_ivf = filt.lib_skyalm.ellmax
-        cls_noise = {'t': (filt.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
-                     'q': (filt.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
-                     'u': (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
-
+        #lmax_sky_ivf = filt.lib_skyalm.ellmax
+        #iso_libdat = filt.lib_skyalm
+        #cls_noise = {'t': (filt.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
+        #             'q': (filt.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1),
+        #             'u': (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
+        lmax_ivf = filt.lib_datalm.ellmax
+        iso_libdat = filt.lib_datalm
+        cls_noise = {'t': (filt.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1),
+                     'q': (filt.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1),
+                     'u': (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1)}
         self.isocov = ffs_cov.ffs_diagcov_alm(os.path.join(lib_dir, 'isocov'),
-                                              filt.lib_skyalm, filt.cls, filt.cls, filt.cl_transf, cls_noise,
-                                              lib_skyalm=filt.lib_skyalm, init_rank=self.PBSRANK,
-                                            #   lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
+                                              iso_libdat, filt.cls, filt.cls, filt.cl_transf, cls_noise,
+                                              lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
                                               init_barrier=init_barrier)
 
     def get_mfresp(self, key):
