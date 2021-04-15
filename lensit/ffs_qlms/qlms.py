@@ -20,7 +20,7 @@ verbose = False
 typs = ['T', 'QU', 'TQU']
 
 
-def get_qlms_wl(typ, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 =None, use_Pool=0, **kwargs):
+def get_qlms_wl(typ, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 =None, subtract_zeromode=False, use_Pool=0, **kwargs):
     """
     Stand alone qlm estimator starting from lib_sky and unlensed Cls
     Likelihood gradient (from the quadratic part).
@@ -71,14 +71,20 @@ def get_qlms_wl(typ, lib_sky, TQU_Mlik, ResTQU_Mlik, lib_qlm, f=None,lib_sky2 =N
 
     retdx = left(0) * Right(0, 1)
     for _i in range(1, len(typ)): retdx += left(_i) * Right(_i, 1)
-    retdx = lib_qlm.map2alm(retdx)
     t.checkpoint("get_likgrad::Cart. gr. x done. (%s map(s) lensed, %s fft(s)) " % (len(typ), 2 * len(typ) + 1))
 
     retdy = left(0) * Right(0, 0)
     for _i in range(1, len(typ)): retdy += left(_i) * Right(_i, 0)
-    retdy = lib_qlm.map2alm(retdy)
     t.checkpoint("get_likgrad::Cart. gr. y done. (%s map(s) lensed, %s fft(s)) " % (len(typ), 2 * len(typ) + 1))
 
+    if subtract_zeromode:
+        zro_x = np.sum(retdx)
+        zro_y = np.sum(retdy)
+        print('zero mode:', zro_x,zro_y)
+        retdx[0, 0] -= zro_x
+        retdy[0, 0] -= zro_y
+    retdx = lib_qlm.map2alm(retdx)
+    retdy = lib_qlm.map2alm(retdy)
     return np.array([- retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky(),
                        retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()])  # N0  * output is normalized qest
 

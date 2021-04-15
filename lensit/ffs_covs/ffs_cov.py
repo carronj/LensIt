@@ -734,7 +734,7 @@ class ffs_diagcov_alm(object):
                                              use_cls_len=use_cls_len, cls_obs=cls_obs, cls_weights=cls_weights, cls_filt=cls_filt, cls_obs2=cls_obs2)
             return 2 * lib_qlm.alm2cl(np.sqrt(Rpp)), 2 * lib_qlm.alm2cl(np.sqrt(ROO))
 
-    def iterateN0cls(self, typ, lib_qlm, itmax, return_delcls=False, _it=0):
+    def iterateN0cls(self, typ, lib_qlm, itmax, return_delcls=False, _it=0, _cpp=None):
         """Iterative flat-sky :math:`N^{(0)}_L` calculation to estimate the noise levels of the iterative estimator.
 
             This uses perturbative approach in Wiener-filtered displacement, consistent with box shape and mode structure.
@@ -749,8 +749,10 @@ class ffs_diagcov_alm(object):
         """
         N0 = self.get_N0cls(typ, lib_qlm, use_cls_len=True)[0][:lib_qlm.ellmax + 1]
         if _it == itmax: return N0 if not return_delcls else (N0, self.cls_len)
+        if _cpp is None:
+            _cpp = np.copy(self.cls_unl['pp'])
         cpp = np.zeros(lib_qlm.ellmax + 1)
-        cpp[:min(len(cpp), len(self.cls_unl['pp']))] = (self.cls_unl['pp'][:min(len(cpp), len(self.cls_unl['pp']))])
+        cpp[:min(len(cpp), len(_cpp))] = (_cpp[:min(len(cpp), len(_cpp))])
         clWF = cpp * cl_inverse(cpp + N0[:lib_qlm.ellmax + 1])
         Bl = self.get_delensinguncorrbias(lib_qlm, cpp * (1. - clWF), wNoise=False, use_cls_len=False)  # TEB matrix output
         cls_delen = {}
@@ -774,7 +776,7 @@ class ffs_diagcov_alm(object):
             new_cov = ffs_diagcov_alm(new_libdir, self.lib_datalm, cls_unl, cls_delen, self.cl_transf, self.cls_noise,
                                                               lib_skyalm=self.lib_skyalm)
 
-        return new_cov.iterateN0cls(typ, lib_qlm, itmax, _it=_it + 1, return_delcls=return_delcls)
+        return new_cov.iterateN0cls(typ, lib_qlm, itmax, _it=_it + 1, return_delcls=return_delcls, _cpp=_cpp)
 
     def get_N0Pk_minimal(self, typ, lib_qlm, use_cls_len=True, cls_obs=None):
         # Same as N0cls but binning only in exactly identical frequencies.
@@ -834,6 +836,7 @@ class ffs_diagcov_alm(object):
                 # ! Matrix not symmetric for TQU or non identical noises. But xx or yy element ok.#(2 - (i == j)) *
                 F +=   self.lib_datalm.alm2map(ikx() * get_xiK(i, j, 1, _cls_cmb)) \
                      * self.lib_datalm.alm2map(ikx() * get_xiK(j, i, 2, _cls_weights))
+
         Fxx = lib_qlm.map2alm(F)
         F *= 0
         t.checkpoint("  Fxx , part 1")
@@ -896,6 +899,7 @@ class ffs_diagcov_alm(object):
         _cls_filt = cls_filt or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_obs = cls_obs or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_obs2 = cls_obs2 or (self.cls_len if use_cls_len else self.cls_unl)
+
 
         if not cls_weights is None: t.checkpoint('Using custom Cls weights')
         if not cls_filt is None: t.checkpoint('Using custom Cls filt')
