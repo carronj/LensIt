@@ -28,14 +28,16 @@ class rng_db:
 
     """
 
-    def __init__(self, fname, idtype="INTEGER"):
-        if not os.path.exists(fname) and pbs.rank == 0:
+    def __init__(self, fname, idtype="INTEGER", pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        # print('rank' + str(pbsrank))
+        # print('barrier' + str(pbsbarrier()))
+        if not os.path.exists(fname) and pbsrank == 0:
             con = sqlite3.connect(fname, detect_types=sqlite3.PARSE_DECLTYPES, timeout=3600)
             cur = con.cursor()
             cur.execute("create table rngdb (id %s PRIMARY KEY, "
                         "type STRING, pos INTEGER, has_gauss INTEGER,cached_gaussian REAL, keys STRING)" % idtype)
             con.commit()
-        pbs.barrier()
+        pbsbarrier()
 
         self.con = sqlite3.connect(fname, timeout=3600., detect_types=sqlite3.PARSE_DECLTYPES)
 
@@ -84,18 +86,20 @@ class sim_lib(object):
     jcarron Nov. 2015.
     """
 
-    def __init__(self, lib_dir, get_state_func=np.random.get_state, nsims_max=None):
-        if not os.path.exists(lib_dir) and pbs.rank == 0:
+    def __init__(self, lib_dir, get_state_func=np.random.get_state, nsims_max=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        # print('rank' + str(pbsrank))
+        # print('barrier' + str(pbsbarrier()))
+        if not os.path.exists(lib_dir) and pbsrank == 0:
             os.makedirs(lib_dir)
         self.nmax = nsims_max
         fn = os.path.join(lib_dir, 'sim_hash.pk')
-        if pbs.rank == 0 and not os.path.exists(fn):
+        if pbsrank == 0 and not os.path.exists(fn):
             pk.dump(self.hashdict(), open(fn, 'wb'), protocol=2)
-        pbs.barrier()
+        pbsbarrier()
 
         hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'])
 
-        self._rng_db = rng_db(os.path.join(lib_dir, 'rngdb.db'), idtype='INTEGER')
+        self._rng_db = rng_db(os.path.join(lib_dir, 'rngdb.db'), idtype='INTEGER', pbsrank=pbsrank, pbsbarrier=pbsbarrier)
         self._get_rng_state = get_state_func
 
     def get_sim(self, idx, **kwargs):

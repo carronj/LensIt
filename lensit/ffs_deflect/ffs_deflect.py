@@ -482,7 +482,8 @@ class ffs_displacement(object):
         dy = dy[sl0, sl1]
 
         det = Minv_yy * Minv_xx - Minv_xy * Minv_yx
-        if not np.all(det > 0.): print("ffs_displ::Negative value in det k : something's weird, you'd better check that")
+        #if not np.all(det > 0.): print("ffs_displ::Negative value in det k : something's weird, you'd better check that")
+        assert np.all(det > 0.), "ffs_displ::Negative value in det k : something's weird, you'd better check that"
         # Inverse magn. elements. (with a minus sign) We may need to spline these later for further NR iterations :
         Minv_xx /= det
         Minv_yy /= det

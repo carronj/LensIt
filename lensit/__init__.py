@@ -9,7 +9,7 @@ import os
 from lensit.ffs_covs import ffs_cov, ell_mat
 from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
 from lensit.pbs import pbs
-from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam, cl_inverse
+from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam, cl_inverse, npy_hash
 
 
 def _get_lensitdir():
@@ -36,12 +36,26 @@ def get_fidcls(ellmax_sky=6000, alpha_cpp=1., new_cls=False, cls_grad=False):
         cls_unl[key] = cls_unlr[key][0:ellmax_sky + 1]
         if key == 'pp': cls_unl[key] = cls_unlr[key][:] * alpha_cpp  # might need this one to higher lmax
     cls_len = {}
-    
+    #print(new_cls)
     if alpha_cpp == 1.:
         if new_cls:
-            cls_lenr = camb_clfile(os.path.join(_get_lensitdir()[1], 'inports', 'lensit1011_lensedCls.dat'))
-            for k in cls_lenr.keys():
-                cls_lenr[k] = np.append(cls_lenr[k], np.zeros(8000))
+            print('using new cls')
+            from scipy.interpolate import UnivariateSpline as spl
+            #cls_lenr = camb_clfile(os.path.join(_get_lensitdir()[1], 'inports', 'lensit1011_lensedCls.dat'))
+            cls_len_d = np.loadtxt(os.path.join(_get_lensitdir()[1], 'inports', 'lensit1011_lensedCls.dat')).T
+            cls_lenr = {}
+            ell = cls_len_d[0]
+            # cls_lenr['tt'] = np.interp(np.arange(8000), ell, cls_len_d[1])
+            # cls_lenr['ee'] = np.interp(np.arange(8000), ell, cls_len_d[2])
+            # cls_lenr['bb'] = np.interp(np.arange(8000), ell, cls_len_d[3])
+            # cls_lenr['te'] = np.interp(np.arange(8000), ell, cls_len_d[4])
+            ls = np.arange(8000)
+            cls_lenr['tt'] = spl(ell, cls_len_d[1], k=2, s=0, ext='zeros')(ls)
+            cls_lenr['ee'] = spl(ell, cls_len_d[2], k=2, s=0, ext='zeros')(ls)
+            cls_lenr['bb'] = spl(ell, cls_len_d[3], k=2, s=0, ext='zeros')(ls)
+            cls_lenr['te'] = spl(ell, cls_len_d[4], k=2, s=0, ext='zeros')(ls)
+            # for k in cls_lenr.keys():
+            #     cls_lenr[k] = np.append(cls_lenr[k], np.zeros(8000))
         else:
             cls_lenr = camb_clfile(os.path.join(_get_lensitdir()[1], 'fiducial_flatsky_lensedCls.dat'))
     else:
@@ -52,7 +66,15 @@ def get_fidcls(ellmax_sky=6000, alpha_cpp=1., new_cls=False, cls_grad=False):
         cls_len[key] = cls_lenr[key][0:ellmax_sky + 1]
     
     if cls_grad:
-        cls_grad = camb_clfile(os.path.join(_get_lensitdir()[1], 'inports', 'lensit1011_gradlensedCls.dat'))
+        cls_grad_d = np.loadtxt(os.path.join(_get_lensitdir()[1], 'inports', 'lensit1011_gradlensedCls.dat')).T
+        cls_grad = {}
+        ell = cls_grad_d[0]
+        ls = np.arange(ellmax_sky+1)
+        cls_grad['tt'] = spl(ell, cls_grad_d[1], k=2, s=0, ext='zeros')(ls)
+        cls_grad['ee'] = spl(ell, cls_grad_d[2], k=2, s=0, ext='zeros')(ls)
+        cls_grad['bb'] = spl(ell, cls_grad_d[3], k=2, s=0, ext='zeros')(ls)
+        cls_grad['te'] = spl(ell, cls_grad_d[4], k=2, s=0, ext='zeros')(ls)
+
         return cls_unl, cls_len, cls_grad
 
     return cls_unl, cls_len
@@ -127,6 +149,8 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.envir
 
     """
     HD_ellmat = get_ellmat(res, HD_res=res)
+    # Degrade the lensing resolution by a factor of 2
+    #HD_ellmat = get_ellmat(res-1, HD_res=res)
     ellmax_sky = 6000
     fsky = int(np.round(np.prod(HD_ellmat.lsides) / 4. / np.pi * 1000.))
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(HD_ellmat, num_threads=num_threads,
@@ -184,14 +208,16 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
     pbs.barrier()
     # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
     sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'res%s'%LDres,'%s'%exp, 'maps')
+    #sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'LD%sHD%s' % (LDres, HDres), 'maps')
     print(sims_libdir)
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
 
 
-def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1., ellmax_sky = 6000, phimap=None):
+def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1., ellmax_sky = 6000, phimap=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
     r"""Default lensed CMB simulation library
 
+    # TODO: can probably change this to lens at lower resolution adn speed up the computations
     Lensing is always performed at resolution of :math:`0.75` arcmin
 
     Args:
@@ -209,22 +235,25 @@ def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=in
     fsky = int(np.round(np.prod(HD_ellmat.lsides) / 4. / np.pi * 1000.))
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(HD_ellmat, num_threads=num_threads,
                                                  filt_func=lambda ell: ell <= ellmax_sky)
-    skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'len_alms', 'skypha')
-    skypha = ffs_phas.ffs_lib_phas(skypha_libdir, 4, lib_skyalm, nsims_max=nsims)
-    if not skypha.is_full() and pbs.rank == 0:
+    #TODO check that the lib dir is ok when alpha_cpp =! 1, also in the other functions get_lencmbs_lib and get_maps_lib
+    # skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'len_alms', 'skypha')
+    skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp), 'input_plmmap_hash%s' % npy_hash(phimap), 'len_alms', 'skypha')
+    print(skypha_libdir)
+    skypha = ffs_phas.ffs_lib_phas(skypha_libdir, 4, lib_skyalm, nsims_max=nsims, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
+    if not skypha.is_full() and pbsrank == 0:
         for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
             skypha.get_sim(int(idx))
-    pbs.barrier()
+    pbsbarrier()
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, alpha_cpp=alpha_cpp)
     print("Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
 
     # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms')
-    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'len_alms')
-    return ffs_cmbs.sim_cmb_len_fixed_phi(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims, alpha_cpp=alpha_cpp, phimap=phimap)
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp), 'input_plmmap_hash%s' % npy_hash(phimap), 'len_alms')
+    return ffs_cmbs.sim_cmb_len_fixed_phi(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims, alpha_cpp=alpha_cpp, phimap=phimap, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
 
 
-def get_maps_lib_fixed_phi(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
-                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1., phimap=None):
+def get_maps_lib_fixed_phi(exp, LDres=10, HDres=11, cache_lenalms=True, cache_maps=False,
+                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), alpha_cpp=1., phimap=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
     r"""Default CMB data maps simulation library
 
     Args:
@@ -241,30 +270,35 @@ def get_maps_lib_fixed_phi(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=
         All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
 
     """
+
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
-    len_cmbs = get_lencmbs_lib_fixed_phi(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp, phimap=phimap)
+    len_cmbs = get_lencmbs_lib_fixed_phi(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp, phimap=phimap, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
     lib_datalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
-                                                 num_threads=num_threads)
+                                                num_threads=num_threads)
+
     fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
     vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
     nTpix = sN_uKamin / np.sqrt(vcell_amin2)
     nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
 
-    pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
+    # pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
+    pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
     pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
 
-    if not pixpha.is_full() and pbs.rank == 0:
+    if not pixpha.is_full() and pbsrank == 0:
         for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
             pixpha.get_sim(idx)
-    pbs.barrier()
+    pbsbarrier()
     # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
-    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'res%s'%LDres,'%s'%exp, 'maps')
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'input_plmmap_hash%s' % npy_hash(phimap), 'res%s'%LDres,'%s'%exp, 'maps')
+    # No need to define the libdir as a function of LDHD, becasue it's conatined in the resolution and the skyfraction, already in the path
+    #sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'input_plmmap_hash%s' % npy_hash(phimap), 'res%s'%LDres,'%s'%exp, 'maps')
     print(sims_libdir)
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
-                                      pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
+                                      pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
 
 
 
@@ -327,6 +361,26 @@ def get_config(exp):
     elif exp == 'S4_euclid':
         sN_uKamin = 1.
         Beam_FWHM_amin = 1.
+        ellmin = 2
+        ellmax = 3000
+    elif exp == 'S4_biased':
+        sN_uKamin = 4
+        Beam_FWHM_amin = 3.
+        ellmin = 2
+        ellmax = 3000
+    elif exp == 'S4_2':
+        sN_uKamin = 2.
+        Beam_FWHM_amin = 3.
+        ellmin = 2
+        ellmax = 3000
+    elif exp == 'S4_1.52':
+        sN_uKamin = 1.52
+        Beam_FWHM_amin = 3.
+        ellmin = 2
+        ellmax = 3000
+    elif exp == 'S4_1.49':
+        sN_uKamin = 1.49
+        Beam_FWHM_amin = 3.
         ellmin = 2
         ellmax = 3000
     elif exp == 'S5':

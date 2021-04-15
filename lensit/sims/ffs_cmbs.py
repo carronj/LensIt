@@ -104,25 +104,25 @@ class sim_cmb_unl:
         return self.lib_skyalm.EBlms2QUalms(np.array([self.get_sim_elm(idx), self.get_sim_blm(idx)]))
 
 class sims_cmb_len:
-    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.):
-        if not os.path.exists(lib_dir) and pbs.rank == 0:
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1., pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        if not os.path.exists(lib_dir) and pbsrank == 0:
             os.makedirs(lib_dir)
-        pbs.barrier()
+        pbsbarrier()
         self.lib_skyalm = lib_skyalm
         fields = get_fields(cls_unl)
-        if lib_pha is None and pbs.rank == 0:
-            lib_pha = ffs_phas.ffs_lib_phas(os.path.join(lib_dir, 'phas'), len(fields), lib_skyalm)
+        if lib_pha is None and pbsrank == 0:
+            lib_pha = ffs_phas.ffs_lib_phas(os.path.join(lib_dir, 'phas'), len(fields), lib_skyalm, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
         else:  # Check that the lib_alms are compatible :
             assert lib_pha.lib_alm == lib_skyalm
-        pbs.barrier()
+        pbsbarrier()
 
         self.unlcmbs = sim_cmb_unl(cls_unl, lib_pha, alpha_cpp=alpha_cpp)
         self.Pool = use_Pool
         self.cache_lens = cache_lens
         fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
-        if not os.path.exists(fn_hash) and pbs.rank == 0:
+        if not os.path.exists(fn_hash) and pbsrank == 0:
             pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
-        pbs.barrier()
+        pbsbarrier()
         sims_generic.hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
         self.lib_dir = lib_dir
         self.fields = fields
@@ -223,8 +223,8 @@ class sim_cmb_unl_fixed_phi(sim_cmb_unl):
 
 
 class sim_cmb_len_fixed_phi(sims_cmb_len):
-    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1., phimap=None):
-        super(sim_cmb_len_fixed_phi, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1.)
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1., phimap=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        super(sim_cmb_len_fixed_phi, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, alpha_cpp=1., pbsrank=pbsrank, pbsbarrier=pbsbarrier)
 
         # print(phimap)
         self.unlcmbs = sim_cmb_unl_fixed_phi(cls_unl, lib_pha, alpha_cpp=alpha_cpp, phimap=phimap)
