@@ -188,6 +188,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
 
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
+    print(Beam_FWHM_amin, sN_uKamin)
     print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
     len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
@@ -342,7 +343,7 @@ def get_config(exp):
         Beam_FWHM_amin = 7.
         ellmin = 10
         ellmax = 2048
-    if exp == 'Planck_euclid':
+    elif exp == 'Planck_euclid':
         sN_uKamin = 23.
         sN_uKaminP = 42
         Beam_FWHM_amin = 7.
@@ -356,6 +357,11 @@ def get_config(exp):
     elif exp == 'S4':
         sN_uKamin = 1.5
         Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S4_opti':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 3000
     elif exp == 'S4_euclid':
@@ -391,6 +397,11 @@ def get_config(exp):
     elif exp == 'S6':
         sN_uKamin = 1.5 / 4. / 4.
         Beam_FWHM_amin = 3.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'SO_opti':
+        sN_uKamin = 2.
+        Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 3000
     elif exp == 'SO':

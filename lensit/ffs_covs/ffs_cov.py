@@ -87,7 +87,7 @@ class ffs_diagcov_alm(object):
         if not os.path.exists(fn) and init_rank == 0:
             pk.dump(self.hashdict(), open(fn, 'wb'), protocol=2)
         init_barrier()
-        print(lib_dir)
+        # print(lib_dir)
         # hash_check(pk.load(open(fn, 'rb')), self.hashdict())
         hash_check(pk.load(open(fn, 'rb')), self.hashdict(), keychain=[self.lib_dir])
 
@@ -192,7 +192,7 @@ class ffs_diagcov_alm(object):
                                % (wNoise, {True: 'len', False: 'unl'}[use_cls_len],
                                   wCMB,  npy_hash(clpp_rec[lib_qlm.ellmin:lib_qlm.ellmax + 1]),
                                   lib_qlm.filt_hash()))
-        print(fname)
+        # print(fname)
         if (not os.path.exists(fname) or recache) and self.pbsrank == 0:
             def ik_q(a):
                 assert a in [0, 1], a
@@ -716,20 +716,21 @@ class ffs_diagcov_alm(object):
         return np.array([2 * dphi, 2 * dOm])  # Factor 2 since gradient w.r.t. real and imag. parts.
 
     def  _get_qlm_resprlm(self, typ, lib_qlm,
-                          use_cls_len=True, cls_obs=None, cls_obs2=None, cls_filt=None, cls_weights=None):
+                          use_cls_len=True, cls_obs=None, cls_obs2=None, cls_filt=None, cls_weights=None, verbose=False):
         assert typ in typs, (typ, typs)
         t = timer(_timed)
         Fpp, FOO, FpO = self._get_qlm_curvature(typ, lib_qlm,
                                                 use_cls_len=use_cls_len, cls_obs=cls_obs, cls_filt=cls_filt, cls_weights=cls_weights, cls_obs2=cls_obs2)
-
-        t.checkpoint("  get_qlm_resplm:: get curvature matrices")
+        if verbose:
+            t.checkpoint("  get_qlm_resplm:: get curvature matrices")
 
         del FpO
         Rpp = np.zeros_like(Fpp)
         ROO = np.zeros_like(FOO)
         Rpp[np.where(Fpp > 0.)] = 1. / Fpp[np.where(Fpp > 0.)]
         ROO[np.where(FOO > 0.)] = 1. / FOO[np.where(FOO > 0.)]
-        t.checkpoint("  get_qlm_resplm:: inversion")
+        if verbose:
+            t.checkpoint("  get_qlm_resplm:: inversion")
 
         return Rpp, ROO
 
@@ -904,7 +905,7 @@ class ffs_diagcov_alm(object):
         Rpp, ROO = self._get_qlm_resprlm(typ, lib_qlm, use_cls_len=use_cls_len, cls_obs=cls_obs)
         return lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO))
 
-    def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True):
+    def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True, verbose=False):
         r"""Lensing quadratic estimator gradient and curl response functions.
 
             Args:
@@ -947,7 +948,8 @@ class ffs_diagcov_alm(object):
 
         ikx = self.lib_datalm.get_ikx
         iky = self.lib_datalm.get_iky
-        t.checkpoint("  inverse %s Pmats" % ({True: 'len', False: 'unl'}[use_cls_len]))
+        if verbose:
+            t.checkpoint("  inverse %s Pmats" % ({True: 'len', False: 'unl'}[use_cls_len]))
         F = np.zeros(self.lib_datalm.ell_mat.shape, dtype=float)
 
         # Calculation of (xi^cmb,b K) (xi^w,a K)
@@ -959,7 +961,8 @@ class ffs_diagcov_alm(object):
 
         Fxx = lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fxx , part 1")
+        if verbose:
+            t.checkpoint("  Fxx , part 1")
 
         for i in range(len(typ)):
             for j in range(0, len(typ)):
@@ -968,7 +971,8 @@ class ffs_diagcov_alm(object):
                      * self.lib_datalm.alm2map(iky() * get_xiK(j, i, 2, _cls_weights))
         Fyy = lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fyy , part 1")
+        if verbose:
+            t.checkpoint("  Fyy , part 1")
 
         for i in range(len(typ)):
             for j in range(len(typ)):
@@ -977,7 +981,8 @@ class ffs_diagcov_alm(object):
                      * self.lib_datalm.alm2map(iky() * get_xiK(j, i, 2, _cls_weights))
         Fxy = lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fxy , part 1")
+        if verbose:
+            t.checkpoint("  Fxy , part 1")
 
         # Adding to that (K)(z) (xi^w,a K xi^cmb,b)(z)
         tmap = lambda i, j: self.lib_datalm.alm2map(
@@ -988,26 +993,29 @@ class ffs_diagcov_alm(object):
                 F += tmap(i, j) * self.lib_datalm.alm2map(ikx() ** 2 * get_xiwKxicmb(i, j, 2))
         Fxx += lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fxx , part 2")
+        if verbose:
+            t.checkpoint("  Fxx , part 2")
 
         for i in range(len(typ)):
             for j in range(0, len(typ)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(iky() ** 2 * get_xiwKxicmb(i, j, 2))
         Fyy += lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fyy , part 2")
+        if verbose:
+            t.checkpoint("  Fyy , part 2")
 
         for i in range(len(typ)):
             for j in range(0, len(typ)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(iky() * ikx() * get_xiwKxicmb(i, j, 2))
         Fxy += lib_qlm.map2alm(F)
-        t.checkpoint("  Fxy , part 2")
+        if verbose:
+            t.checkpoint("  Fxy , part 2")
 
         facunits = -1. / np.sqrt(np.prod(self.lsides))
         return np.array([lib_qlm.bin_realpart_inell(r) for r in xylms_to_phiOmegalm(lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)])
 
     def _get_qlm_curvature(self, typ, lib_qlm,
-                           cls_weights=None, cls_filt=None, cls_obs=None, cls_obs2=None, use_cls_len=True):
+                           cls_weights=None, cls_filt=None, cls_obs=None, cls_obs2=None, use_cls_len=True, verbose=False):
         """Fisher matrix for the displacement components phi and Omega (gradient and curl potentials)
 
 
@@ -1087,7 +1095,8 @@ class ffs_diagcov_alm(object):
 
         ikx = self.lib_datalm.get_ikx
         iky = self.lib_datalm.get_iky
-        t.checkpoint("  inverse %s Pmats" % ({True: 'len', False: 'unl'}[use_cls_len]))
+        if verbose:
+            t.checkpoint("  inverse %s Pmats" % ({True: 'len', False: 'unl'}[use_cls_len]))
         F = np.zeros(self.lib_datalm.ell_mat.shape, dtype=float)
         # 2.1 GB in memory for full sky 16384 ** 2 points. Note however that we can without any loss of accuracy
         # calculate this using a twice as sparse grid, for reasonable input parameters.
@@ -1100,7 +1109,8 @@ class ffs_diagcov_alm(object):
                      * self.lib_datalm.alm2map(ikx() * get_BPBCovi(j, i, 2))
         Fxx = _lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fxx , part 1")
+        if verbose:
+            t.checkpoint("  Fxx , part 1")
 
         for i in range(len(typ)):
             for j in range(i, len(typ)):
@@ -1109,7 +1119,8 @@ class ffs_diagcov_alm(object):
                      * self.lib_datalm.alm2map(iky() * get_BPBCovi(j, i, 2))
         Fyy = _lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fyy , part 1")
+        if verbose:
+            t.checkpoint("  Fyy , part 1")
 
         for i in range(len(typ)):
             for j in range(len(typ)):
@@ -1118,7 +1129,8 @@ class ffs_diagcov_alm(object):
                      * self.lib_datalm.alm2map(iky() * get_BPBCovi(j, i, 2))
         Fxy = _lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fxy , part 1")
+        if verbose:
+            t.checkpoint("  Fxy , part 1")
 
         # Adding to that (B Cov^-1 B^t)(z) (daxi B Cov^-1 B^t dbxi)(z)
         # Construct Pmat:
@@ -1133,20 +1145,23 @@ class ffs_diagcov_alm(object):
                 F += tmap(i, j) * self.lib_datalm.alm2map(ikx() ** 2 * get_BPBCoviP(i, j, 2))
         Fxx += _lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fxx , part 2")
+        if verbose:
+            t.checkpoint("  Fxx , part 2")
 
         for i in range(len(typ)):
             for j in range(i, len(typ)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(iky() ** 2 * get_BPBCoviP(i, j, 2))
         Fyy += _lib_qlm.map2alm(F)
         F *= 0
-        t.checkpoint("  Fyy , part 2")
+        if verbose:
+            t.checkpoint("  Fyy , part 2")
 
         for i in range(len(typ)):
             for j in range(i, len(typ)):
                 F += tmap(i, j) * self.lib_datalm.alm2map(iky() * ikx() * get_BPBCoviP(i, j, 2))
         Fxy += _lib_qlm.map2alm(F)
-        t.checkpoint("  Fxy , part 2")
+        if verbose:
+            t.checkpoint("  Fxy , part 2")
 
         facunits = -2. / np.sqrt(np.prod(self.lsides))
         ret = xylms_to_phiOmegalm(_lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)

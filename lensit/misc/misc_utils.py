@@ -280,7 +280,7 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
                 # Standard error (to get confidence interval on the unknown mean)
                 err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
             elif error=='std':
-                # Standard deviation (to get std of values inside the bin)
+                # Standard deviation (to get std of values inside the in)
                 err[i] = np.std(arr[nzell[ii]])
     if not return_err:
         return ret

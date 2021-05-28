@@ -46,6 +46,7 @@ class ell_mat:
         pbs.barrier()
 
         if self.cache > 0:
+            fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
             hash_check(pk.load(open(fn_hash, 'rb')), self.hash_dict())
 
         if pbs.rank == 0 and self.cache > 0 and not os.path.exists(os.path.join(self.lib_dir, 'ellmat.npy')):
