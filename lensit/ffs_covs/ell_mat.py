@@ -38,8 +38,8 @@ class ell_mat:
         self.mmap_mode = None
         self.cache=cache
 
+        fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
         if pbs.rank == 0 and self.cache > 0:
-            fn_hash = os.path.join(lib_dir, "ellmat_hash.pk")
             if not os.path.exists(lib_dir): os.makedirs(lib_dir)
             if not os.path.exists(fn_hash):
                 pk.dump(self.hash_dict(), open(fn_hash, 'wb'), protocol=2)
