@@ -139,10 +139,14 @@ class ffs_ninv_filt(object):
                 assert _maps[i].size == self.lib_datalm.alm_size, (_maps[i].size, self.lib_datalm.alm_size)
                 _maps[i][:] *= (1. / self._nlevs_rad2[field.lower()])
         else:
-            ret = np.zeros_like(_maps)
+            ret = np.zeros((len(TQUtype), self.lib_datalm.alm_size), dtype=complex)
             for i, field in enumerate(TQUtype):
                 assert field.lower() in ['t', 'q', 'u'], field
-                assert _maps[i].size == self.lib_datalm.alm_size, (_maps[i].size, self.lib_datalm.alm_size)
+                if not _maps[i].size == self.lib_datalm.alm_size:
+                    assert (_maps[i].size == np.prod(self.lib_datalm.shape))
+                    print('*** ninv_filt_ideal: you fed me position space maps instead of alms, I am assuming this ok to just project them onto the lib_datalm modes')
+                    assert not inplace, 'but cant do this inplace'
+                    _maps = np.array([self.lib_datalm.map2alm(m) for m in _maps])
                 ret[i] =_maps[i] * (1. / self._nlevs_rad2[field.lower()])
             return ret
 
@@ -171,7 +175,8 @@ class ffs_ninv_filt(object):
 
 
 class ffs_ninv_filt_wl(ffs_ninv_filt):
-    def __init__(self, lib_datalm, lib_skyalm, unl_cls, cl_transf, nlev_t, nlev_p, f, fi, verbose=False, lens_pool=0):
+    def __init__(self, lib_datalm, lib_skyalm, unl_cls, cl_transf, nlev_t, nlev_p, f, fi,
+                 verbose=False, lens_pool=0, kapprox=False):
         super(ffs_ninv_filt_wl, self).__init__(lib_datalm, lib_skyalm, unl_cls, cl_transf, nlev_t, nlev_p,
                                                verbose=verbose)
         assert self.lib_skyalm.shape == f.shape and self.lib_skyalm.lsides == f.lsides
@@ -179,6 +184,7 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
         self.f = f
         self.fi = fi
         self.lens_pool = lens_pool
+        self.kapprox=kapprox
 
     def set_ffi(self, f, fi):
         assert self.lib_skyalm.shape == f.shape and self.lib_skyalm.lsides == f.lsides
@@ -223,6 +229,41 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
             alm[:] = self.fi.lens_alm(self.lib_skyalm, alm, use_Pool=self.lens_pool, mult_magn=True)
             return
 
+    def apply_alms(self,TQUtype, TEBalms, inplace=True):
+        """
+        Applies B^t Ni B. (TEB skyalms to TEB skyalms)
+        """
+        assert TQUtype in ['T','QU','TQU']
+        if inplace:
+            if not self.kapprox:
+                TEBalms[:] = self.apply_Rts(TQUtype,self.apply_maps(TQUtype,self.apply_Rs(TQUtype,TEBalms),inplace=False))
+            else:
+                print('kapprox to filt')
+                TQUlms = ffs_specmat.TEB2TQUlms(TQUtype, self.lib_skyalm, TEBalms)
+                for field, alm in zip(TQUtype, TQUlms):
+                    self.lib_skyalm.almxfl(alm, self.cl_transf, inplace=True)
+                    alm[:] = self.lib_skyalm.map2alm(self.lib_skyalm.alm2map(alm) * self.fi.get_detmagn())
+                    _map = self._deg(alm)
+                    self.apply_map(field, _map, inplace=True)
+                    alm[:] = self._upg(_map)
+                    self.lib_skyalm.almxfl(alm, self.cl_transf, inplace=True)
+                TEBalms[:] = ffs_specmat.TQU2TEBlms(TQUtype, self.lib_skyalm, TQUlms)
+            return
+        else:
+            if not self.kapprox:
+                return self.apply_Rts(TQUtype,self.apply_maps(TQUtype,self.apply_Rs(TQUtype,TEBalms),inplace=False))
+            else:
+                print('kapprox to filt')
+                TQUlms = ffs_specmat.TEB2TQUlms(TQUtype, self.lib_skyalm, TEBalms)
+                for field, alm in zip(TQUtype, TQUlms):
+                    self.lib_skyalm.almxfl(alm, self.cl_transf, inplace=True)
+                    alm[:] = self.lib_skyalm.map2alm(self.lib_skyalm.alm2map(alm) * self.fi.get_det_magn())
+                    _map = self._deg(alm)
+                    self.apply_map(field, _map, inplace=True)
+                    alm[:] = self._upg(_map)
+                    self.lib_skyalm.almxfl(alm, self.cl_transf, inplace=True)
+                return ffs_specmat.TQU2TEBlms(TQUtype, self.lib_skyalm, TQUlms)
+
     def degrade(self, shape, no_lensing=False, ellmax=None, ellmin=None, **kwargs):
         lib_almsky = self.lib_skyalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
         lib_almdat = self.lib_datalm.degrade(shape, ellmax=ellmax, ellmin=ellmin)
@@ -235,4 +276,4 @@ class ffs_ninv_filt_wl(ffs_ninv_filt):
             fiLD = self.fi.degrade(shape, no_lensing)
             return ffs_ninv_filt_wl(lib_almdat, lib_almsky, self.cls, self.cl_transf, self.nlevs['t'], self.nlevs['q'],
                                     fLD, fiLD,
-                                    verbose=self.verbose)
+                                    verbose=self.verbose, kapprox=self.kapprox)
