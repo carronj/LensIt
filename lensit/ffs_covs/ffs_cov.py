@@ -61,7 +61,7 @@ class ffs_diagcov_alm(object):
 
     """
     def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
-                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier):
+                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier, alpha_cpp=1.0):
 
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_datalm.clone() if lib_skyalm is None else lib_skyalm
@@ -69,7 +69,7 @@ class ffs_diagcov_alm(object):
         self.cls_len = cls_len
         self.cl_transf = cl_transf
         self.cls_noise = cls_noise
-
+        self.alpha_cpp = alpha_cpp
         for cl in self.cls_noise.values(): assert len(cl) > self.lib_datalm.ellmax, (len(cl), self.lib_datalm.ellmax)
         for cl in self.cls_unl.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
         for cl in self.cls_len.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
@@ -683,6 +683,9 @@ class ffs_diagcov_alm(object):
             use_cls_len: use lensed or unlensed cls in QE weights (numerator), defaults to lensed cls
 
 
+        Note Louis: 
+            cblms: Wiener filtered map ?
+            get_ikx and get_iky: 1j * kx or 1j * ky 
         """
         assert iblms.shape == self._skyalms_shape(typ), (iblms.shape, self._skyalms_shape(typ))
         assert lib_qlm.lsides == self.lsides, (self.lsides, lib_qlm.lsides)
@@ -700,6 +703,7 @@ class ffs_diagcov_alm(object):
         _map = lambda alm: self.lib_skyalm.alm2map(alm)
         _2qlm = lambda _m: lib_qlm.udgrade(self.lib_skyalm, self.lib_skyalm.map2alm(_m))
 
+        # retdx = g_a^QD(n) = IVF * (grad WF) 
         retdx = _2qlm(_map(iblms[0]) * _map(clms[0] * self.lib_skyalm.get_ikx()))
         retdy = _2qlm(_map(iblms[0]) * _map(clms[0] * self.lib_skyalm.get_iky()))
         for _i in range(1, len(typ)):
@@ -707,7 +711,7 @@ class ffs_diagcov_alm(object):
             retdy += _2qlm(_map(iblms[_i]) * _map(clms[_i] * self.lib_skyalm.get_iky()))
 
         t.checkpoint("  get_qlms::cartesian gradients")
-
+        # dphi = -1j L \cdot g_L
         dphi = -retdx * lib_qlm.get_ikx() - retdy * lib_qlm.get_iky()
         dOm = retdx * lib_qlm.get_iky() - retdy * lib_qlm.get_ikx()
 

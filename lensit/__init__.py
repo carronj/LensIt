@@ -162,7 +162,7 @@ def get_lencmbs_lib(res=14, cache_sims=True, nsims=120, num_threads=int(os.envir
             skypha.get_sim(int(idx))
     pbs.barrier()
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, alpha_cpp=alpha_cpp)
-    print("Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
+    print("    [lensit.init.get_lencmbs_lib:] Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
 
     # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms')
     sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'len_alms')
@@ -188,8 +188,8 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
 
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    print(Beam_FWHM_amin, sN_uKamin)
-    print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
+    print('    [lensit.init.get_maps_lib:] beam FWHM {} amin, noise T {} muK.amin'.format(Beam_FWHM_amin, sN_uKamin))
+    # print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
     len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
@@ -210,7 +210,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
     # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
     sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'res%s'%LDres,'%s'%exp, 'maps')
     #sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'LD%sHD%s' % (LDres, HDres), 'maps')
-    print(sims_libdir)
+    print('    [lensit.init.get_maps_lib:] sims_libdir: ' + sims_libdir)
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
 
@@ -239,14 +239,14 @@ def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=in
     #TODO check that the lib dir is ok when alpha_cpp =! 1, also in the other functions get_lencmbs_lib and get_maps_lib
     # skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d' % fsky, 'len_alms', 'skypha')
     skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp), 'input_plmmap_hash%s' % npy_hash(phimap), 'len_alms', 'skypha')
-    print(skypha_libdir)
+    # print(skypha_libdir)
     skypha = ffs_phas.ffs_lib_phas(skypha_libdir, 4, lib_skyalm, nsims_max=nsims, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
     if not skypha.is_full() and pbsrank == 0:
         for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
             skypha.get_sim(int(idx))
     pbsbarrier()
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, alpha_cpp=alpha_cpp)
-    print("Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
+    # print("Input Cls_unl['pp'][1] = {}".format(cls_unl['pp'][1]))
 
     # sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms')
     sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp), 'input_plmmap_hash%s' % npy_hash(phimap), 'len_alms')
@@ -273,7 +273,7 @@ def get_maps_lib_fixed_phi(exp, LDres=10, HDres=11, cache_lenalms=True, cache_ma
     """
 
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    print('get_maps_lib alpha_cpp = {}'.format(alpha_cpp))
+    # print('    [li.__init__.get_maps_lib_fixed_phi:] alpha_cpp = {}'.format(alpha_cpp))
     len_cmbs = get_lencmbs_lib_fixed_phi(res=HDres, cache_sims=cache_lenalms, nsims=nsims, alpha_cpp=alpha_cpp, phimap=phimap, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
@@ -297,7 +297,7 @@ def get_maps_lib_fixed_phi(exp, LDres=10, HDres=11, cache_lenalms=True, cache_ma
     sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims_fixed_phi' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'input_plmmap_hash%s' % npy_hash(phimap), 'res%s'%LDres,'%s'%exp, 'maps')
     # No need to define the libdir as a function of LDHD, becasue it's conatined in the resolution and the skyfraction, already in the path
     #sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d_alphacpp_%s' % (fsky, alpha_cpp) , 'input_plmmap_hash%s' % npy_hash(phimap), 'res%s'%LDres,'%s'%exp, 'maps')
-    print(sims_libdir)
+    print('    [li.__init__.get_maps_lib_fixed_phi:] ' + sims_libdir)
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
 
@@ -329,7 +329,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'alpha_cpp_%s' % (alpha_cpp), 'LD%sHD%s' % (LD_res, HD_res))
     if new_cls:
         lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'alpha_cpp_%s_new_cls' % (alpha_cpp), 'LD%sHD%s' % (LD_res, HD_res))
-    return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)
+    return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm, alpha_cpp=alpha_cpp)
 
 
 
@@ -361,6 +361,26 @@ def get_config(exp):
         ellmax = 3000
     elif exp == 'S4_opti':
         sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S4_opti_0.98':
+        sN_uKamin = 0.98
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S4_opti_1.02':
+        sN_uKamin = 1.02
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S4_opti_1.5':
+        sN_uKamin = 1.5
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 3000
+    elif exp == 'S4_opti_2':
+        sN_uKamin = 2.
         Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 3000
@@ -399,9 +419,14 @@ def get_config(exp):
         Beam_FWHM_amin = 3.
         ellmin = 10
         ellmax = 3000
+    # elif exp == 'SO_opti':
+    #     sN_uKamin = 6.
+    #     Beam_FWHM_amin = 3.
+    #     ellmin = 10
+    #     ellmax = 3000
     elif exp == 'SO_opti':
-        sN_uKamin = 2.
-        Beam_FWHM_amin = 1.
+        sN_uKamin = 11.
+        Beam_FWHM_amin = 4.
         ellmin = 10
         ellmax = 3000
     elif exp == 'SO':

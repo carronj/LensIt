@@ -199,7 +199,7 @@ class sim_cmb_unl_fixed_phi(sim_cmb_unl):
     
     
     def _get_sim_alm(self, idx, idf):
-        print(self.phimap)
+        # print(self.phimap)
         # We set the phi field to always return the same index (0) or phimap if phimap is not None
         ret = np.zeros(self.lib_skyalm.alm_size, dtype=complex)
         for i in range(len(self.fields)):
@@ -229,7 +229,7 @@ class sim_cmb_len_fixed_phi(sims_cmb_len):
         # print(phimap)
         self.unlcmbs = sim_cmb_unl_fixed_phi(cls_unl, lib_pha, alpha_cpp=alpha_cpp, phimap=phimap)
         if phimap is not None:
-            print("Created sim lib with given plm")
+            print("    [sims.ffs_cmbs.sim_cmb_len_fixed_phi:] Created sim lib with given plm")
         else:
-            print("Created sim lib with plm from simu idx 0")
+            print("    [sims.ffs_cmbs.sim_cmb_len_fixed_phi:] Created sim lib with plm from simu idx 0")
 
