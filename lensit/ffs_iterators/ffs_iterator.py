@@ -738,7 +738,7 @@ class ffs_iterator_simMF(ffs_iterator):
         if self.nsims == 0: return None
         phas_pix = ffs_phas.pix_lib_phas(
             os.path.join(self.lib_dir,  '%s_sky_noise_iter%s' % (self.type, it * (not self.same_seeds))),
-            len(self.type), self.cov.lib_datalm.shape, nsims_max=self.nsims)
+            len(self.type), self.cov.lib_datalm.shape, nsims_max=self.nsims, pbsrank=self.PBSRANK)
         phas_cmb = None  # dont need it so far
         if self.PBSRANK == 0:
             for lib, lab in zip([phas_pix, phas_cmb], ['phas pix', 'phas_cmb']):
