@@ -1,12 +1,15 @@
+from __future__ import print_function
+
+import pickle as pk
 import numpy as np
 import os
-from lensit import pbs
-from lensit.misc.misc_utils import npy_hash
-import pickle as pk
-from .sims_generic import hash_check
-from . import ffs_phas
-from .. import misc
 
+from lensit.pbs import pbs
+from lensit.misc.misc_utils import npy_hash
+
+from lensit.sims.sims_generic import hash_check
+from lensit.sims import ffs_phas
+from lensit.misc.misc_utils import enumerate_progress
 
 class lib_noisevmap:
     def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, TQUcovfname, pix_pha=None, cache_sims=True):
@@ -24,7 +27,7 @@ class lib_noisevmap:
         self.lencmbs = lib_lencmb
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_lencmb.lib_skyalm
-        self.cl_transf = np.zeros(self.lib_skyalm.ellmax + 1, dtype=float, order='C')
+        self.cl_transf = np.zeros(self.lib_skyalm.ellmax + 1, dtype=float)
         self.cl_transf[:min(len(self.cl_transf), len(cl_transf))] = cl_transf[:min(len(self.cl_transf), len(cl_transf))]
         self.lib_dir = lib_dir
         self.cache_sims = cache_sims
@@ -34,17 +37,17 @@ class lib_noisevmap:
         pbs.barrier()
 
         if pix_pha is None:
-            self.pix_pha = ffs_phas.pix_lib_phas(lib_dir + '/pix_pha', 3, lib_datalm.shape)
+            self.pix_pha = ffs_phas.pix_lib_phas(os.path.join(lib_dir, 'pix_pha'), 3, lib_datalm.shape)
         else:
             self.pix_pha = pix_pha
             assert pix_pha.shape == self.lib_datalm.shape, (pix_pha.shape, self.lib_datalm.shape)
             assert pix_pha.nfields == 3, (pix_pha.nfields, 3)
-        if (np.array([not os.path.exists(lib_dir + '/rmat%s.npy' % a) for a in
+        if (np.array([not os.path.exists(os.path.join(lib_dir, 'rmat%s.npy'%a)) for a in
                       ['TT', 'TQ', 'TU', 'QQ', 'QU', 'UU']]).any()) and pbs.rank == 0:
             # FIXME : triangularise this
             TQUcov = np.load(TQUcovfname)
             rmat = np.zeros((3, 3, self.lib_datalm.shape[0], self.lib_datalm.shape[1]), dtype=float)
-            for _i, i in misc.misc_utils.enumerate_progress(range(self.lib_datalm.shape[0]), 'building root matrix'):
+            for _i, i in enumerate_progress(range(self.lib_datalm.shape[0]), 'building root matrix'):
                 for j in range(self.lib_datalm.shape[1]):
                     t, v = np.linalg.eigh(TQUcov[:, :, i, j], UPLO='U')
                     assert np.all(t >= 0.), (i, j, t)  # Matrix not positive semidefinite
@@ -52,31 +55,33 @@ class lib_noisevmap:
             for (i, j), lab in zip([(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)],
                                    ['TT', 'TQ', 'TU', 'QQ', 'QU', 'UU']):
                 _sav = rmat[i, j, :, :]
-                np.save(lib_dir + '/rmat%s.npy' % lab, _sav if _sav.any() else np.array([0.]))
-        if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
-            pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+                np.save(os.path.join(lib_dir, 'rmat%s.npy'%lab), _sav if _sav.any() else np.array([0.]))
+        fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
+        if not os.path.exists(fn_hash) and pbs.rank == 0:
+            pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
         pbs.barrier()
-        hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
+        hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
 
     def hashdict(self):
-        hash = {'len_cmb': self.lencmbs.hashdict()}
-        hash['transf'] = npy_hash(self.cl_transf)
+        h = {'len_cmb': self.lencmbs.hashdict(),
+             'transf': npy_hash(self.cl_transf)}
 
         def noisehash(_m):
             return npy_hash(np.array([_m]) if _m.size == 1 else np.diag(_m))
 
         TQU = np.load(self.TQUcovfname)
-        hash['NoiseT'] = noisehash(np.diag(TQU[0, 0]))
-        hash['NoiseQ'] = noisehash(np.diag(TQU[1, 1]))
-        hash['NoiseU'] = noisehash(np.diag(TQU[2, 2]))
-        hash['NoiseQU'] = noisehash(np.diag(TQU[1, 2]))
-        hash['NoiseTQ'] = noisehash(np.diag(TQU[0, 1]))
-        hash['NoiseTU'] = noisehash(np.diag(TQU[0, 2]))
-        return hash
+        h['NoiseT'] = noisehash(np.diag(TQU[0, 0]))
+        h['NoiseQ'] = noisehash(np.diag(TQU[1, 1]))
+        h['NoiseU'] = noisehash(np.diag(TQU[2, 2]))
+        h['NoiseQU'] = noisehash(np.diag(TQU[1, 2]))
+        h['NoiseTQ'] = noisehash(np.diag(TQU[0, 1]))
+        h['NoiseTU'] = noisehash(np.diag(TQU[0, 2]))
+        return h
 
     def _get_rmat(self, a, b):
         if a > b: return self._get_rmat(b, a)
-        return np.load(self.lib_dir + '/rmat%s%s.npy' % ({0: 'T', 1: 'Q', 2: 'U'}[a], {0: 'T', 1: 'Q', 2: 'U'}[b]))
+        fn = os.path.join(self.lib_dir, 'rmat%s%s.npy' % ({0: 'T', 1: 'Q', 2: 'U'}[a], {0: 'T', 1: 'Q', 2: 'U'}[b]))
+        return np.load(fn)
 
     def _get_noise_map(self, idx, idf):
         # FIXME : triangularise this
@@ -111,22 +116,24 @@ class lib_noisevmap:
         return self._get_noise_map(idx, 2)
 
     def get_sim_tmap(self, idx):
-        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_tmap_%05d.npy' % idx):
+        fn = os.path.join(self.lib_dir,  'sim_tmap_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
             if pbs.rank == 0:
-                np.save(self.lib_dir + '/sim_tmap_%05d.npy' % idx, self._build_sim_tmap(idx))
+                np.save(fn, self._build_sim_tmap(idx))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx)
+            return np.load(fn)
         else:
             return self._build_sim_tmap(idx)
 
     def get_sim_qumap(self, idx):
-        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_qumap_%05d.npy' % idx):
+        fn = os.path.join(self.lib_dir,  'sim_qumap_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
             if pbs.rank == 0:
-                np.save(self.lib_dir + '/sim_qumap_%05d.npy' % idx, np.array(self._build_sim_qumap(idx)))
+                np.save(fn, np.array(self._build_sim_qumap(idx)))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx)
+            return np.load(fn)
         else:
             return self._build_sim_qumap(idx)
 
@@ -157,35 +164,39 @@ class lib_noisemap:
         pbs.barrier()
 
         if pix_pha is None:
-            self.pix_pha = ffs_phas.pix_lib_phas(lib_dir + '/pix_pha', 3, lib_datalm.shape)
+            self.pix_pha = ffs_phas.pix_lib_phas(os.path.join(lib_dir, 'pix_pha'), 3, lib_datalm.shape)
         else:
             self.pix_pha = pix_pha
             assert pix_pha.shape == self.lib_datalm.shape, (pix_pha.shape, self.lib_datalm.shape)
             assert pix_pha.nfields == 3, (pix_pha.nfields, 3)
 
         if not isinstance(nTpix, str):
-            if not os.path.exists(lib_dir + '/nTpix.npy') and pbs.rank == 0:
-                np.save(lib_dir + '/nTpix.npy', nTpix)
+            fnt = os.path.join(lib_dir, 'nTpix.npy')
+            if not os.path.exists(fnt) and pbs.rank == 0:
+                np.save(fnt, nTpix)
             pbs.barrier()
-            self.nTpix = lib_dir + '/nTpix.npy'
+            self.nTpix = fnt
         else:
             assert os.path.exists(nTpix), nTpix
             self.nTpix = nTpix
 
         if not isinstance(nQpix, str):
-            if not os.path.exists(lib_dir + '/nQpix.npy') and pbs.rank == 0:
-                np.save(lib_dir + '/nQpix.npy', nQpix)
+            fnq = os.path.join(lib_dir, 'nQpix.npy')
+
+            if not os.path.exists(fnq) and pbs.rank == 0:
+                np.save(fnq, nQpix)
             pbs.barrier()
-            self.nQpix = lib_dir + '/nQpix.npy'
+            self.nQpix = fnq
         else:
             assert os.path.exists(nQpix), nQpix
             self.nQpix = nQpix
 
         if not isinstance(nUpix, str):
-            if not os.path.exists(lib_dir + '/nUpix.npy') and pbs.rank == 0:
-                np.save(lib_dir + '/nUpix.npy', nUpix)
+            fnu = os.path.join(lib_dir, 'nUpix.npy')
+            if not os.path.exists(fnu) and pbs.rank == 0:
+                np.save(fnu, nUpix)
             pbs.barrier()
-            self.nUpix = lib_dir + '/nUpix.npy'
+            self.nUpix = fnu
         else:
             assert os.path.exists(nUpix), nUpix
             self.nUpix = nUpix
@@ -194,22 +205,22 @@ class lib_noisemap:
         for _noise in [self._loadTnoise, self._loadQnoise, self._loadUnoise]:
             assert _noise().size == 1 or _noise().shape == self.lib_datalm.shape, (_noise().size, self.lib_datalm.shape)
 
-        if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
-            pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+        fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
+        if not os.path.exists(fn_hash) and pbs.rank == 0:
+            pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
         pbs.barrier()
-        hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
+        hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
 
     def hashdict(self):
-        hash = {'len_cmb': self.lencmbs.hashdict()}
-        hash['transf'] = npy_hash(self.cl_transf)
+        h = {'len_cmb': self.lencmbs.hashdict(), 'transf': npy_hash(self.cl_transf)}
 
         def noisehash(_m):
             return npy_hash(np.array([_m]) if _m.size == 1 else np.diag(_m))
 
-        hash['NoiseT'] = noisehash(self._loadTnoise())
-        hash['NoiseQ'] = noisehash(self._loadQnoise())
-        hash['NoiseU'] = noisehash(self._loadUnoise())
-        return hash
+        h['NoiseT'] = noisehash(self._loadTnoise())
+        h['NoiseQ'] = noisehash(self._loadQnoise())
+        h['NoiseU'] = noisehash(self._loadUnoise())
+        return h
 
     def _loadTnoise(self):
         return np.load(self.nTpix)
@@ -243,22 +254,24 @@ class lib_noisemap:
         return self._loadUnoise() * self.pix_pha.get_sim(idx, 2)
 
     def get_sim_tmap(self, idx):
-        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_tmap_%05d.npy' % idx):
+        fn = os.path.join(self.lib_dir,  'sim_tmap_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
             if pbs.rank == 0:
-                np.save(self.lib_dir + '/sim_tmap_%05d.npy' % idx, self._build_sim_tmap(idx))
+                np.save(fn, self._build_sim_tmap(idx))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx)
+            return np.load(fn)
         else:
             return self._build_sim_tmap(idx)
 
     def get_sim_qumap(self, idx):
-        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_qumap_%05d.npy' % idx):
+        fn = os.path.join(self.lib_dir,  'sim_qumap_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
             if pbs.rank == 0:
-                np.save(self.lib_dir + '/sim_qumap_%05d.npy' % idx, np.array(self._build_sim_qumap(idx)))
+                np.save(fn, np.array(self._build_sim_qumap(idx)))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx)
+            return np.load(fn)
         else:
             return self._build_sim_qumap(idx)
 
@@ -277,16 +290,14 @@ class lib_noisefree:
             if not os.path.exists(lib_dir) and pbs.rank == 0:
                 os.makedirs(lib_dir)
             pbs.barrier()
-
-            if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
-                pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+            fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
+            if not os.path.exists(fn_hash) and pbs.rank == 0:
+                pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
             pbs.barrier()
-            hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
+            hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
 
     def hashdict(self):
-        hash = {'len_cmb': self.lencmbs.hashdict()}
-        hash['transf'] = npy_hash(self.cl_transf)
-        return hash
+        return {'len_cmb': self.lencmbs.hashdict(), 'transf': npy_hash(self.cl_transf)}
 
     def _build_sim_tmap(self, idx):
         tmap = self.lib_skyalm.almxfl(self.lencmbs.get_sim_tlm(idx), self.cl_transf)
@@ -302,22 +313,24 @@ class lib_noisefree:
         return np.array([qmap, umap])
 
     def get_sim_tmap(self, idx):
-        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_tmap_%05d.npy' % idx):
+        fn = os.path.join(self.lib_dir,  'sim_tmap_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
             if pbs.rank == 0:
-                np.save(self.lib_dir + '/sim_tmap_%05d.npy' % idx, self._build_sim_tmap(idx))
+                np.save(fn, self._build_sim_tmap(idx))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_tmap_%05d.npy' % idx, mmap_mode='r')
+            return np.load(fn)
         else:
             return self._build_sim_tmap(idx)
 
     def get_sim_qumap(self, idx):
-        if self.cache_sims and not os.path.exists(self.lib_dir + '/sim_qumap_%05d.npy' % idx):
+        fn = os.path.join(self.lib_dir,  'sim_qumap_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
             if pbs.rank == 0:
-                np.save(self.lib_dir + '/sim_qumap_%05d.npy' % idx, np.array(self._build_sim_qumap(idx)))
+                np.save(fn, np.array(self._build_sim_qumap(idx)))
             pbs.barrier()
         if self.cache_sims:
-            return np.load(self.lib_dir + '/sim_qumap_%05d.npy' % idx, mmap_mode='r')
+            return np.load(fn)
         else:
             return self._build_sim_qumap(idx)
 

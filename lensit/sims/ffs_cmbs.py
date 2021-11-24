@@ -1,31 +1,34 @@
+from __future__ import print_function
+
 import os
 import pickle as pk
 
 import numpy as np
 
-import lensit as fs
-from lensit import pbs
+from lensit.pbs import pbs
 from lensit.misc.misc_utils import npy_hash
+from lensit.sims import ffs_phas, sims_generic
+from lensit.ffs_deflect import ffs_deflect
 
 verbose = False
 
 def get_fields(cls):
     fields = ['p', 't', 'e', 'b', 'o']
     ret = ['p', 't', 'e', 'b', 'o']
-    for _f in fields:
-        if not ((_f + _f) in cls.keys()): ret.remove(_f)
-    for _k in cls.keys():
-        for _f in _k:
-            if _f not in ret: ret.append(_f)
+    for f in fields:
+        if not ((f + f) in cls.keys()): ret.remove(f)
+    for k in cls.keys():
+        for f in k:
+            if f not in ret: ret.append(f)
     return ret
 
 
-class sim_cmb_unl():
+class sim_cmb_unl:
     def __init__(self, cls_unl, lib_pha):
         lib_alm = lib_pha.lib_alm
         fields = get_fields(cls_unl)
         Nf = len(fields)
-        if verbose: print "I see %s fields: " % Nf + " ".join(fields)
+        if verbose: print("I see %s fields: " % Nf + " ".join(fields))
         rmat = np.zeros((lib_alm.ellmax + 1, Nf, Nf), dtype=float)
         str = ''
         for _i, _t1 in enumerate(fields):
@@ -36,15 +39,15 @@ class sim_cmb_unl():
                         rmat[:, _j, _i] = rmat[:, _i, _j]
                     else:
                         str += " " + _t1 + _t2
-        if verbose and str != '': print str + ' set to zero'
+        if verbose and str != '': print(str + ' set to zero')
         for ell in range(lib_alm.ellmin, lib_alm.ellmax + 1):
             t, v = np.linalg.eigh(rmat[ell, :, :])
             assert np.all(t >= 0.), (ell, t, rmat[ell, :, :])  # Matrix not positive semidefinite
             rmat[ell, :, :] = np.dot(v, np.dot(np.diag(np.sqrt(t)), v.T))
 
         self._cl_hash = {}
-        for _k, cl in cls_unl.iteritems():
-            self._cl_hash[_k] = npy_hash(cl[lib_alm.ellmin:lib_alm.ellmax + 1])
+        for k in cls_unl.keys():
+            self._cl_hash[k] = npy_hash(cls_unl[k][lib_alm.ellmin:lib_alm.ellmax + 1])
         self.rmat = rmat
         self.lib_pha = lib_pha
         self.lib_skyalm = self.lib_pha.lib_alm
@@ -52,15 +55,15 @@ class sim_cmb_unl():
 
     def hashdict(self):
         ret = {'phas': self.lib_pha.hashdict()}
-        for _k, _h in self._cl_hash.iteritems():
-            ret[_k] = _h
+        for k in self._cl_hash.keys():
+            ret[k] = self._cl_hash[k]
         return ret
 
     def _get_sim_alm(self, idx, idf):
         # FIXME : triangularise this
         ret = np.zeros(self.lib_skyalm.alm_size, dtype=complex)
-        for _i in range(len(self.fields)):
-            ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(idx, idf=_i), self.rmat[:, idf, _i])
+        for i in range(len(self.fields)):
+            ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(idx, idf=i), self.rmat[:, idf, i])
         return ret
 
     def get_sim_alm(self, idx, field):
@@ -91,14 +94,14 @@ class sim_cmb_unl():
         phases = self.lib_pha.get_sim(idx)
         ret = np.zeros_like(phases)
         Nf = len(self.fields)
-        for _i in range(Nf):
-            for _j in range(Nf):
-                ret[_i] += self.lib_skyalm.almxfl(phases[_j], self.rmat[:, _i, _j])
+        for i in range(Nf):
+            for j in range(Nf):
+                ret[i] += self.lib_skyalm.almxfl(phases[j], self.rmat[:, i, j])
 
     def get_sim_qulm(self,idx):
         return self.lib_skyalm.EBlms2QUalms(np.array([self.get_sim_elm(idx), self.get_sim_blm(idx)]))
 
-class sims_cmb_len():
+class sims_cmb_len:
     def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False):
         if not os.path.exists(lib_dir) and pbs.rank == 0:
             os.makedirs(lib_dir)
@@ -106,7 +109,7 @@ class sims_cmb_len():
         self.lib_skyalm = lib_skyalm
         fields = get_fields(cls_unl)
         if lib_pha is None and pbs.rank == 0:
-            lib_pha = fs.sims.ffs_phas.ffs_lib_phas(lib_dir + '/phas', len(fields), lib_skyalm)
+            lib_pha = ffs_phas.ffs_lib_phas(os.path.join(lib_dir, 'phas'), len(fields), lib_skyalm)
         else:  # Check that the lib_alms are compatible :
             assert lib_pha.lib_alm == lib_skyalm
         pbs.barrier()
@@ -114,10 +117,11 @@ class sims_cmb_len():
         self.unlcmbs = sim_cmb_unl(cls_unl, lib_pha)
         self.Pool = use_Pool
         self.cache_lens = cache_lens
-        if not os.path.exists(lib_dir + '/sim_hash.pk') and pbs.rank == 0:
-            pk.dump(self.hashdict(), open(lib_dir + '/sim_hash.pk', 'w'))
+        fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
+        if not os.path.exists(fn_hash) and pbs.rank == 0:
+            pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
         pbs.barrier()
-        fs.sims.sims_generic.hash_check(self.hashdict(), pk.load(open(lib_dir + '/sim_hash.pk', 'r')))
+        sims_generic.hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
         self.lib_dir = lib_dir
         self.fields = fields
 
@@ -137,13 +141,13 @@ class sims_cmb_len():
         if 'p' in self.unlcmbs.fields and 'o' in self.unlcmbs.fields:
             plm = self.get_sim_plm(idx)
             olm = self.get_sim_olm(idx)
-            return fs.ffs_deflect.ffs_deflect.displacement_frompolm(self.lib_skyalm, plm, olm)
+            return ffs_deflect.displacement_frompolm(self.lib_skyalm, plm, olm, verbose=False)
         elif 'p' in self.unlcmbs.fields:
             plm = self.get_sim_plm(idx)
-            return fs.ffs_deflect.ffs_deflect.displacement_fromplm(self.lib_skyalm, plm)
+            return ffs_deflect.displacement_fromplm(self.lib_skyalm, plm)
         elif 'o' in self.unlcmbs.fields:
             olm = self.get_sim_olm(idx)
-            return fs.ffs_deflect.ffs_deflect.displacement_fromolm(self.lib_skyalm, olm)
+            return ffs_deflect.displacement_fromolm(self.lib_skyalm, olm, verbose=False)
         else:
             assert 0
 
@@ -166,7 +170,7 @@ class sims_cmb_len():
             assert 0, (field, self.fields)
 
     def get_sim_tlm(self, idx):
-        fname = self.lib_dir + '/sim_%04d_tlm.npy' % idx
+        fname = os.path.join(self.lib_dir, 'sim_%04d_tlm.npy'%idx)
         if not os.path.exists(fname):
             Tlm = self._get_f(idx).lens_alm(self.lib_skyalm, self.unlcmbs.get_sim_tlm(idx), use_Pool=self.Pool)
             if not self.cache_lens: return Tlm
@@ -174,7 +178,7 @@ class sims_cmb_len():
         return np.load(fname)
 
     def get_sim_qulm(self, idx):
-        fname = self.lib_dir + '/sim_%04d_qulm.npy' % idx
+        fname = os.path.join(self.lib_dir, 'sim_%04d_qulm.npy'%idx)
         if not os.path.exists(fname):
             Qlm, Ulm = self.lib_skyalm.EBlms2QUalms(
                 np.array([self.unlcmbs.get_sim_elm(idx), self.unlcmbs.get_sim_blm(idx)]))

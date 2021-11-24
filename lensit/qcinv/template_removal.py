@@ -1,9 +1,9 @@
 import numpy as np
-from utils import ffs_converter
+from lensit.qcinv.utils import ffs_converter
 
 
 
-class template():
+class template:
     """
     Generic template class for template projection,
     in the form of a modifiction of a noise matrix N:
@@ -26,7 +26,7 @@ class template():
 
     def apply(self, map, coeffs):
         # map -> map*[coeffs combination of templates]
-        assert (0),'subclass this'
+        assert 0,'subclass this'
 
     def apply_mode(self, map, mode):
         assert (mode < self.nmodes)
@@ -230,8 +230,9 @@ class template_Bfilt(template_pol):
         blm = self.lib_alm.QUlms2EBalms(np.array([self.lib_alm.map2alm(S) for S in qumap]))[1]
         return self._blm2rlm(blm) * self.lib_alm.nbar() # (norm. totally irrelevant in principle)
 
-    def build_TtNiT(self,(NiQQ,NiUU,NiQU)):
+    def build_TtNiT(self, NiQQ_NiUU_NiQU):
         """ return the nmodes x nmodes matrix (T^t Ni T )_{bl bl'}'"""
+        NiQQ, NiUU, NiQU = NiQQ_NiUU_NiQU
         TtNiT = np.zeros((self.nmodes,self.nmodes),dtype = float)
         for a in range(self.nmodes):
             _NiQ = np.copy(NiQQ) # Building Ni_{QX} R_bX

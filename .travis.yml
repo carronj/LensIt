@@ -1,0 +1,46 @@
+# safelist
+branches:
+  only:
+  - lensitdev
+
+language: python
+
+dist: xenial   # required for Python >= 3.7
+
+git:
+  depth: false
+
+matrix:
+  include:
+    - name: "GCC6"
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gfortran-6
+      env:
+        - GCC_VERSION="6"
+        - CHANNEL="defaults"
+      python: "2.7"
+    - name: "GCC9"
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gfortran-9
+      env:
+        - GCC_VERSION="9"
+        - CHANNEL="conda-forge"
+      python: "3.6"
+
+install:
+  - mkdir -p gfortran-symlinks
+  - ln -s /usr/bin/gfortran-$GCC_VERSION gfortran-symlinks/gfortran
+  - export PATH=$PWD/gfortran-symlinks:$PATH
+  - export LENSIT=$PWD
+  - gfortran --version
+  - pip install -e .
+
+script: pytest --ignore=./scripts --ignore=./lensit

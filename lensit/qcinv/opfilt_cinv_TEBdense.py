@@ -9,10 +9,10 @@ For non-sing. modes in TEB space this is C^{-1} MLIK(data), but can't use pseudo
 This should work with and without lensing, in which case contains beam and deflection.
 =========================================
 """
-
+from __future__ import print_function
 import numpy  as np
 
-import dense
+from lensit.qcinv import dense
 from lensit.ffs_covs import ffs_specmat as SM
 
 _type = 'T'  # in ['T','QU','TQU']
@@ -44,7 +44,7 @@ def calc_prep(maps, cov, *args, **kwargs):
     Pre operation for primordial CMB modes.
     R^t Ni data projected onto T E alms
     """
-    print "This is calc prep for %s W. Filtering" % _type, _prefix
+    print("This is calc prep for %s W. Filtering" % _type, _prefix)
     return filtTEBlms(cov.apply_Rts(_type,cov.apply_maps(_type, maps, inplace=False)),cov)
 
 def apply_fini_BINV(soltn, cov, maps, **kwargs):
@@ -86,7 +86,7 @@ def soltn2TQUMlik(soltn, cov):
 
 # =====================
 
-class dot_op():
+class dot_op:
     def __init__(self,*args):
         pass
 
@@ -94,7 +94,7 @@ class dot_op():
         return np.sum(alms1.real * alms2.real + alms1.imag * alms2.imag)
 
 
-class fwd_op():  # (P^-1 + R^t Ni R)^{-1} (skyalms)
+class fwd_op:  # (P^-1 + R^t Ni R)^{-1} (skyalms)
     def __init__(self, cov, *args):
         self.cov = cov
         self.lib_alm = self.cov.lib_skyalm
@@ -103,7 +103,7 @@ class fwd_op():  # (P^-1 + R^t Ni R)^{-1} (skyalms)
         return filtTEBlms( SM.apply_pinvTEBmat(_type, self.lib_alm, self.cov.cls, TEBlms) +  self.cov.apply_alms(_type, TEBlms,inplace=False),self.cov)
 
 # =====================
-class pre_op_diag():
+class pre_op_diag:
     # (1/P + bl G Ni Gt bl)^-1
     def __init__(self, cov, *args):
         inv_cls = SM.get_pinvTEBcls(_type, cov.cls)
@@ -123,7 +123,7 @@ class pre_op_diag():
             inv_cls['ee'] += cov.get_cl_transf('EE') ** 2 * NPi * (inv_cls['ee'] > 0)
             inv_cls['bb'] += cov.get_cl_transf('BB') ** 2 * NPi * (inv_cls['bb'] > 0)
         else:
-            assert 0, (_type)
+            assert 0, _type
         self.inv_cls = inv_cls
         self.cov = cov
 

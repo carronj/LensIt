@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import numpy as np
 import os
 
@@ -48,11 +50,11 @@ class BFGS_Hessian(object):
         self.paths2ys[k] = path2y
         self.paths2ss[k] = path2s
         if self.verbose:
-            print 'Linked y vector ', path2y, ' to Hessian'
-            print 'Linked s vector ', path2s, ' to Hessian'
+            print('Linked y vector ', path2y, ' to Hessian')
+            print('Linked s vector ', path2s, ' to Hessian')
 
     def _save_alpha(self, alpha, i):
-        fname = self.lib_dir + '/temp_alpha_%s.npy' % i
+        fname = os.path.join(self.lib_dir, 'temp_alpha_%s.npy' % i)
         np.save(fname, alpha)
         return
 
@@ -62,7 +64,7 @@ class BFGS_Hessian(object):
         :param i:
         :return:
         """
-        fname = self.lib_dir + '/temp_alpha_%s.npy' % i
+        fname = os.path.join(self.lib_dir, 'temp_alpha_%s.npy' % i)
         assert os.path.exists(fname)
         ret = np.load(fname)
         os.remove(fname)
@@ -118,13 +120,13 @@ class BFGS_Hessian(object):
         """
         q = gk.copy()
         rho = lambda i: 1. / np.sum(self.s(i) * self.y(i))
-        for i in xrange(k - 1, np.max([-1, k - self.L - 1]), -1):
+        for i in range(k - 1, np.max([-1, k - self.L - 1]), -1):
             alpha_i = rho(i) * np.sum(self.s(i) * q)
             q -= alpha_i * self.y(i)
             self._save_alpha(alpha_i, i)
 
         r = self.applyH0k(q, k)
-        for i in xrange(np.max([0, k - self.L]), k):
+        for i in range(np.max([0, k - self.L]), k):
             beta = rho(i) * np.sum(self.y(i) * r)
             r += self.s(i) * (self._load_alpha(i) - beta)
         if output_fname is None: return -r

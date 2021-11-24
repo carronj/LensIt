@@ -10,13 +10,12 @@ For non-sing. modes in TEB space this is C^{-1} MLIK(data), but can't use pseudo
 This should work with and without lensing, in which case B contains beam and deflection.
 =========================================
 """
+from __future__ import print_function
 
 import numpy  as np
 
-import dense
-from lensit.ffs_covs import ffs_specmat as SMwBB
+from lensit.qcinv import dense
 from lensit.ffs_covs import ffs_specmat_noBB as SM
-import opfilt_cinv
 
 _type = 'T'  # in ['T','QU','TQU']
 _prefix = 'cinv_noBB'
@@ -48,7 +47,7 @@ def calc_prep(maps, cov, *args, **kwargs):
     Pre operation for primordial CMB modes.
     B Ni data projected onto T E alms
     """
-    print "This is calc prep for %s W. Filtering" % _type, _prefix
+    print("This is calc prep for %s W. Filtering" % _type, _prefix)
     TEBalms = cov.apply_Rts(_type, cov.apply_maps(_type, maps, inplace=False))
     return filtTElms(TEBalms[:TEBlen(_type)],cov)
 

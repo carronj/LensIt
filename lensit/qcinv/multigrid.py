@@ -3,11 +3,11 @@ from __future__ import print_function
 import sys, re, copy
 import numpy as np
 import time
-import cd_solve, cd_monitors
+from lensit.qcinv import cd_solve, cd_monitors
 
 
 # ===
-class dt():
+class dt:
     def __init__(self, _dt):
         self.dt = _dt
 
@@ -20,7 +20,7 @@ class dt():
         return int(self.dt)
 
 
-class stopwatch():
+class stopwatch:
     def __init__(self):
         self.st = time.time()
         self.lt = self.st

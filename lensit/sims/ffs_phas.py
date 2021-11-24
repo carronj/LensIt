@@ -1,5 +1,7 @@
 import numpy as np
-from . import sims_generic
+import os
+
+from lensit.sims import sims_generic
 
 
 class _lib_ffsphas(sims_generic.sim_lib):
@@ -13,8 +15,8 @@ class _lib_ffsphas(sims_generic.sim_lib):
                1j * np.random.standard_normal(self.lib_alm.alm_size)) / np.sqrt(2.)
         if phas_only: return
         # Reality conditions on the rfft maps
-        sla = slice(self.lib_alm.ell_mat.shape[0] / 2 + 1, self.lib_alm.ell_mat.shape[0], 1)
-        slb = slice(self.lib_alm.ell_mat.shape[0] / 2 - 1, 0, -1)
+        sla = slice(self.lib_alm.ell_mat.shape[0] // 2 + 1, self.lib_alm.ell_mat.shape[0], 1)
+        slb = slice(self.lib_alm.ell_mat.shape[0] // 2 - 1, 0, -1)
 
         rfft = self.lib_alm.alm2rfft(alm)
         rfft[sla, [-1, 0]] = np.conjugate(rfft[slb, [-1, 0]])
@@ -40,13 +42,13 @@ class _pix_lib_phas(sims_generic.sim_lib):
         return {'shape': self.shape}
 
 
-class ffs_lib_phas():
+class ffs_lib_phas:
     def __init__(self, lib_dir, nfields, lib_alm, **kwargs):
         self.lib_alm = lib_alm
         self.nfields = nfields
         self.lib_phas = {}
-        for _i in range(nfields):
-            self.lib_phas[_i] = _lib_ffsphas(lib_dir + '/ffs_pha_%04d' % _i, lib_alm, **kwargs)
+        for i in range(nfields):
+            self.lib_phas[i] = _lib_ffsphas(os.path.join(lib_dir, 'ffs_pha_%04d' % i), lib_alm, **kwargs)
 
     def is_full(self):
         return np.all([lib.is_full() for lib in self.lib_phas.values()])
@@ -55,19 +57,19 @@ class ffs_lib_phas():
         if idf is not None:
             assert idf < self.nfields, (idf, self.nfields)
             return self.lib_phas[idf].get_sim(idx, phas_only=phas_only)
-        return np.array([self.lib_phas[_idf].get_sim(idx, phas_only=phas_only) for _idf in range(self.nfields)])
+        return np.array([self.lib_phas[_idf].get_sim(int(idx), phas_only=phas_only) for _idf in range(self.nfields)])
 
     def hashdict(self):
         return {'nfields': self.nfields, 'lib_alm': self.lib_alm.hashdict()}
 
 
-class pix_lib_phas():
+class pix_lib_phas:
     def __init__(self, lib_dir, nfields, shape, **kwargs):
         self.nfields = nfields
         self.lib_pix = {}
         self.shape = shape
-        for _i in range(nfields):
-            self.lib_pix[_i] = _pix_lib_phas(lib_dir + '/pix_pha_%04d' % _i, shape, **kwargs)
+        for i in range(nfields):
+            self.lib_pix[i] = _pix_lib_phas(os.path.join(lib_dir, 'pix_pha_%04d'%i), shape, **kwargs)
 
     def is_full(self):
         return np.all([lib.is_full() for lib in self.lib_pix.values()])
@@ -76,7 +78,7 @@ class pix_lib_phas():
         if idf is not None:
             assert idf < self.nfields, (idf, self.nfields)
             return self.lib_pix[idf].get_sim(idx, phas_only=phas_only)
-        return np.array([self.lib_pix[_idf].get_sim(idx, phas_only=phas_only) for _idf in range(self.nfields)])
+        return np.array([self.lib_pix[_idf].get_sim(int(idx), phas_only=phas_only) for _idf in range(self.nfields)])
 
     def hashdict(self):
         return {'nfields': self.nfields, 'shape': self.lib_pix[0].shape}

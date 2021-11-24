@@ -1,5 +1,7 @@
 # Lensit
 
+[![PyPI version](https://badge.fury.io/py/lensit.svg)](https://badge.fury.io/py/lensit)[![alt text](https://readthedocs.org/projects/lensit/badge/?version=latest)](https://lensit.readthedocs.io/en/latest)[![Build Status](https://travis-ci.com/carronj/lensit.svg?branch=master)](https://travis-ci.com/carronj/lensit)
+
 This is a set of python tools dedicated to CMB lensing and CMB delensing, by Julien Carron.
 
 **Main features are:**  

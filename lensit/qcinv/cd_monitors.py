@@ -1,10 +1,10 @@
 import sys
 import numpy as np
 import time
-from lensit import pbs
+from lensit.pbs import pbs
 
 
-class dt():
+class dt:
     def __init__(self, _dt):
         self.dt = _dt
 
@@ -17,7 +17,7 @@ class dt():
         return int(self.dt)
 
 
-class stopwatch():
+class stopwatch:
     def __init__(self):
         self.st = time.time()
         self.lt = self.st
@@ -41,15 +41,17 @@ logger_basic = (lambda iter, eps, watch=None, **kwargs:
 logger_none = (lambda iter, eps, watch=None, **kwargs: 0)
 
 
-class monitor_basic():
+class monitor_basic:
     def __init__(self, dot_op, iter_max=1000, eps_min=1.0e-10, d0=None, logger=logger_basic):
-        """
+        """Basic gonjugate gradient convergence monitor
+
         :param dot_op:
         :param iter_max:
         :param eps_min:
         :param d0: criterion to step iteration is  self.dot_op(resid, resid) <= self.eps_min ** 2 * self.d0
         :param logger:
         :return:
+
         """
         self.dot_op = dot_op
         self.iter_max = iter_max
@@ -66,7 +68,7 @@ class monitor_basic():
             # unless some starting guess is provided.
             self.d0 = delta
         if self.d0 == 0: self.d0 = 1.
-        if (self.logger is not None): self.logger(iter, np.sqrt(delta / self.d0), watch=self.watch,
+        if self.logger is not None: self.logger(iter, np.sqrt(delta / self.d0), watch=self.watch,
                                                   soltn=soltn, resid=resid)
 
         if (iter >= self.iter_max) or (delta <= self.eps_min ** 2 * self.d0):

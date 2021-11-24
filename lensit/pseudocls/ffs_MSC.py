@@ -1,33 +1,37 @@
+from __future__ import print_function
 import os
 import hashlib
-import lensit as li
 import numpy as np, healpy as hp
-from lensit.misc.misc_utils import binned
+
+from lensit.misc.misc_utils import binned, enumerate_progress
+from lensit.ffs_covs import ell_mat, ffs_specmat
 
 
 def apodize(lib_datalm, mask, sigma_fwhm_armin=12., lmax=None, method='hybrid', mult_factor=3, min_factor=0.1):
-    """ Flat sky apodizer directly adapted from Anthony curved sky libaml.apodize """
+    """Flat sky apodizer directly adapted from AL curved sky libaml.apodize
+
+    """
     if sigma_fwhm_armin <= 0.: return mask
     lmax = lmax or lib_datalm.ell_mat.ellmax
-    libalm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
-    print 'fsky_unapodized = %.5f' % (np.sum(mask ** 2) / mask.size)
+    libalm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
+    print('fsky_unapodized = %.5f' % (np.sum(mask ** 2) / mask.size))
     bl = hp.gauss_beam(sigma_fwhm_armin / 60. / 180. * np.pi, lmax=lmax)
     apomask = libalm.alm2map(libalm.almxfl(libalm.map2alm(mask), bl))
-    print 'Min/max mask smoothed mask', np.min(apomask), np.max(apomask)
-    print 'fsky = %.5f' % (np.sum(apomask ** 2) / apomask.size)
+    print('Min/max mask smoothed mask', np.min(apomask), np.max(apomask))
+    print('fsky = %.5f' % (np.sum(apomask ** 2) / apomask.size))
     if method == 'gaussian': return apomask
     if method != 'hybrid': raise ValueError('Unknown apodization method')
     apomask = 1 - np.minimum(1., np.maximum(0., mult_factor * (1 - apomask) - min_factor))
     bl = hp.gauss_beam(sigma_fwhm_armin * 0.5 / 60. / 180. * np.pi, lmax=lmax)
     apomask = libalm.alm2map(libalm.almxfl(libalm.map2alm(apomask), bl))
-    print 'Min/max mask re-smoothed mask', np.min(apomask), np.max(apomask)
-    print 'fsky = %.5f' % (np.sum(apomask ** 2) / apomask.size)
+    print('Min/max mask re-smoothed mask', np.min(apomask), np.max(apomask))
+    print('fsky = %.5f' % (np.sum(apomask ** 2) / apomask.size))
     return apomask
 
 
-class MSC_T():
-    """
-    Masked sky coupling pseudoCl deconvolution library.
+class MSC_T:
+    """Masked sky coupling pseudoCl deconvolution library.
+
     For temperature only. See MSC_P for polarization only.
 
     Set pedges and/or weights to bin the pCl part of the matrix.
@@ -41,7 +45,7 @@ class MSC_T():
     def __init__(self, lib_datalm, apomask, lmax, cache_dir,
                  pedges=None, wp=None, tedges=None, wt=None):
         self.apomask = apomask
-        self.lib_alm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
+        self.lib_alm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
         lmax = self.lib_alm.ellmax  # !this might actually differ very slightly from lmax for small patches
         fname = cache_dir + '/lmax%s' % lmax + hashlib.sha1(apomask).hexdigest()
         shape_p = len(pedges) - 1 if pedges is not None else lmax + 1
@@ -56,25 +60,25 @@ class MSC_T():
             if not os.path.exists(cache_dir): os.makedirs(cache_dir)
             M = get_MSCdense('T', self.lib_alm, apomask, lmax, full=pedges is not None or tedges is not None)
             if tedges is not None:
-                print "Binning coupling matrix Cl side"
+                print("Binning coupling matrix Cl side")
                 ii, = np.where(self.lib_alm.get_Nell()[:lmax + 1] > 0)
                 if wt is None: wt = lambda ell: np.ones(len(ell), dtype=float)
                 wti = lambda ell: 1. / wt(ell)
-                bu = tedges[1:] - 1;
+                bu = tedges[1:] - 1
                 bu[-1] += 1
                 M = np.array([binned(m, ii, tedges[:-1], bu, w=wti, meanorsum='sum') for m in M])
             if pedges is not None:
-                print "Binning coupling matrix pCl side"
+                print("Binning coupling matrix pCl side")
                 if wp is None: wp = lambda ell: np.ones(len(ell), dtype=float)
                 ii, = np.where(self.lib_alm.get_Nell()[:lmax + 1] > 0)
-                bu = pedges[1:] - 1;
+                bu = pedges[1:] - 1
                 bu[-1] += 1
                 _M = np.zeros((len(bu), M.shape[1]))
                 for i in range(M.shape[1]):
                     _M[:, i] = binned(M[:, i], ii, pedges[:-1], bu, w=wp)
                 M = _M
             np.save(fname, self._invM(M) if M.shape[0] == M.shape[1] else M)
-            print "Cached ", fname
+            print("Cached ", fname)
 
         self.M = None if shape_p == shape_t else np.load(fname)
         self.Mi = np.load(fname) if shape_p == shape_t  else None
@@ -100,7 +104,7 @@ class MSC_T():
             return ret
         if self.pedges is not None:
             ii, = np.where(self.lib_alm.get_Nell()[:self.lmax + 1] > 0)
-            bu = self.pedges[1:] - 1;
+            bu = self.pedges[1:] - 1
             bu[-1] += 1
             pcl = binned(pcl, ii, self.pedges[:-1], bu, w=self.wp)
         if self.Mi is not None:
@@ -109,7 +113,7 @@ class MSC_T():
             assert self.M is not None
             wtCl, res, rank, s = np.linalg.lstsq(self.M, pcl)
         if self.tedges is not None:
-            bu = self.tedges[1:] - 1;
+            bu = self.tedges[1:] - 1
             bu[-1] += 1
             bc = 0.5 * (bu + self.tedges[:-1])
             Cl = wtCl / self.wt(bc)
@@ -121,9 +125,9 @@ class MSC_T():
         return
 
 
-class MSC_P():
-    """
-    Masked sky coupling pseudoCl deconvolution library.
+class MSC_P:
+    """Masked sky coupling pseudoCl deconvolution library.
+
     For polarization only. See MSC_T for temperature only.
 
     Set pedges and/or weights to bin the pCl part of the matrix (EE BB and EB separately).
@@ -132,6 +136,8 @@ class MSC_P():
     If the coupling matrix is not square the deconvolution if performed via np.lstsq.
 
     MSC_P.map2cls(qumap) outputs estimated clEE,clBB and clEB up to MSC_P.lmax
+
+
     """
 
     def __init__(self, lib_datalm, apomask, lmax, cache_dir,
@@ -139,7 +145,7 @@ class MSC_P():
                  wps=(None, None, None)):
         # Edges and weights : EE BB EB
         self.apomask = apomask
-        self.lib_alm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
+        self.lib_alm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= lmax)
         self.wbins = np.any([p is not None for p in pedgess]) or np.any([p is not None for p in tedgess])
         lmax = self.lib_alm.ellmax  # !this might actually differ very slightly from lmax for small patches
         shape_p = np.array([len(p) - 1 if p is not None else lmax + 1 for p in pedgess])
@@ -160,14 +166,14 @@ class MSC_P():
                 assert M.shape == (3 * (lmax + 1), 3 * (lmax + 1)), M.shape
                 _M = np.zeros((M.shape[0], np.sum(shape_t)), dtype=float)
                 ii, = np.where(self.lib_alm.get_Nell()[:lmax + 1] > 0)
-                print shape_p, shape_t
+                print(shape_p, shape_t)
                 for iA, (lab, tedges, wt) in enumerate(zip(['EE', 'BB', 'EB'], tedgess, wts)):
                     slice_t = slice(np.sum(shape_t[:iA]), np.sum(shape_t[:iA + 1]))
                     if tedges is not None:
-                        print "Binning coupling matrix Cl side, %s" % lab
+                        print("Binning coupling matrix Cl side, %s" % lab)
                         if wt is None: wt = lambda ell: np.ones(len(ell), dtype=float)
                         wti = lambda ell: 1. / wt(ell)
-                        bu = tedges[1:] - 1;
+                        bu = tedges[1:] - 1
                         bu[-1] += 1
                         for l in np.concatenate([ii, ii + 1 * (lmax + 1), ii + 2 * (lmax + 1)]):
                             _M[l, slice_t] = binned(M[l, iA * (lmax + 1):(iA + 1) * (lmax + 1)], ii, tedges[:-1], bu,
@@ -179,22 +185,21 @@ class MSC_P():
                 for iA, (lab, pedges, wp) in enumerate(zip(['EE', 'BB', 'EB'], pedgess, wps)):
                     slice_p = slice(np.sum(shape_p[:iA]), np.sum(shape_p[:iA + 1]))
                     if pedges is not None:
-                        print "Binning coupling matrix pCl side, %s" % lab
+                        print("Binning coupling matrix pCl side, %s" % lab)
                         if wp is None: wp = lambda ell: np.ones(len(ell), dtype=float)
-                        bu = pedges[1:] - 1;
+                        bu = pedges[1:] - 1
                         bu[-1] += 1
                         for ib in range(M.shape[1]):
-                            _M[slice_p, ib] = binned(M[iA * (lmax + 1):(iA + 1) * (lmax + 1), ib], ii, pedges[:-1], bu,
-                                                     w=wp)
+                            _M[slice_p, ib] = binned(M[iA * (lmax + 1):(iA + 1) * (lmax + 1), ib], ii, pedges[:-1], bu, w=wp)
                     else:
                         _M[slice_p, :] = M[slice_p, :]
                 M = _M.copy()
             np.save(fname, self._invM(M) if M.shape[0] == M.shape[1] else M)
-            print "Cached ", fname
+            print("Cached ", fname)
 
         self.M = None if np.sum(shape_t) == np.sum(shape_p) else np.load(fname)
         self.Mi = np.load(fname) if np.sum(shape_t) == np.sum(shape_p) else None
-        print "Loaded ", fname
+        print("Loaded ", fname)
         self.lmax = self.lib_alm.ellmax
         self.pedgess = pedgess
         self.tedgess = tedgess
@@ -228,7 +233,7 @@ class MSC_P():
         for iA, (lab, pedges, wp) in enumerate(zip(['EE', 'BB', 'EB'], self.pedgess, self.wps)):
             if pedges is not None:
                 if wp is None: wp = lambda ell: np.ones(len(ell), dtype=float)
-                bu = pedges[1:] - 1;
+                bu = pedges[1:] - 1
                 bu[-1] += 1
                 bpcl.append(binned(pcls[iA * (self.lmax + 1): (iA + 1) * (self.lmax + 1)], ii, pedges[:-1], bu, w=wp))
             else:
@@ -245,7 +250,7 @@ class MSC_P():
             slice_t = slice(np.sum(shape_t[:iA]), np.sum(shape_t[:iA + 1]))
             if tedges is not None:
                 if wt is None: wt = lambda ell: np.ones(len(ell), dtype=float)
-                bu = tedges[1:] - 1;
+                bu = tedges[1:] - 1
                 bu[-1] += 1
                 bc = 0.5 * (bu + tedges[:-1])
                 Cl.append(wtCl[slice_t] / wt(bc))
@@ -255,15 +260,17 @@ class MSC_P():
 
 
 def apply_MSC(_type, cl, lib_datalm, mask):
-    """
-    Fast application of the cut-sky coupling matrix to cl vector, using 2D FFT methods.
+    """Fast application of the cut-sky coupling matrix to cl vector, using 2D FFT methods.
+
     For polarization cl input is clEE,clBB,clEB.
     This uses on the flat sky:
         M_ll'^{AB,A'B'} = (bin in m, sum in m') |W_l-l'|^2 R_l AX R_l^*BY R_l XA' R_l^*YB'
     evaluating this in real space with 2D FFTs. (R is the rotation between X =T, Q,U and A in T,E,B.)
+
+
     """
     assert _type in ['T', 'QU', 'TQU']
-    libalm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell >= 0)
+    libalm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell >= 0)
     fac = 1. / np.sqrt(np.prod(libalm.lsides))
     Bx = libalm.alm2map(np.abs(libalm.map2alm(mask)) ** 2)
     ii, = np.where(libalm.get_Nell()[:min(len(cl), libalm.ellmax + 1)] > 0)
@@ -287,7 +294,7 @@ def apply_MSC(_type, cl, lib_datalm, mask):
         XYlms[1, 1] = libalm.map2alm(Bx * libalm.alm2map(_EBcls2QUPmatij(libalm, clmat, 1, 1, c=c, s=s)))
         XYlms[0, 1] = libalm.map2alm(Bx * libalm.alm2map(_EBcls2QUPmatij(libalm, clmat, 0, 1, c=c, s=s)))
         XYlms[1, 0] = XYlms[0, 1]
-        retmat = li.ffs_covs.ffs_specmat.QUPmats2EBcls(libalm, XYlms)
+        retmat = ffs_specmat.QUPmats2EBcls(libalm, XYlms)
         return np.array([retmat[0, 0], retmat[1, 1], retmat[0, 1]]) * fac
     else:
         assert 0, '%s not implemented' % _type
@@ -302,14 +309,14 @@ def get_MSCdense(_type, lib_datalm, mask, lmax, full=False):
     evaluating this in real space with 2D FFTs. (R is the rotation between X =T, Q,U and A in T,E,B.)
     """
     assert _type in ['T', 'QU', 'TQU'], _type
-    libalm = li.ffs_covs.ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= 2 * lmax)
+    libalm = ell_mat.ffs_alm_pyFFTW(lib_datalm.ell_mat, filt_func=lambda ell: ell <= 2 * lmax)
     ii, = np.where(libalm.get_Nell()[:lmax + 1] > 0)
     Bx = libalm.alm2map(np.abs(libalm.map2alm(mask)) ** 2)
     fac = 1. / np.sqrt(np.prod(libalm.lsides))
     if _type == 'T':
         M = np.zeros((lmax + 1, lmax + 1), dtype=float) if full else np.zeros((len(ii), len(ii)), dtype=float)
         cl = np.zeros(libalm.ellmax + 1, dtype=float)
-        for i, idx in li.misc.misc_utils.enumerate_progress(ii, label='filling %s MSC matrix up to %s' % (_type, lmax)):
+        for i, idx in enumerate_progress(ii, label='filling %s MSC matrix up to %s' % (_type, lmax)):
             cl[idx] = 1.
             Alm = np.ones(libalm.alm_size, dtype=complex)
             libalm.almxfl(Alm, cl, inplace=True)
@@ -323,7 +330,7 @@ def get_MSCdense(_type, lib_datalm, mask, lmax, full=False):
         M = np.zeros((3 * (lmax + 1), 3 * (lmax + 1)), dtype=float) if full else np.zeros((len(ii) * 3, len(ii) * 3),
                                                                                           dtype=float)
         c, s = libalm.get_cossin_2iphi()
-        for i, idx in li.misc.misc_utils.enumerate_progress(ii, label='filling %s MSC matrix up to %s' % (_type, lmax)):
+        for i, idx in enumerate_progress(ii, label='filling %s MSC matrix up to %s' % (_type, lmax)):
             for iA, ab in enumerate([(0, 0), (1, 1), (0, 1)]):
                 a, b = ab
                 clmat[a, b, idx] = 1.  # EE, BB or EB part
@@ -372,7 +379,7 @@ def _QUPmats2EBcls(lib_alm, QUpmat, c=None, s=None):
         E = cos Q + sin U
         B = -sin Q + cos U
     """
-    assert QUpmat.shape == ((2, 2, lib_alm.alm_size)), ((2, 2, lib_alm.alm_size), QUpmat.shape)
+    assert QUpmat.shape == (2, 2, lib_alm.alm_size), ((2, 2, lib_alm.alm_size), QUpmat.shape)
     ret = np.zeros((2, 2, lib_alm.ellmax + 1), dtype=float)
     bin2cl = lambda _alm: lib_alm.bin_realpart_inell(_alm)[0:lib_alm.ellmax + 1]
     if c is None or s is None: c, s = lib_alm.get_cossin_2iphi()
