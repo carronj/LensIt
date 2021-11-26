@@ -7,6 +7,15 @@ This is a set of python tools dedicated to CMB lensing and CMB delensing, by Jul
 This code is essentially always using the flat-sky approximation. 
 For similar tools in curved-sky geometry see [plancklens](https://github.com/carronj/plancklens)
 
+Installation: in the repo directory,
+
+     pip install -e . [--user]
+
+This code uses [pyFFTW](https://github.com/pyFFTW/pyFFTW) by default for FFTs, based on FFTW. Sometimes it is simplest to work in a conda environment
+and install all this with 
+
+    conda install -c conda-forge pyfftw
+
 **Main features are:**  
  - Maximum a posterior estimation of CMB lensing deflection maps from temperature and/or polarization maps.  
  (See https://arxiv.org/abs/1704.08230 by J.Carron and A. Lewis)  
