@@ -30,7 +30,7 @@ def camb_clfile(fname, lmax=None):
 
     """
     cols = np.loadtxt(fname).transpose()
-    ell = np.int_(cols[0])
+    ell = cols[0].astype(np.int64)
     if lmax is None: lmax = ell[-1]
     assert ell[-1] >= lmax, (ell[-1], lmax)
     cls = {k : np.zeros(lmax + 1, dtype=float) for k in ['tt', 'ee', 'bb', 'te']}
@@ -39,7 +39,7 @@ def camb_clfile(fname, lmax=None):
     for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
         cls[k][ell[idc]] = cols[i + 1][idc] / w[idc]
     if len(cols) > 5:
-        wpp = lambda ell : ell ** 2 * (ell + 1) ** 2 / (2. * np.pi)
+        wpp = lambda ell : ell ** 2 * (ell + 1.) ** 2 / (2. * np.pi)
         wptpe = lambda ell : np.sqrt(ell.astype(float) ** 3 * (ell + 1.) ** 3) / (2. * np.pi)
         for i, k in enumerate(['pp', 'pt', 'pe']):
             cls[k] = np.zeros(lmax + 1, dtype=float)
