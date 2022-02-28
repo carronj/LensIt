@@ -16,7 +16,7 @@ def get_cluster_libdir(cambinifile, profilename, npix, lpix_amin, ellmax_sky, M2
 
 
 class cluster_maps(object):
-    def __init__(self, libdir, npix, lpix_amin, nsims, cosmo, profparams, profilename='nfw', ellmax_sky = 6000, cmb_exp='gupta', cache_maps=False):
+    def __init__(self, libdir, npix, lpix_amin, nsims, cosmo, profparams, profilename='nfw', ellmax_sky = 6000, cmb_exp='5muKamin_1amin', cache_maps=False):
         """Library for flat-sky CMB simulations lensed by a galaxy cluster.
 
         Args:
