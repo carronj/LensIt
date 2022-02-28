@@ -221,6 +221,11 @@ def get_config(exp):
         Beam_FWHM_amin = 1.4
         ellmin=10
         ellmax=3000
+    elif exp == '5muKamin_1amin':
+        sN_uKamin = 5.
+        Beam_FWHM_amin = 1.
+        ellmin=10
+        ellmax=3000
     else:
         sN_uKamin = 0
         Beam_FWHM_amin = 0
