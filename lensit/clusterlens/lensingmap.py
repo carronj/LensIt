@@ -127,7 +127,6 @@ class cluster_maps(object):
         Returns:
             lensed map: numpy array of shape self.lib_datalm.shape
         """
-        # TODO: how do we get the observed E and B maps ?
         if field=='t':
             return self.maps_lib.get_sim_tmap(idx)
         elif field=='q':
