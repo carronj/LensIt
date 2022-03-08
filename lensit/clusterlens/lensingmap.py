@@ -10,8 +10,8 @@ import os
 from camb import CAMBdata
 
 
-def get_cluster_libdir(cambinifile, profilename, npix, lpix_amin, ellmax_sky, M200, z, nsims):
-    return opj(li._get_lensitdir()[0], 'temp', 'clustermaps', 'camb_%s' % cambinifile, '%s_profile' % profilename, 
+def get_cluster_libdir(cambinifile, profilename, npix, lpix_amin, ellmax_sky, M200, z, nsims, cmbexp):
+    return opj(li._get_lensitdir()[0], 'temp', 'clustermaps', 'camb_%s' % cambinifile, 'cmbexp_%s' % cmbexp, '%s_profile' % profilename, 
     'npix%s_lpix_%samin_lmaxsky%s' % (npix, lpix_amin, ellmax_sky), 'M200_%.6E_z%s' % (M200, z), '%s_sims' % nsims)
 
 
@@ -70,26 +70,27 @@ class cluster_maps(object):
         sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = li.get_config(cmb_exp)
         self.len_cmbs = sim_cmb_len_cluster(lencmbs_libdir, self.lib_skyalm, cls_cmb, self.M200, self.z, self.haloprofile, lib_pha=skypha)
         
-        lmax_sky = self.len_cmbs.lib_skyalm.ellmax
-        cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
+        # The lmax of the data maps is set by the pixel size
+        lmax_data = self.ellmat._get_ellmax()
+        cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_data)
 
         # The resolution of the data map could be lower than the resolution of the sky map (=the true map)
-        lib_datalm = ell_mat.ffs_alm_pyFFTW(self.ellmat, filt_func=lambda ell: ell <= lmax_sky, num_threads=num_threads)
+        self.lib_datalm = ell_mat.ffs_alm_pyFFTW(self.ellmat, filt_func=lambda ell: ell <= lmax_data, num_threads=num_threads)
         
-        vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
+        vcell_amin2 = np.prod(self.lib_datalm.ell_mat.lsides) / np.prod(self.lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
         nTpix = sN_uKamin / np.sqrt(vcell_amin2)
         nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
 
         # Generate the noise random phases
         pixpha_libdir = opj(self.libdir, 'pixpha')
-        pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+        pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, self.lib_datalm.ell_mat.shape, nsims_max=nsims)
         if not pixpha.is_full() and pbs.rank == 0:
             for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
                 pixpha.get_sim(idx)
         pbs.barrier()
         maps_libdir = opj(self.libdir, 'maps')
 
-        self.maps_lib = ffs_maps.lib_noisemap(maps_libdir, lib_datalm, self.len_cmbs, cl_transf, nTpix, nPpix, nPpix,
+        self.maps_lib = ffs_maps.lib_noisemap(maps_libdir, self.lib_datalm, self.len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                         pix_pha=pixpha, cache_sims=cache_maps)
             
 
@@ -122,7 +123,7 @@ class cluster_maps(object):
         """Get the observed CMB map, inclusing the noise and the bean of the instrument
         Args: 
             idx: index of the simulation to return 
-            field: 't', 'q' or 'u' for temperature, Q and U modes of polarization respectively
+            field: 't', 'e', 'b', 'q' or 'u' for temperature, E, B, Q and U modes of polarization respectively
         Returns:
             lensed map: numpy array of shape self.lib_datalm.shape
         """
@@ -135,13 +136,13 @@ class cluster_maps(object):
             return self.maps_lib.get_sim_qumap(idx)[1]
         elif field in ['e', 'b']:
             qmap, umap = self.maps_lib.get_sim_qumap(idx)
-            qlm = self.lib_skyalm.map2alm(qmap)
-            ulm = self.lib_skyalm.map2alm(umap)
-            elm, blm = self.lib_skyalm.QUlms2EBalms(np.array([qlm, ulm]))
+            qlm = self.lib_datalm.map2alm(qmap)
+            ulm = self.lib_datalm.map2alm(umap)
+            elm, blm = self.lib_datalm.QUlms2EBalms(np.array([qlm, ulm]))
             if field == 'e':
-                return self.lib_skyalm.alm2map(elm)
+                return self.lib_datalm.alm2map(elm)
             elif field == 'b':
-                return self.lib_skyalm.alm2map(blm)            
+                return self.lib_datalm.alm2map(blm)            
 
     def get_noise_map(self, idx, field='t'):
         """Get the noise map
