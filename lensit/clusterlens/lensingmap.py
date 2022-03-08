@@ -7,6 +7,7 @@ from lensit.ffs_deflect import ffs_deflect
 import lensit as li
 from os.path import join as opj
 import os
+from camb import CAMBdata
 
 
 def get_cluster_libdir(cambinifile, profilename, npix, lpix_amin, ellmax_sky, M200, z, nsims):
@@ -16,7 +17,7 @@ def get_cluster_libdir(cambinifile, profilename, npix, lpix_amin, ellmax_sky, M2
 
 
 class cluster_maps(object):
-    def __init__(self, libdir, npix, lpix_amin, nsims, cosmo, profparams, profilename='nfw', ellmax_sky = 6000, cmb_exp='5muKamin_1amin', cache_maps=False):
+    def __init__(self, libdir:str, npix:int, lpix_amin:float, nsims:int, cosmo:CAMBdata, profparams:dict, profilename='nfw', ellmax_sky = 6000, cmb_exp='5muKamin_1amin', cache_maps=False):
         """Library for flat-sky CMB simulations lensed by a galaxy cluster.
 
         Args:
@@ -100,7 +101,11 @@ class cluster_maps(object):
         Returns:
             unlensed map: numpy array of shape self.lib_skyalm.shape
         """
-        return self.lib_skyalm.alm2map(self.len_cmbs.unlcmbs.get_sim_alm(idx, field))
+        if field in ['t', 'e', 'b']:
+            return self.lib_skyalm.alm2map(self.len_cmbs.unlcmbs.get_sim_alm(idx, field))
+        elif field in ['q', 'u']:
+            i = 0 if field =='q' else 1
+            return self.lib_skyalm.alm2map(self.len_cmbs.unlcmbs.get_sim_qulm(idx)[i])
 
     def get_len_map(self, idx, field='t'):
         """Get the lensed CMB map
@@ -124,8 +129,19 @@ class cluster_maps(object):
         # TODO: how do we get the observed E and B maps ?
         if field=='t':
             return self.maps_lib.get_sim_tmap(idx)
-        elif field in ['q', 'u']:
-            return self.maps_lib.get_sim_qumap(idx)
+        elif field=='q':
+            return self.maps_lib.get_sim_qumap(idx)[0]
+        elif field =='u':
+            return self.maps_lib.get_sim_qumap(idx)[1]
+        elif field in ['e', 'b']:
+            qmap, umap = self.maps_lib.get_sim_qumap(idx)
+            qlm = self.lib_skyalm.map2alm(qmap)
+            ulm = self.lib_skyalm.map2alm(umap)
+            elm, blm = self.lib_skyalm.QUlms2EBalms(np.array([qlm, ulm]))
+            if field == 'e':
+                return self.lib_skyalm.alm2map(elm)
+            elif field == 'b':
+                return self.lib_skyalm.alm2map(blm)            
 
     def get_noise_map(self, idx, field='t'):
         """Get the noise map
@@ -135,6 +151,7 @@ class cluster_maps(object):
         Returns:
             noise map: numpy array of shape self.lib_datalm.shape
         """
+        assert field in ['t', 'q', 'u'], "The noise maps are generated for t, q and u fields, not {}".format(field)
         if field =='t':
             return self.maps_lib.get_noise_sim_tmap(idx)
         elif field =='q':
@@ -157,7 +174,7 @@ class cluster_maps(object):
 
 
 class sim_cmb_len_cluster(ffs_cmbs.sims_cmb_len):
-    def __init__(self, lib_dir, lib_skyalm, cls_cmb, M200, z, haloprofile, lib_pha=None, use_Pool=0, cache_lens=False):
+    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_cmb:dict, M200:float, z:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
         super(sim_cmb_len_cluster, self).__init__(lib_dir, lib_skyalm, cls_cmb, lib_pha=lib_pha, use_Pool=0, cache_lens=False)
 
         kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
