@@ -2,9 +2,10 @@ import numpy as np
 from lensit.clusterlens import constants as const
 from scipy.special import sici
 from lensit.misc.misc_utils import Freq
+from camb import CAMBdata
 
 class profile(object):
-    def __init__(self, cosmo, pname='nfw'):
+    def __init__(self, cosmo:CAMBdata, pname='nfw'):
         r"""Lensing convergence field from a dark matter halo.
 
             The profile follows the definitions fo Geach and Peacock 2017
