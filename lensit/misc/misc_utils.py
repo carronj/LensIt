@@ -84,6 +84,19 @@ def flatindices(coord, shape):
     for j in range(1, ndim): idc += np.prod(shape[ndim - j:ndim]) * coord[ndim - 1 - j, :]
     return idc
 
+
+def pp_to_kk(ls):
+    """ Converts lensing potential power spectrum into lensing convergence power spectrum.
+    :math:`C_\ell^{\kappa \kappa} = (\ell (\ell +1))^2 /4 C_\ell^{\phi \phi}`
+    
+    """
+    return ls ** 2 * (ls+1) ** 2 * 0.25 
+
+def kk_to_pp(ls):
+    """Converts lensing convergence power spectrum into lensing potential power spectrum.
+    """
+    return cl_inverse(pp_to_kk(ls))
+
 class timer:
     def __init__(self, verbose, prefix='', suffix=''):
         self.t0 = time.time()

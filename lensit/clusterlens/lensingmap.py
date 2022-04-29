@@ -17,7 +17,7 @@ def get_cluster_libdir(cambinifile, profilename, npix, lpix_amin, ellmax_sky, M2
 
 
 class cluster_maps(object):
-    def __init__(self, libdir:str, npix:int, lpix_amin:float, nsims:int, cosmo:CAMBdata, profparams:dict, profilename='nfw', ellmax_sky = 6000, cmb_exp='5muKamin_1amin', cache_maps=False):
+    def __init__(self, libdir:str, npix:int, lpix_amin:float, nsims:int, cosmo:CAMBdata, profparams:dict, profilename='nfw', ellmax_sky = 6000, ellmax_data = 3000, cmb_exp='5muKamin_1amin', cache_maps=False):
         """Library for flat-sky CMB simulations lensed by a galaxy cluster.
 
         Args:
@@ -42,17 +42,20 @@ class cluster_maps(object):
         lsides = (lpix_rad*self.npix, lpix_rad*self.npix)
         ellmatdir = opj(li._get_lensitdir()[0], 'temp', 'ellmats', 'ellmat_npix%s_lpix_%samin' % (self.npix, self.lpix_amin))
         self.ellmat = ell_mat.ell_mat(ellmatdir, shape, lsides)
-
-        assert ellmax_sky < cosmo.Params.max_l, "Ask for a higher ellmax in CAMB, see l_max_scalar in param inifile or camb.CAMBparams.set_for_lmax()"
+        self.cmb_exp = cmb_exp
+        
+        # assert ellmax_sky < cosmo.Params.max_l, "Ask for a higher ellmax in CAMB, see l_max_scalar in param inifile or camb.CAMBparams.set_for_lmax()"
         self.ellmax_sky = ellmax_sky
 
-        num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))
-        self.lib_skyalm =  ell_mat.ffs_alm_pyFFTW(self.ellmat, num_threads=num_threads, filt_func=lambda ell: ell <= self.ellmax_sky)
+        self.num_threads=int(os.environ.get('OMP_NUM_THREADS', 1))
+        self.lib_skyalm =  ell_mat.ffs_alm_pyFFTW(self.ellmat, num_threads=self.num_threads, filt_func=lambda ell: ell <= self.ellmax_sky)
 
         nfields = 3 
 
         camb_cls = cosmo.get_unlensed_scalar_cls(CMB_unit='muK', raw_cl=True, lmax=self.ellmax_sky).T
-        cls_cmb = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3]}
+        self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3]}
+        for cl in self.cls_unl.values():
+            cl[6000:] = 0
         
         # Generate the CMB random phases
         skypha_libdir = opj(self.libdir,  'len_alms', 'skypha')
@@ -67,15 +70,15 @@ class cluster_maps(object):
         lencmbs_libdir = opj(self.libdir, 'len_alms')
 
         # Get the noise and beam of the experiment
-        sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = li.get_config(cmb_exp)
-        self.len_cmbs = sim_cmb_len_cluster(lencmbs_libdir, self.lib_skyalm, cls_cmb, self.M200, self.z, self.haloprofile, lib_pha=skypha)
+        sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = li.get_config(self.cmb_exp)
+        self.len_cmbs = sim_cmb_len_cluster(lencmbs_libdir, self.lib_skyalm, self.cls_unl, self.M200, self.z, self.haloprofile, lib_pha=skypha)
         
-        # The lmax of the data maps is set by the pixel size
-        lmax_data = self.ellmat._get_ellmax()
-        cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_data)
+        # Set the lmax of the data maps
+        self.ellmax_data = ellmax_data
+        self.cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=self.ellmax_data)
 
         # The resolution of the data map could be lower than the resolution of the sky map (=the true map)
-        self.lib_datalm = ell_mat.ffs_alm_pyFFTW(self.ellmat, filt_func=lambda ell: ell <= lmax_data, num_threads=num_threads)
+        self.lib_datalm = ell_mat.ffs_alm_pyFFTW(self.ellmat, filt_func=lambda ell: ell <= self.ellmax_data, num_threads=self.num_threads)
         
         vcell_amin2 = np.prod(self.lib_datalm.ell_mat.lsides) / np.prod(self.lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
         nTpix = sN_uKamin / np.sqrt(vcell_amin2)
@@ -83,14 +86,17 @@ class cluster_maps(object):
 
         # Generate the noise random phases
         pixpha_libdir = opj(self.libdir, 'pixpha')
-        pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, self.lib_datalm.ell_mat.shape, nsims_max=nsims)
+        pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, self.lib_skyalm.ell_mat.shape, nsims_max=nsims)
         if not pixpha.is_full() and pbs.rank == 0:
             for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
                 pixpha.get_sim(idx)
         pbs.barrier()
-        maps_libdir = opj(self.libdir, 'maps')
 
-        self.maps_lib = ffs_maps.lib_noisemap(maps_libdir, self.lib_datalm, self.len_cmbs, cl_transf, nTpix, nPpix, nPpix,
+        self.dat_libdir = opj(self.libdir, f"lmaxdat{self.ellmax_data}")
+
+        maps_libdir = opj(self.dat_libdir, 'maps')
+
+        self.maps_lib = ffs_maps.lib_noisemap(maps_libdir, self.lib_datalm, self.len_cmbs, self.cl_transf, nTpix, nPpix, nPpix,
                                         pix_pha=pixpha, cache_sims=cache_maps)
             
 
@@ -174,13 +180,13 @@ class cluster_maps(object):
 
 
 class sim_cmb_len_cluster(ffs_cmbs.sims_cmb_len):
-    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_cmb:dict, M200:float, z:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
-        super(sim_cmb_len_cluster, self).__init__(lib_dir, lib_skyalm, cls_cmb, lib_pha=lib_pha, use_Pool=0, cache_lens=False)
+    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_unl:dict, M200:float, z:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
+        super(sim_cmb_len_cluster, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=lib_pha, use_Pool=0, cache_lens=False)
 
-        kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
-        self.defl_map = haloprofile.kmap2deflmap(kappa_map, lib_skyalm.shape, lib_skyalm.lsides) 
+        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
+        self.defl_map = haloprofile.kmap2deflmap(self.kappa_map, lib_skyalm.shape, lib_skyalm.lsides) 
 
-        assert 'p' not in self.fields, "Remove the lensing potential power spectrum from the input cls_cmb dictionnary to avoid errors."
+        assert 'p' not in self.fields, "Remove the lensing potential power spectrum from the input cls_unl dictionnary to avoid errors."
 
     def _get_f(self, idx=None):
         """We refine the displacement field using the convergence map of the cluster"""
