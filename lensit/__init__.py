@@ -191,6 +191,11 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 3000
+    elif exp == 'S4_opti_6000':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 6000
     elif exp == 'S5':
         sN_uKamin = 1.5 / 4.
         Beam_FWHM_amin = 3.
@@ -231,6 +236,16 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin=10
         ellmax=3000
+    elif exp == 'Planck45':
+        sN_uKamin = 45.
+        Beam_FWHM_amin = 5
+        ellmin = 10
+        ellmax = 2048
+    elif exp == 'Planck45_lmax3000':
+        sN_uKamin = 45.
+        Beam_FWHM_amin = 5
+        ellmin = 10
+        ellmax = 3000
     else:
         sN_uKamin = 0
         Beam_FWHM_amin = 0
