@@ -326,7 +326,7 @@ class ffs_displacement(object):
         rfft_phi = np.fft.rfft2(self.get_kappa())
         rs = rfft_phi.shape
         ky = (2. * np.pi) / self.lsides[0] * Freq(np.arange(self.shape[0]), self.shape[0])
-        ky[self.shape[0] / 2:] *= -1.
+        ky[int(self.shape[0] / 2):] *= -1.
         kx = (2. * np.pi) / self.lsides[1] * Freq(np.arange(rs[1]), self.shape[1])
         rfft_phi = rfft_phi.flatten()
         rfft_phi[1:] /= (np.outer(ky ** 2, np.ones(rs[1])) + np.outer(np.ones(rs[0]), kx ** 2)).flatten()[1:]
