@@ -253,3 +253,27 @@ class profile(object):
         dx = np.fft.irfft2(dx_lm, shape)
         dy = np.fft.irfft2(dy_lm, shape)
         return (dx, dy)
+
+
+
+    def phimap2kappamap(self, phimap, shape, lsides):
+        """Transforms a phi map into a kappa map 
+            Args: 
+                phimap: numpy array defining the convergence field
+                shape(2-tuple): pair of int defining the number of pixels on each side of the box
+                lsides(2-tuple): physical size (in radians) of the box sides
+            Returns:
+                kappa_map: numpy array of the convergence field
+        """
+
+        rfft_phi = np.fft.rfft2(phimap)
+        rs = rfft_phi.shape
+
+        ky = (2. * np.pi) / lsides[0] * Freq(np.arange(shape[0]), shape[0])
+        ky[int(shape[0] / 2):] *= -1.
+        kx = (2. * np.pi) / lsides[1] * Freq(np.arange(rs[1]), shape[1])
+        KX, KY = np.meshgrid(kx, ky)
+
+        rfft_kappa = 1/2 * (KX**2 + KY**2) * rfft_phi
+
+        return np.fft.irfft2(rfft_kappa, shape)
