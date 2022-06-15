@@ -34,12 +34,12 @@ class profile(object):
         """
         return self.sigma_nfw(M200, z, R, xmax=xmax) / self.sigma_crit(z)
 
-    def get_rho_s(self, M200, z):
-        c = self.get_concentration(M200, z)
+    def get_rho_s(self, M200, z, const_c=None):
+        c = self.get_concentration(M200, z, const_c)
         return 200* self.rho_crit(z)/3 * c**3 / (np.log(1+c) - c/(1+c))
 
-    def get_rs(self, M200, z):
-        return self.get_r200(M200, z) / self.get_concentration(M200, z)
+    def get_rs(self, M200, z, const_c=None):
+        return self.get_r200(M200, z) / self.get_concentration(M200, z, const_c)
 
     def get_r200(self, M200, z):
         """Get r200 in Mpc"""
@@ -52,10 +52,13 @@ class profile(object):
         """
         return const.rhocrit * (self.cosmo.hubble_parameter(z))**2
 
-    def get_concentration(self, M200, z):
+    def get_concentration(self, M200, z, const_c=None):
         """Get the concentration parameter as in Geach and Peacock eq. 5.
         M200: In units of solar mass."""
-        return  5.71 * (1 + z)**(-0.47) * (M200 / (2E12 / self.h))**(-0.084)
+        if const_c is None:
+            const_c = 5.71 * (1 + z)**(-0.47) * (M200 / (2E12 / self.h))**(-0.084)
+
+        return const_c
 
     def sigma_crit(self, z):
         """Critical surface mass density, in Msun/Mpc^2"""
@@ -159,14 +162,10 @@ class profile(object):
                 sigma[i] = np.trapz( 2 * r_arr * rho_arr / np.sqrt(r_arr**2 - iR**2), r_arr)
         return sigma
 
-    def analitic_kappa_ft(self, M200, z, ell):
-        """
-            Analytic Fourier transform of the convergence fiels for a NFW profile
-            from Oguri&Takada 2010, Eq.28
-            This is the Fourier transform of a NFW profile with a cutoff at the virial radius 
-            This should correspond to xmax = concentration parameter in my numerical integrals 
-            """
-        c = self.get_concentration(M200, z)
+    def analitic_kappa_ft(self, M200, z, ell, const_c=None):
+        """Analytic Fourier transform of the convergence fiels for a NFW profile
+            from Oguri&Takada 2010, Eq.28"""
+        c = self.get_concentration(M200, z, const_c)
         mu_nfw = np.log(1. + c) - c / (1. + c)
         rs = self.get_rs(M200, z)
         chi = self.cosmo.comoving_radial_distance(z)
