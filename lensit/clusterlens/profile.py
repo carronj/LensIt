@@ -24,7 +24,7 @@ class profile(object):
         if pname == 'nfw':
             self.kappa = self.kappa_nfw
 
-    def kappa_nfw(self, M200, z, R):
+    def kappa_nfw(self, M200, z, R, xmax=None):
         """Convergence profile of a cluster for a NFW density profile
             Args:
                 M200: mass (in Msol) of the cluster in a sphere of density 
@@ -32,7 +32,7 @@ class profile(object):
                 z: redshift of the cluster
                 R: array, distance from the center of the cluster in Mpc 
         """
-        return self.sigma_nfw(M200, z, R) / self.sigma_crit(z)
+        return self.sigma_nfw(M200, z, R, xmax=xmax) / self.sigma_crit(z)
 
     def get_rho_s(self, M200, z, const_c=None):
         c = self.get_concentration(M200, z, const_c)
@@ -73,7 +73,7 @@ class profile(object):
         rhos = self.get_rho_s(M200, z)
         return 2*rhos*rs/3 / self.sigma_crit(z)
 
-    def sigma_nfw(self, M200, z, R):
+    def sigma_nfw(self, M200, z, R, xmax=None):
         """Analytic expression for the surface mass desinty of a NFW profile 
         From Equation 7 of Bartelmann 1996
         Args:
@@ -89,16 +89,37 @@ class profile(object):
         rhos = self.get_rho_s(M200, z)
         R = np.atleast_1d(R)
         x = R / rs 
-        f = self.fx(x)
-        return 2*rhos*rs/(x**2-1)*f
+        if xmax is None:
+            f = self.fx(x)
+        else:
+            f = self.gx(x, xmax)
+        c = self.get_concentration(M200, z)
+        sigma = 2*rhos*rs/(x**2-1)*f
+        return sigma
 
     def fx(self, x):
+        """This integral of the NFW profile along the line of sight is integrated up to infinity
+        See Bartelmann 1996 or Wright et al 1999"""
         f = np.zeros_like(x)
         xp = np.where(x>1)
         xm = np.where(x<1)
         f[xp] = 1 - 2/np.sqrt(x[xp]**2 - 1) * np.arctan(np.sqrt((x[xp] - 1)/(x[xp] + 1)))
+        # f[xp] = 0
         f[xm] = 1 - 2/np.sqrt(1 - x[xm]**2) * np.arctanh(np.sqrt((1 - x[xm])/(1 + x[xm])))
         return f
+
+
+    def gx(self, x, xmax):
+        """We apply a cutoff in the halo profile for x>xmax, i.e. R>rs*xmax
+        See equation 27 of Takada and Jain 2003"""
+        g = np.zeros_like(x)
+        xp = np.where(np.logical_and(x>1, x<xmax))
+        xm = np.where(x<1)
+        g[xp] = np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax)))
+        g[xm] = np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax)))
+        return g
+
+
 
     def rho_nfw(self, M200, z, r):
         r"""Navarro Frenk and White density profile 
@@ -125,18 +146,20 @@ class profile(object):
             sigma: surface mass density  in Msun / Mpc^2
         """
         rs = self.get_rs(M200, z)
-        assert rs*xmax > np.max(R), "Need to increase integration limit"
+        # assert rs*xmax >= np.max(R), "Need to increase integration limit"
         assert R[0] > 0, "Can't integrate on center of NFW profile, please give R>0"
         R = np.atleast_1d(R)
         sigma = np.zeros_like(R)
         for i, iR in enumerate(R):
-            r_arr = np.linspace(iR, 100*rs, num = npoints)
-            dr_arr = np.diff(r_arr, axis=0)
-            # I skip the point r= R because the integrand is not defined, should check if corect?
-            r_arr = r_arr[1:]
-            rho_arr = self.rho_nfw(M200, z, r_arr)
-            integrand = 2 * r_arr * rho_arr * dr_arr / np.sqrt(r_arr**2 - iR**2)
-            sigma[i] = np.sum(integrand)
+            if iR>rs*xmax:
+                sigma[i] = 0
+            else:
+                r_arr = np.geomspace(iR, xmax*rs, num = npoints)
+                dr_arr = np.diff(r_arr, axis=0)
+                # I skip the point r= R because the integrand is not defined, should check if corect?
+                r_arr = r_arr[1:]
+                rho_arr = self.rho_nfw(M200, z, r_arr)
+                sigma[i] = np.trapz( 2 * r_arr * rho_arr / np.sqrt(r_arr**2 - iR**2), r_arr)
         return sigma
 
     def analitic_kappa_ft(self, M200, z, ell, const_c=None):
@@ -158,7 +181,7 @@ class profile(object):
         kappaft = M200 * ufft * (1+z)**2 /chi**2 / self.sigma_crit(z)
         return kappaft
 
-    def kappa_theta(self, M200, z, theta):
+    def kappa_theta(self, M200, z, theta, xmax=None):
         """Get the convergence profile
             Args:
                 M200: Cluster mass defined as in a sphere 200 times the critical density 
@@ -169,7 +192,7 @@ class profile(object):
                 kappa: convergence profile
         """
         R = self.theta_amin_to_r(z, theta)
-        return self.kappa(M200, z, R)
+        return self.kappa(M200, z, R, xmax=xmax)
 
     def r_to_theta(self, z, R):
         """Convert a transverse distance into an angle
@@ -210,13 +233,14 @@ class profile(object):
         return np.sqrt((x-c0[0])**2 * dtheta[0]**2 + (y-c0[1])**2 * dtheta[1]**2)
 
 
-    def kappa_map(self, M200, z, shape, lsides):
+    def kappa_map(self, M200, z, shape, lsides, xmax=None):
         """Get the convergence map of the cluster
             Args:
                 M200: Cluster mass defined as in a sphere 200 times the critical density 
                 z: redshift of the cluster
                 shape(2-tuple): pair of int defining the number of pixels on each side of the box
                 lsides(2-tuple): physical size (in radians) of the box sides
+                xmax: cutoff scale in factors of rs
             Returns:
                 kappa_map: numpy array defining the convergence field
         """
@@ -228,7 +252,7 @@ class profile(object):
         X, Y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
         theta_amin = self.pix_to_theta(X, Y, (dtheta_x,dtheta_y),  (x0, y0))
 
-        return self.kappa_theta(M200, z, theta_amin)
+        return self.kappa_theta(M200, z, theta_amin, xmax=xmax)
 
 
     def kmap2deflmap(self, kappamap, shape, lsides):
