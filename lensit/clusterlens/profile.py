@@ -82,8 +82,6 @@ class profile(object):
             R: distance from the center of the cluster in Mpc
         Returns:
             sigma: surface mass density  in Msun / Mpc^2
-
-        #TODO: check if this correspond numerically to the numerical integration of self.sigma_int
         """
         rs = self.get_rs(M200, z)
         rhos = self.get_rho_s(M200, z)
@@ -102,7 +100,7 @@ class profile(object):
         See Bartelmann 1996 or Wright et al 1999"""
         f = np.zeros_like(x)
         xp = np.where(x>1)
-        xo = np.where(x.astype('float')==1)
+        xo = np.where(np.abs(x-1.) < 1e-15) 
         xm = np.where(x<1)
         f[xp] = (1 - 2/np.sqrt(x[xp]**2 - 1) * np.arctan(np.sqrt((x[xp] - 1)/(x[xp] + 1))))/(x[xp]**2-1)
         f[xm] = (1 - 2/np.sqrt(1 - x[xm]**2) * np.arctanh(np.sqrt((1 - x[xm])/(1 + x[xm]))))/(x[xm]**2-1)
@@ -115,7 +113,7 @@ class profile(object):
         See equation 27 of Takada and Jain 2003"""
         g = np.zeros_like(x)
         xp = np.where(np.logical_and(x>1, x<xmax))
-        xo = np.where(x.astype('float')==1.)        
+        xo = np.where(np.abs(x-1.) < 1e-15)       
         xm = np.where(x<1)
         g[xp] = (np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax))) )/(x[xp]**2-1)
         g[xm] = (np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax))) )/(x[xm]**2-1)
