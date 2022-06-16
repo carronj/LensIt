@@ -95,12 +95,12 @@ class profile(object):
         sigma = 2*rhos*rs*f
         return sigma
 
-    def fx(self, x):
+    def fx(self, x, tol=6):
         """This integral of the NFW profile along the line of sight is integrated up to infinity
         See Bartelmann 1996 or Wright et al 1999"""
         f = np.zeros_like(x)
         xp = np.where(x>1)
-        xo = np.where(np.abs(x-1.) < 1e-15) 
+        xo = np.where(np.abs(x-1.) < 10**(-tol)) 
         xm = np.where(x<1)
         f[xp] = (1 - 2/np.sqrt(x[xp]**2 - 1) * np.arctan(np.sqrt((x[xp] - 1)/(x[xp] + 1))))/(x[xp]**2-1)
         f[xm] = (1 - 2/np.sqrt(1 - x[xm]**2) * np.arctanh(np.sqrt((1 - x[xm])/(1 + x[xm]))))/(x[xm]**2-1)
@@ -108,12 +108,12 @@ class profile(object):
         return f
 
 
-    def gx(self, x, xmax):
+    def gx(self, x, xmax, tol=5):
         """We apply a cutoff in the halo profile for x>xmax, i.e. R>rs*xmax
         See equation 27 of Takada and Jain 2003"""
         g = np.zeros_like(x)
         xp = np.where(np.logical_and(x>1, x<xmax))
-        xo = np.where(np.abs(x-1.) < 1e-15)       
+        xo = np.where(np.abs(x-1.) < 10**(-tol))       
         xm = np.where(x<1)
         g[xp] = (np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax))) )/(x[xp]**2-1)
         g[xm] = (np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax))) )/(x[xm]**2-1)
