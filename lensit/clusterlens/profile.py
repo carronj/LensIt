@@ -94,7 +94,7 @@ class profile(object):
         else:
             f = self.gx(x, xmax)
         c = self.get_concentration(M200, z)
-        sigma = 2*rhos*rs/(x**2-1)*f
+        sigma = 2*rhos*rs*f
         return sigma
 
     def fx(self, x):
@@ -102,10 +102,11 @@ class profile(object):
         See Bartelmann 1996 or Wright et al 1999"""
         f = np.zeros_like(x)
         xp = np.where(x>1)
+        xo = np.where(x.astype('float')==1)
         xm = np.where(x<1)
-        f[xp] = 1 - 2/np.sqrt(x[xp]**2 - 1) * np.arctan(np.sqrt((x[xp] - 1)/(x[xp] + 1)))
-        # f[xp] = 0
-        f[xm] = 1 - 2/np.sqrt(1 - x[xm]**2) * np.arctanh(np.sqrt((1 - x[xm])/(1 + x[xm])))
+        f[xp] = (1 - 2/np.sqrt(x[xp]**2 - 1) * np.arctan(np.sqrt((x[xp] - 1)/(x[xp] + 1))))/(x[xp]**2-1)
+        f[xm] = (1 - 2/np.sqrt(1 - x[xm]**2) * np.arctanh(np.sqrt((1 - x[xm])/(1 + x[xm]))))/(x[xm]**2-1)
+        f[xo] = 1/3
         return f
 
 
@@ -114,9 +115,11 @@ class profile(object):
         See equation 27 of Takada and Jain 2003"""
         g = np.zeros_like(x)
         xp = np.where(np.logical_and(x>1, x<xmax))
+        xo = np.where(x.astype('float')==1.)        
         xm = np.where(x<1)
-        g[xp] = np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax)))
-        g[xm] = np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax)))
+        g[xp] = (np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax))) )/(x[xp]**2-1)
+        g[xm] = (np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax))) )/(x[xm]**2-1)
+        g[xo] = np.sqrt(xmax**2 - 1)/(3*(1+xmax)) * (1+ 1/ (1+xmax))
         return g
 
 
