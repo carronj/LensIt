@@ -221,6 +221,17 @@ class profile(object):
         return R
 
 
+    def x_to_theta_amin(self,M200, z, x, const_c=None):
+        """Angle substended at chararcteric scale x = r/rs
+
+            Args:
+                M200: cluster M200 mass in solar masses (?)
+                z: cluster redshift
+                x:  dimensionless R / Rs
+
+        """
+        return self.r_to_theta(z, x * self.get_rs(M200, z, const_c=const_c))
+
     def pix_to_theta(self, x, y, dtheta, c0):
         """Return the angle between the center of the map and the pixel (x,y)
         Args:
