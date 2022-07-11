@@ -77,7 +77,7 @@ class ell_mat:
             :math:`\ell = \rm{int}\left(|k| - \frac 12 \right)`
 
         """
-        ret = np.uint16(np.round(k - 0.5) + 0.5 * ((k - 0.5) < 0))
+        ret = np.uint32(np.round(k - 0.5) + 0.5 * ((k - 0.5) < 0))
         return ret
 
     def __call__(self, *args, **kwargs):
