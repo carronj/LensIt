@@ -88,6 +88,9 @@ class ffs_displacement(object):
                 except:
                     print("ffs_displacement:: unable to create lib. dir. " + self.lib_dir)
 
+    def copy(self):
+        return ffs_displacement(self.dx.copy(), self.dy.copy(), self.lsides, LD_res=self.LD_res, NR_iter=self.NR_iter, lib_dir=None, cache_magn=False)
+
     @staticmethod
     def load_map(m):
         if isinstance(m, str):
@@ -565,6 +568,9 @@ class ffs_id_displacement:
     def __init__(self, shape, lsides):
         self.shape = shape
         self.lsides = lsides
+
+    def copy(self):
+        return ffs_id_displacement(self.shape, self.lsides)
 
     def degrade(self, LDshape, *args, **kwargs):
         return ffs_id_displacement(LDshape, self.lsides)
