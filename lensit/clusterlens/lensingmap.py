@@ -166,7 +166,7 @@ class cluster_maps(object):
             return self.maps_lib.get_noise_sim_umap(idx)
 
 
-    def get_kappa_map(self, M200, z):
+    def get_kappa_map(self, M200, z, xmax=None):
         """Get the convergence map of the cluster 
         Args: 
             M200: mass (in Msol) of the cluster in a sphere of density 
@@ -175,7 +175,7 @@ class cluster_maps(object):
         Returns:
             convergence map: numpy array of shape self.lib_skyalm.shape
         """
-        return self.haloprofile.kappa_map(M200, z, self.lib_skyalm.shape, self.lib_skyalm.lsides)
+        return self.haloprofile.kappa_map(M200, z, self.lib_skyalm.shape, self.lib_skyalm.lsides, xmax)
 
 
 
