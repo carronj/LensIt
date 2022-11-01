@@ -166,16 +166,10 @@ class profile(object):
                 sigma[i] = np.trapz( 2 * r_arr * rho_arr / np.sqrt(r_arr**2 - iR**2), r_arr)
         return sigma
 
-    def analitic_kappa_ft(self, M200, z, ell, const_c=None, xmax=None):
+    def analitic_kappa_ft(self, M200, z, ell, const_c=None):
         """Analytic Fourier transform of the convergence fiels for a NFW profile
             from Oguri&Takada 2010, Eq.28"""
-        """ If xmax not given it calculates the function for a NFW profile truncated
-            at R200 = c*rs. If xmax is given, then it calculates the function 
-            for a NFW profile truncated at xmax*rs"""
-        if xmax is None:
-            c = self.get_concentration(M200, z, const_c)
-        else:
-            c=xmax
+        c = self.get_concentration(M200, z, const_c)
         mu_nfw = np.log(1. + c) - c / (1. + c)
         rs = self.get_rs(M200, z)
         chi = self.cosmo.comoving_radial_distance(z)
