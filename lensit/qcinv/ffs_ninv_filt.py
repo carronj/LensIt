@@ -3,8 +3,9 @@ from __future__ import print_function
 import numpy as np
 
 from lensit.qcinv import template_removal
+from lensit.ffs_deflect import ffs_deflect
 from lensit.misc.misc_utils import cls_hash, npy_hash
-from lensit.ffs_covs import ffs_specmat
+from lensit.ffs_covs import ffs_specmat, ell_mat
 from lensit.misc.rfft2_utils import degrade_mask
 
 load_map = lambda _map: np.load(_map) if type(_map) is str else _map
@@ -16,13 +17,15 @@ def cl_inv(cl):
     return ret
 
 class ffs_ninv_filt(object):
-    def __init__(self, lib_datalm, lib_skyalm, len_cls, cl_transf, ninv_rad,
-                 marge_maps=None, marge_uptolmin=None,marge_ells = None,eigv_thres = 0., cls_noise=None, verbose=False):
+    def __init__(self, lib_datalm:ell_mat.ffs_alm, lib_skyalm:ell_mat.ffs_alm, len_cls, cl_transf, ninv_rad,
+                 marge_maps=None, marge_uptolmin=None,marge_ells=None,eigv_thres=0., cls_noise=None, verbose=False):
         """
-        ninv_rad is the inverse variance map in 1 / rad ** 2, not the pixel variance maps.
-        This is the inverse pixel variance map / volume of cell.
+            Note:
+                ninv_rad is the inverse variance map in 1 / rad ** 2, not the pixel variance maps.
+                This is the inverse pixel variance map / volume of cell.
 
-        eigenvalues in the template matrix with eigv <= max(eigv) * eigv_thres will be set to zero before inversion
+                eigenvalues in the template matrix with eigv <= max(eigv) * eigv_thres will be set to zero before inversion
+
         """
         if marge_maps is None : marge_maps = dict()
         if marge_uptolmin is None : marge_uptolmin = dict()
@@ -303,11 +306,13 @@ class ffs_ninv_filt(object):
 
 
 class ffs_ninv_filt_wl(ffs_ninv_filt):
-    def __init__(self, lib_datalm, lib_skyalm, unl_cls, cl_transf, ninv_rad, f, fi,
+    def __init__(self, lib_datalm:ell_mat.ffs_alm, lib_skyalm:ell_mat.ffs_alm, unl_cls, cl_transf, ninv_rad, f:ffs_deflect.ffs_displacement, fi:ffs_deflect.ffs_displacement,
                  marge_maps=None, marge_uptolmin=None, cls_noise=None, lens_pool=0):
-        """
-        Same as above, but the transfer functions contain the lensing.
-        Note that the degradation will kill the lensing.
+        """Same as above, but the transfer functions contain the lensing.
+
+            Note that the degradation will kill the lensing.
+
+
         """
         super(ffs_ninv_filt_wl, self).__init__(lib_datalm, lib_skyalm, unl_cls, cl_transf, ninv_rad,
                                     marge_maps=marge_maps, marge_uptolmin=marge_uptolmin, cls_noise=cls_noise)
