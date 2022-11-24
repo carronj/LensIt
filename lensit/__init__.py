@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import numpy as np
 import os
+from typing import NamedTuple
 
 from lensit.ffs_covs import ffs_cov, ell_mat
 from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
@@ -105,7 +106,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
     Args:
         exp: experimental configuration (see *get_config*)
         LDres: the data is generated on a square patch with :math:` 2^{\rm LDres}` pixels on a side
-        HDres: The physical size of the path is :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin
+        HDres: The physical size of the patch is :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin
         cache_lenalms: saves the lensed CMBs when produced for the first time (defaults to True)
         cache_maps: saves the data maps when produced for the first time (defaults to False)
         nsims: number of simulations in the library
@@ -115,7 +116,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
         All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
 
     """
-    sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
+    name, sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
@@ -133,7 +134,7 @@ def get_maps_lib(exp, LDres, HDres=14, cache_lenalms=True, cache_maps=False,
         for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
             pixpha.get_sim(idx)
     pbs.barrier()
-    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps')
+    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%name, 'maps')
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps)
 
@@ -149,7 +150,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
 
     """
     ellmax_sky = 6000
-    sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
+    name, sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
 
     cls_noise = {'t': (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
@@ -161,15 +162,26 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                         filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
 
-    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'LD%sHD%s' % (LD_res, HD_res))
+    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % name, 'LD%sHD%s' % (LD_res, HD_res))
     return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)
 
+
+class ExptConfig(NamedTuple):
+    name: str
+    sN_uKamin: float
+    sN_uKaminP: float
+    Beam_FWHM_amin: float
+    ellmin: float
+    ellmax: float
 
 
 def get_config(exp):
     """Returns noise levels, beam size and multipole cuts for some configurations
 
     """
+    if isinstance(exp, ExptConfig):
+        return exp
+
     sN_uKaminP = None
     if exp == 'Planck':
         sN_uKamin = 35.
@@ -253,4 +265,4 @@ def get_config(exp):
         ellmax = 0
         assert 0, '%s not implemented' % exp
     sN_uKaminP = sN_uKaminP or np.sqrt(2.) * sN_uKamin
-    return sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax
+    return ExptConfig(exp, sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax)
