@@ -41,12 +41,14 @@ class ffs_iterator(object):
             H0: initial isotropic likelihood curvature approximation (roughly, inverse lensing noise bias :math:`N^{(0)}_L`)
             cpp_prior: fiducial lensing power spectrum, used for the prior part of the posterior density.
             chain_descr: multigrid conjugate gradient inversion chain description
+            nufft_epsilon: precision of the nufft interpolation
 
 
     """
     def __init__(self, lib_dir, typ, filt: filtr, dat_maps, lib_qlm, Plm0, H0, cpp_prior,
                  use_Pool_lens=0, use_Pool_inverse=0, chain_descr=None, opfilt=None, soltn0=None, cache_magn=False,
                  no_deglensing=False, NR_method=100, tidy=10, verbose=True, maxcgiter=150, PBSSIZE=None, PBSRANK=None,
+                 nufft_epsilon=1e-7,
                  **kwargs):
 
         assert typ in _types
@@ -96,6 +98,7 @@ class ffs_iterator(object):
 
         self.newton_step_length = newton_step_length
         self.soltn0 = soltn0
+        self.nufft_epsilon = nufft_epsilon
 
         assert hasattr(filt, 'f')
         self.cov = filt
@@ -285,7 +288,7 @@ class ffs_iterator(object):
         assert os.path.exists(fname_dx), fname_dy
         assert os.path.exists(lib_dir), lib_dir
         return ffs_deflect.ffs_displacement(fname_dx, fname_dy, self.lsides,
-                                            verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn)
+            verbose=(self.PBSRANK == 0), lib_dir=lib_dir, cache_magn=self.cache_magn, nuffteps=self.nufft_epsilon)
 
 
     def load_soltn(self, it, key):
