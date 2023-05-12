@@ -67,17 +67,22 @@ class cluster_maps(object):
 
         #nfields = 4 
         if self.key == 'cluster':
-            nfields = 3
+            nfields = 4
         else:
             nfields = 4
 
         camb_cls = cosmo.get_unlensed_scalar_cls(CMB_unit='muK', raw_cl=True, lmax=self.ellmax_sky).T
+        #camb_cls = cosmo.get_unlensed_scalar_cls(CMB_unit='muK', raw_cl=True, lmax=self.ellmax_sky).T/100
+
+        #camb_cls = cosmo.get_lensed_scalar_cls(CMB_unit='muK', raw_cl=True, lmax=self.ellmax_sky).T
+       
         cpp_fid = cosmo.get_lens_potential_cls(lmax=self.ellmax_sky, raw_cl=True).T[0]
         
-        if self.key == 'cluster':
-            self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3]}
-        else:
-            self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3], 'pp':cpp_fid}
+        #if self.key == 'cluster':
+        #    self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3]}
+        #else:
+        #    self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3], 'pp':cpp_fid}
+        self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3], 'pp':cpp_fid}
         
         for cl in self.cls_unl.values():
             cl[6000:] = 0
@@ -233,10 +238,12 @@ class sim_cmb_len_cluster(ffs_cmbs.sims_cmb_len):
         super(sim_cmb_len_cluster, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=lib_pha, use_Pool=0, cache_lens=False)
 
         self.conc_par = haloprofile.get_concentration(M200,z)
-        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax=self.conc_par)
+        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax= 3 * self.conc_par)
+        #self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
+        #self.kappa_map = 1e2*haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax=self.conc_par)
         self.defl_map = haloprofile.kmap2deflmap(self.kappa_map, lib_skyalm.shape, lib_skyalm.lsides) 
 
-        assert 'p' not in self.fields, "Remove the lensing potential power spectrum from the input cls_unl dictionnary to avoid errors."
+        #assert 'p' not in self.fields, "Remove the lensing potential power spectrum from the input cls_unl dictionnary to avoid errors."
 
     def _get_f(self, idx=None):
         """We refine the displacement field using the convergence map of the cluster"""
@@ -250,7 +257,8 @@ class sim_cmb_len_lss_plus_cluster:
         self.z = z
         self.haloprofile = haloprofile
         self.conc_par = self.haloprofile.get_concentration(M200,z)
-        self.kappa_map = self.haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax=self.conc_par)
+        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax= 3 * self.conc_par)
+        #self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
         self.defl_map = self.haloprofile.kmap2deflmap(self.kappa_map, lib_skyalm.shape, lib_skyalm.lsides) 
         
         if not os.path.exists(lib_dir) and pbs.rank == 0:
@@ -309,6 +317,20 @@ class sim_cmb_len_lss_plus_cluster:
             return ffs_deflect.displacement_fromolm(self.lib_skyalm, olm, verbose=False)
         else:
             assert 0
+            
+    def _get_f_lss_plus_cluster(self, idx):
+        if 'p' in self.unlcmbs.fields and 'o' in self.unlcmbs.fields:
+            plm = self.get_sim_plm(idx)
+            olm = self.get_sim_olm(idx)
+            return ffs_deflect.displacement_frompolm(self.lib_skyalm, plm, olm, verbose=False) + ffs_deflect.ffs_displacement(self.defl_map[0], self.defl_map[1], self.lib_skyalm.lsides)
+        elif 'p' in self.unlcmbs.fields:
+            plm = self.get_sim_plm(idx)
+            return ffs_deflect.displacement_fromplm(self.lib_skyalm, plm) + ffs_deflect.ffs_displacement(self.defl_map[0], self.defl_map[1], self.lib_skyalm.lsides)
+        elif 'o' in self.unlcmbs.fields:
+            olm = self.get_sim_olm(idx)
+            return ffs_deflect.displacement_fromolm(self.lib_skyalm, olm, verbose=False) + ffs_deflect.ffs_displacement(self.defl_map[0], self.defl_map[1], self.lib_skyalm.lsides)
+        else:
+            assert 0
 
     def get_sim_alm(self, idx, field):
         if field == 't':
@@ -333,6 +355,7 @@ class sim_cmb_len_lss_plus_cluster:
         if not os.path.exists(fname):
             Tlm = self._get_f(idx).lens_alm(self.lib_skyalm, self.unlcmbs.get_sim_tlm(idx), use_Pool=self.Pool)
             Tlm = self._get_f_cluster(idx).lens_alm(self.lib_skyalm, Tlm, use_Pool=self.Pool)
+            #Tlm = self._get_f_lss_plus_cluster(idx).lens_alm(self.lib_skyalm, self.unlcmbs.get_sim_tlm(idx), use_Pool=self.Pool)
             if not self.cache_lens: return Tlm
             np.save(fname, Tlm)
         return np.load(fname)
@@ -343,6 +366,7 @@ class sim_cmb_len_lss_plus_cluster:
             Qlm, Ulm = self.lib_skyalm.EBlms2QUalms(
                 np.array([self.unlcmbs.get_sim_elm(idx), self.unlcmbs.get_sim_blm(idx)]))
             f = self._get_f(idx)
+            #f = self._get_f_lss_plus_cluster(idx)
             Qlm = f.lens_alm(self.lib_skyalm, Qlm, use_Pool=self.Pool)
             Ulm = f.lens_alm(self.lib_skyalm, Ulm, use_Pool=self.Pool)
             f_cluster = self._get_f_cluster(idx)
