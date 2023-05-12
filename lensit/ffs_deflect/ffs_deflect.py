@@ -319,7 +319,7 @@ class ffs_displacement(object):
                 plan.setpts(ys, xs)
                 self._fwdnufftplan = plan
 
-            c = np.fft.fft2(lib_alm.alm2map(alm), norm='forward')  # TODO: can spare the fft's here
+            c = lib_alm.ell_mat.rfft2fftmap(lib_alm.alm2rfft(alm / np.prod(lib_alm.shape)))
             m = self._fwdnufftplan.execute(c)
             return m.reshape(self.shape).real
         else:

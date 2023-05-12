@@ -319,6 +319,15 @@ class ell_mat:
             fy.append(N1 // 2)
         return np.array(fx), np.array(fy)
 
+    @staticmethod
+    def rfft2fftmap(rfftmap):
+        n = rfftmap.shape[0]
+        fftm = np.empty((n, n), rfftmap.dtype)
+        fftm[:, :n // 2 + 1] = rfftmap
+        for idx in range(n):
+            fftm[idx, n // 2 + 1:] = rfftmap[-idx, 1:n // 2][::-1].conj()
+        return fftm
+
 
 class ffs_alm(object):
     """Library to facilitate operations on flat-sky alms in the ffs scheme.
