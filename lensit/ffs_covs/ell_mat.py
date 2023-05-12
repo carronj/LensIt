@@ -321,11 +321,11 @@ class ell_mat:
 
     @staticmethod
     def rfft2fftmap(rfftmap):
-        n = rfftmap.shape[0]
-        fftm = np.empty((n, n), rfftmap.dtype)
-        fftm[:, :n // 2 + 1] = rfftmap
-        for idx in range(n):
-            fftm[idx, n // 2 + 1:] = rfftmap[-idx, 1:n // 2][::-1].conj()
+        ny, nx = rfftmap.shape[0], (rfftmap.shape[1] - 1) * 2
+        fftm = np.empty((ny, nx), rfftmap.dtype)
+        fftm[:, :nx // 2 + 1] = rfftmap
+        for idx in range(ny):
+            fftm[idx, nx // 2 + 1:] = rfftmap[-idx, 1:nx // 2][::-1].conj()
         return fftm
 
 
