@@ -41,7 +41,7 @@ class profile(object):
     def get_rs(self, M200, z, const_c=None):
         return self.get_r200(M200, z) / self.get_concentration(M200, z, const_c)
     
-    def get_thetas_amin(M200,z, const_c=None):
+    def get_thetas_amin(self, M200,z, const_c=None):
         return self.r_to_theta(z, self.get_rs(M200, z, const_c))
 
     def get_r200(self, M200, z):
@@ -101,26 +101,36 @@ class profile(object):
     def fx(self, x, tol=6):
         """This integral of the NFW profile along the line of sight is integrated up to infinity
         See Bartelmann 1996 or Wright et al 1999"""
+        ## Need to fix for M200, z, now it is for M200, z = 2*1e14, 0.7
         f = np.zeros_like(x)
         xp = np.where(x>1)
         xo = np.where(np.abs(x-1.) < 10**(-tol)) 
-        xm = np.where(x<1)
+        xm = np.logical_and(x<1, x>=self.theta_amin_to_x(2*1e14, 0.7, 0.12))
+        #xm = np.where(x<1)
+        xd = np.where(x<self.theta_amin_to_x(2*1e14, 0.7, 0.12))
+        idx = self.theta_amin_to_x(2*1e14, 0.7, 0.12)
         f[xp] = (1 - 2/np.sqrt(x[xp]**2 - 1) * np.arctan(np.sqrt((x[xp] - 1)/(x[xp] + 1))))/(x[xp]**2-1)
         f[xm] = (1 - 2/np.sqrt(1 - x[xm]**2) * np.arctanh(np.sqrt((1 - x[xm])/(1 + x[xm]))))/(x[xm]**2-1)
         f[xo] = 1/3
+        f[xd] = (1 - 2/np.sqrt(1 - idx**2) * np.arctanh(np.sqrt((1 - idx)/(1 + idx))))/(idx**2-1)
         return f
 
 
     def gx(self, x, xmax, tol=5):
         """We apply a cutoff in the halo profile for x>xmax, i.e. R>rs*xmax
         See equation 27 of Takada and Jain 2003"""
+        ## Need to fix for M200, z, now it is for M200, z = 2*1e14, 0.7
         g = np.zeros_like(x)
-        xp = np.where(np.logical_and(x>1, x<xmax))
+        xp = np.logical_and(x>1, x<=xmax)
         xo = np.where(np.abs(x-1.) < 10**(-tol))       
-        xm = np.where(x<1)
+        xm = np.logical_and(x<1, x>=self.theta_amin_to_x(2*1e14, 0.7, 0.12))
+        #xm = np.where(x<1)
+        xd = np.where(x<self.theta_amin_to_x(2*1e14, 0.7, 0.12))
+        idx = self.theta_amin_to_x(2*1e14, 0.7, 0.12)
         g[xp] = (np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax))) )/(x[xp]**2-1)
         g[xm] = (np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax))) )/(x[xm]**2-1)
         g[xo] = np.sqrt(xmax**2 - 1)/(3*(1+xmax)) * (1+ 1/ (1+xmax))
+        g[xd] = (np.sqrt(xmax**2 - idx**2)/(1+xmax) - 1/np.sqrt(1-idx**2) * np.arccosh((idx**2 + xmax) / (idx * (1+xmax))) )/(idx**2-1)
         return g
 
 
@@ -166,20 +176,20 @@ class profile(object):
                 sigma[i] = np.trapz( 2 * r_arr * rho_arr / np.sqrt(r_arr**2 - iR**2), r_arr)
         return sigma
 
-    def analitic_kappa_ft(self, M200, z, ell, const_c=None):
+    def analitic_kappa_ft(self, M200, z, xmax, ell, const_c=None):
         """Analytic Fourier transform of the convergence fiels for a NFW profile
             from Oguri&Takada 2010, Eq.28"""
-        c = self.get_concentration(M200, z, const_c)
-        mu_nfw = np.log(1. + c) - c / (1. + c)
+        c1 = self.get_concentration(M200, z, const_c)
+        mu_nfw = np.log(1. + c1) - c1 / (1. + c1)
         rs = self.get_rs(M200, z)
         chi = self.cosmo.comoving_radial_distance(z)
         k = ell / chi
         x = ((1. + z) * k * rs)
         Six, Cix = sici(x)
-        Sixpc, Cixpc = sici(x * (1. + c))
+        Sixpc, Cixpc = sici(x * (1. + xmax))
         Sidiff = Sixpc - Six
         Cidiff = Cixpc - Cix
-        u0 = np.sin(x) * Sidiff + np.cos(x) * Cidiff - np.sin(x * c) / (x * (1. + c))
+        u0 = np.sin(x) * Sidiff + np.cos(x) * Cidiff - np.sin(x * xmax) / (x * (1. + xmax))
         ufft = 1. / mu_nfw * u0
 
         kappaft = M200 * ufft * (1+z)**2 /chi**2 / self.sigma_crit(z)
@@ -224,6 +234,18 @@ class profile(object):
         R = Dang * theta_amin * np.pi/180/60
         return R
 
+    def theta_amin_to_x(self, M200, z, th_amin, const_c=None):
+        """Angle substended at chararcteric scale x = r/rs
+
+            Args:
+                M200: cluster M200 mass in solar masses (?)
+                z: cluster redshift
+                x:  dimensionless R / Rs
+
+        """
+        return th_amin/self.get_thetas_amin(M200, z, const_c=const_c)
+
+
 
     def x_to_theta_amin(self,M200, z, x, const_c=None):
         """Angle substended at chararcteric scale x = r/rs
@@ -262,9 +284,18 @@ class profile(object):
         dtheta_x = lsides[0]/shape[0] * 180/np.pi*60
         dtheta_y = lsides[1]/shape[1] * 180/np.pi*60
         # Center of the cluster
-        x0 = (shape[0]+1.)/2. 
-        y0 = (shape[1]+1.)/2
-        X, Y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
+        #x0 = shape[0]/2
+        #y0 = shape[1]/2       
+        x0 = 0
+        y0 = 0
+
+        #X, Y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
+        if shape[0] % 2 == 0 and shape[1] % 2 == 0:
+            X, Y =  np.meshgrid(np.concatenate((np.arange(0,shape[0]//2), np.arange(-shape[0]//2,0))), np.concatenate((np.arange(0,shape[1]//2), np.arange(-shape[1]//2,0))))
+        else:
+            assert 0, "pixel size is not right"
+        
+        #X, Y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
         theta_amin = self.pix_to_theta(X, Y, (dtheta_x,dtheta_y),  (x0, y0))
 
         return self.kappa_theta(M200, z, theta_amin, xmax=xmax)
