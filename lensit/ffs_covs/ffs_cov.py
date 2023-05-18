@@ -88,7 +88,7 @@ class ffs_diagcov_alm(object):
         init_barrier()
         # print(lib_dir)
         # hash_check(pk.load(open(fn, 'rb')), self.hashdict())
-        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), keychain=[self.lib_dir])
+        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), keychain=[self.lib_dir], fn=fn)
 
         self.barrier = pbs.barrier if _runtimebarriers else lambda: -1
         self.pbsrank = 0 if _runtimerankzero else pbs.rank

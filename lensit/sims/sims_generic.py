@@ -97,7 +97,7 @@ class sim_lib(object):
             pk.dump(self.hashdict(), open(fn, 'wb'), protocol=2)
         pbsbarrier()
 
-        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'])
+        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'], fn=fn)
 
         self._rng_db = rng_db(os.path.join(lib_dir, 'rngdb.db'), idtype='INTEGER', pbsrank=pbsrank, pbsbarrier=pbsbarrier)
         self._get_rng_state = get_state_func
@@ -219,7 +219,7 @@ class sim_lib_sum:
         return h
 
 
-def hash_check(hash1, hash2, ignore=None, keychain=None):
+def hash_check(hash1, hash2, ignore=None, keychain=None, fn=None):
     """ from Mr. DH """
     if ignore is None: ignore = []
     if keychain is None: keychain = []
@@ -236,6 +236,7 @@ def hash_check(hash1, hash2, ignore=None, keychain=None):
 
         def hashfail(msg=None):
             print("ERROR: HASHCHECK FAIL AT KEY = " + ':'.join(keychain + [key]))
+            print(f"File = {fn}")
             if msg is not None:
                 print("   ", msg)
             print("   ", "V1 = ", v1)
@@ -245,7 +246,7 @@ def hash_check(hash1, hash2, ignore=None, keychain=None):
         if type(v1) != type(v2):
             hashfail('UNEQUAL TYPES')
         elif type(v2) == dict:
-            hash_check(v1, v2, ignore=ignore, keychain=keychain + [key])
+            hash_check(v1, v2, ignore=ignore, keychain=keychain + [key], fn=fn)
         elif type(v1) == np.ndarray:
             if not np.allclose(v1, v2):
                 hashfail('UNEQUAL ARRAY')
