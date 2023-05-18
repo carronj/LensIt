@@ -1,15 +1,25 @@
-from __future__ import print_function
+from __future__ import print_function, annotations
 
 import hashlib
 import os
 import numpy as np
+from lensit.ffs_covs.ell_mat import ffs_alm
+
+try:
+    import finufft
+    HAS_FINUFFT = True
+except ImportError:
+    print("***could not import FINUFFT, falling back on fortran bicubic implementation")
+    HAS_FINUFFT = False
 
 try:
     from lensit.bicubic import bicubic
 except ImportError:
-    print("***could not import bicubic fortran module")
-    print("***I wont be able to lens maps or invert a deflection field")
+    if not HAS_FINUFFT:
+        print("***could not import bicubic fortran module")
+        print("***I wont be able to lens maps or invert a deflection field")
     bicubic = 'could not import bicubic fortran module'
+
 
 from lensit.misc import map_spliter
 from lensit.misc import misc_utils as utils
@@ -37,7 +47,7 @@ class ffs_displacement(object):
 
     """
 
-    def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=False, NR_iter=3, lib_dir=None, cache_magn=False):
+    def __init__(self, dx, dy, lsides, LD_res=(11, 11), verbose=False, NR_iter=3, lib_dir=None, cache_magn=False, nuffteps=1e-7):
         """
          dx and dy arrays or path to .npy arrays, x and y displacements. (displaced map(x) = map(x + d(x))
          Note that the first index is 'y' and the second 'x'
@@ -87,6 +97,10 @@ class ffs_displacement(object):
                     os.makedirs(self.lib_dir)
                 except:
                     print("ffs_displacement:: unable to create lib. dir. " + self.lib_dir)
+
+        self.nufftesp = nuffteps
+        self._fwdnufftplan = None
+        self._bwdnufftplan = None
 
     def copy(self):
         return ffs_displacement(self.dx.copy(), self.dy.copy(), self.lsides, LD_res=self.LD_res, NR_iter=self.NR_iter, lib_dir=None, cache_magn=False)
@@ -141,7 +155,7 @@ class ffs_displacement(object):
         else:
             assert 0, crude
 
-    def lens_map(self, m, use_Pool=0, crude=0, do_not_prefilter=False):
+    def lens_map(self, m: np.ndarray, use_Pool=0, crude=0, do_not_prefilter=False):
         """Lens the input flat-sky map, using a bicubic spline interpolation algorithm
 
             The task is split in chunks (of typically (2048 * 2048) or specified by the LD_res parameters)
@@ -211,7 +225,7 @@ class ffs_displacement(object):
             del i
             return bicubic.deflect(filtmap, x_gu , y_gu).reshape(self.shape)
 
-    def lens_alm(self, lib_alm, alm, lib_alm_out=None, mult_magn=False, use_Pool=0):
+    def lens_alm(self, lib_alm: ffs_alm, alm: np.ndarray, lib_alm_out: ffs_alm or None =None, mult_magn=False, use_Pool=0):
         """Returns lensed harmonic coefficients from the unlensed input coefficients
 
             Args:
@@ -237,6 +251,32 @@ class ffs_displacement(object):
         if mult_magn:
             self.mult_wmagn(temp_map, inplace=True)
         return lib_alm_out.map2alm(temp_map)
+
+    def lens_alm_adjoint(self, lib_alm: ffs_alm, alm: np.ndarray, lib_alm_out: ffs_alm or None = None):
+        """Adjoint operation to lensing (same as lensing with inverse and mult. with magnification determinant)
+
+
+        """
+        assert HAS_FINUFFT, 'cant do this without finufft'
+        if lib_alm_out is None:
+            lib_alm_out = lib_alm
+        sy, sx = self.shape
+        ry, rx = lib_alm_out.ell_mat.rshape
+
+        if self._bwdnufftplan is None:
+            print('Building nufft bwd plan')
+            nufft_type = 1
+            plan = finufft.Plan(nufft_type, self.shape, eps=self.nufftesp, n_trans=1, isign=-1, modeord=1)
+            # set the nonuniform points
+            x_1d = np.arange(sx)
+            y_1d = np.arange(sy)
+            xs = (((np.outer(np.ones(sy), x_1d) + self.get_dx_ingridunits()).reshape(sy * sx)) / sx * (2 * np.pi)) % (2. * np.pi)
+            ys = (((np.outer(y_1d, np.ones(sx)) + self.get_dy_ingridunits()).reshape(sy * sx)) / sy * (2 * np.pi)) % (2. * np.pi)
+            plan.setpts(ys, xs)
+            self._bwdnufftplan = plan
+        m = lib_alm.alm2map(alm).reshape(sy * sx)
+        ret = self._bwdnufftplan.execute(m)
+        return lib_alm_out.rfftmap2alm(ret[:ry, :rx])
 
     def mult_wmagn(self, m, inplace=False):
         if not inplace:
@@ -265,6 +305,23 @@ class ffs_displacement(object):
                 return lens_GPU.alm2lenmap_onGPU(lib_alm, lib_alm.bicubic_prefilter(alm),
                                                  self.get_dx_ingridunits(), self.get_dy_ingridunits(),
                                                  do_not_prefilter=True)
+        elif HAS_FINUFFT:
+            if self._fwdnufftplan is None:
+                print('Building nufft fwd plan')
+                nufft_type = 2
+                plan = finufft.Plan(nufft_type, self.shape, eps=self.nufftesp, n_trans=1, isign=1, modeord=1)
+                # set the nonuniform points
+                sy, sx = self.shape
+                x_1d = np.arange(sx)
+                y_1d = np.arange(sy)
+                xs = (((np.outer(np.ones(sy), x_1d) + self.get_dx_ingridunits()).reshape(sy * sx)) / sx * (2 * np.pi)) % (2. * np.pi)
+                ys = (((np.outer(y_1d, np.ones(sx)) + self.get_dy_ingridunits()).reshape(sy * sx)) / sy * (2 * np.pi)) % (2. * np.pi)
+                plan.setpts(ys, xs)
+                self._fwdnufftplan = plan
+
+            c = lib_alm.ell_mat.rfft2fftmap(lib_alm.alm2rfft(alm / np.prod(lib_alm.shape)))
+            m = self._fwdnufftplan.execute(c)
+            return m.reshape(self.shape).real
         else:
             return self.lens_map(lib_alm.alm2map(lib_alm.bicubic_prefilter(alm)),
                                  use_Pool=use_Pool, do_not_prefilter=True, crude=crude)
@@ -613,6 +670,12 @@ class ffs_id_displacement:
 
     @staticmethod
     def lens_alm(lib_alm, alm, lib_alm_out=None, **kwargs):
+        if lib_alm_out is not None:
+            return lib_alm_out.udgrade(lib_alm, alm)
+        return alm
+
+    @staticmethod
+    def lens_alm_adjoint(lib_alm, alm, lib_alm_out=None, **kwargs):
         if lib_alm_out is not None:
             return lib_alm_out.udgrade(lib_alm, alm)
         return alm

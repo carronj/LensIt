@@ -320,6 +320,15 @@ class ell_mat:
             fy.append(N1 // 2)
         return np.array(fx), np.array(fy)
 
+    @staticmethod
+    def rfft2fftmap(rfftmap):
+        ny, nx = rfftmap.shape[0], (rfftmap.shape[1] - 1) * 2
+        fftm = np.empty((ny, nx), rfftmap.dtype)
+        fftm[:, :nx // 2 + 1] = rfftmap
+        for idx in range(ny):
+            fftm[idx, nx // 2 + 1:] = rfftmap[-idx, 1:nx // 2][::-1].conj()
+        return fftm
+
 
 class ffs_alm(object):
     """Library to facilitate operations on flat-sky alms in the ffs scheme.
@@ -491,13 +500,23 @@ class ffs_alm(object):
 
 
         """
-        assert alm.size == self.alm_size, (alm.size, self.alm_size)
-        assert len(fl) > self.ellmax
-        if inplace:
-            alm *= fl[self.reduced_ellmat()]
-            return
+        if alm.size % self.alm_size == 0: #possibly several components concatenated
+            s = self.alm_size
+            ncomp = alm.size // s
+            if ncomp != 1:
+                print("almxfl, %s comp"%ncomp)
+            fl2d = np.atleast_2d(np.array(fl))
+            assert len(fl2d) == ncomp, (len(fl2d), ncomp)
+            ret = alm if inplace else np.copy(alm)
+            for ia, a in enumerate(range(ncomp)):
+                assert len(fl2d[ia]) > self.ellmax
+                ret[a*s:(a + 1)*s] *= fl2d[ia][self.reduced_ellmat()]
+            if inplace:
+                return
+            return ret
         else:
-            return alm * fl[self.reduced_ellmat()]
+            assert 0, ('dont know what to do', alm.size, self.alm_size)
+
 
     def get_Nell(self):
         r"""Mode number counts on the flat-sky patch.
@@ -589,13 +608,23 @@ class ffs_alm(object):
         return cos[self._cond()], sin[self._cond()]
 
     def alm2rlm(self, alm):
-        assert alm.size == self.alm_size, alm.size
-        return np.concatenate((alm.real, alm.imag))
+        if alm.size == self.alm_size:
+            return np.concatenate((alm.real, alm.imag))
+        elif alm.size%self.alm_size == 0: # probably just concatenated
+            na = alm.size // self.alm_size
+            s = self.alm_size
+            return np.concatenate([self.alm2rlm(alm[a * s: (a + 1) * s]) for a in range(na)])
+        else:
+            assert 0, ('dont know what to do', alm.size, self.alm_size)
 
     def rlm2alm(self, rlm):
         # ! still contains redundant information
-        assert rlm.size == 2 * self.alm_size, rlm.size
-        return rlm[0:self.alm_size] + 1j * rlm[self.alm_size:]
+        if rlm.size == 2 * self.alm_size:
+            return rlm[0:self.alm_size] + 1j * rlm[self.alm_size:]
+        assert rlm.size % (2 * self.alm_size) == 0
+        na = rlm.size // (2 * self.alm_size)
+        s = self.alm_size
+        return np.concatenate([self.rlm2alm(rlm[a * 2 * s: (a + 1) * 2 * s]) for a in range(na)])
 
     def alms2rlms(self, alms):
         assert alms.ndim == 2 and np.all(alm.size == self.alm_size for alm in alms), alms.shape
