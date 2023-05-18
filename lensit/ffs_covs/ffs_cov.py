@@ -61,7 +61,7 @@ class ffs_diagcov_alm(object):
 
     """
     def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
-                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier, alpha_cpp=1.0):
+                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier):
 
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_datalm.clone() if lib_skyalm is None else lib_skyalm
@@ -69,7 +69,6 @@ class ffs_diagcov_alm(object):
         self.cls_len = cls_len
         self.cl_transf = cl_transf
         self.cls_noise = cls_noise
-        self.alpha_cpp = alpha_cpp
         for cl in self.cls_noise.values(): assert len(cl) > self.lib_datalm.ellmax, (len(cl), self.lib_datalm.ellmax)
         for cl in self.cls_unl.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
         for cl in self.cls_len.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
