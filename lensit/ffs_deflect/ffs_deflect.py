@@ -275,7 +275,7 @@ class ffs_displacement(object):
             plan.setpts(ys, xs)
             self._bwdnufftplan = plan
         m = lib_alm.alm2map(alm).reshape(sy * sx)
-        ret = self._bwdnufftplan.execute(m)
+        ret = self._bwdnufftplan.execute(m.astype(np.complex128, casting='safe', copy=False))
         return lib_alm_out.rfftmap2alm(ret[:ry, :rx])
 
     def mult_wmagn(self, m, inplace=False):
