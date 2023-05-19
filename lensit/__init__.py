@@ -185,7 +185,8 @@ def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cac
                                       pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
 
 
-def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky = 6000, phimap=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+def get_lencmbs_lib_fixed_phi(res=14, cache_sims=True, nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), 
+                              ellmax_sky = 6000, phimap=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
     r"""Default lensed CMB simulation library
 
     # TODO: can probably change this to lens at lower resolution adn speed up the computations
@@ -261,7 +262,7 @@ def get_maps_lib_fixed_phi(exp, LDres=10, HDres=11, cache_lenalms=True, cache_ma
 
 
 
-def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1)),  ellmax_sky=6000):
+def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1)),  ellmax_sky=LMAX_SKY):
     r"""Default *ffs_cov.ffs_diagcov_alm* instances.
 
 
@@ -271,7 +272,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
 
 
     """
-    ellmax_sky = LMAX_SKY
+    # ellmax_sky = LMAX_SKY
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky)
 
@@ -284,7 +285,7 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                         filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
 
-    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'LD%sHD%s' % (LD_res, HD_res))
+    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'LD%sHD%s' % (LD_res, HD_res), 'Lmaxsky%s' % ellmax_sky)
     return ffs_cov.ffs_diagcov_alm(lib_dir, lib_alm, cls_unl, cls_len, cl_transf, cls_noise, lib_skyalm=lib_skyalm)
 
 
