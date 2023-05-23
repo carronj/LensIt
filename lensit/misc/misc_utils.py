@@ -269,7 +269,13 @@ class stats:
 
 def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean', error='ste'):
     """Bins a cl array according to bin edges and multipole to consider
-
+    Args:
+        Cl: cl array
+        nzell: multipoles to include in the binning 
+        bins_l: lower bin egdes
+        bins_u: upper bin edges
+        w: weight function 
+        
     """
     assert error in ['ste', 'std']
     assert meanorsum in ['mean', 'sum']

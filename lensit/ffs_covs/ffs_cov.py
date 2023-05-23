@@ -54,6 +54,7 @@ class ffs_diagcov_alm(object):
             lib_datalm: lib_alm instance (see *lensit.ffs_covs.ell_mat* containing mode filtering and flat-sky patch info
             cls_unl(dict): unlensed CMB cls
             cls_len(dict): lensed CMB cls
+            cls_grad(dict): grad-lensed CMB cls
             cl_transf: instrument transfer function
             cls_noise(dict): 't', 'q' and 'u' noise arrays
             lib_skyalm(optional): lib_alm instance describing the sky mode. Irrelevant with some exceptions. Defaults to lib_datalm
@@ -61,17 +62,19 @@ class ffs_diagcov_alm(object):
 
     """
     def __init__(self, lib_dir, lib_datalm, cls_unl, cls_len, cl_transf, cls_noise,
-                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier):
-
+                 lib_skyalm=None, init_rank=pbs.rank, init_barrier=pbs.barrier, cls_grad=None):
         self.lib_datalm = lib_datalm
         self.lib_skyalm = lib_datalm.clone() if lib_skyalm is None else lib_skyalm
         self.cls_unl = cls_unl
         self.cls_len = cls_len
+        self.cls_grad = cls_grad
         self.cl_transf = cl_transf
         self.cls_noise = cls_noise
         for cl in self.cls_noise.values(): assert len(cl) > self.lib_datalm.ellmax, (len(cl), self.lib_datalm.ellmax)
         for cl in self.cls_unl.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
         for cl in self.cls_len.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
+        if cls_grad is not None:
+            for cl in self.cls_grad.values(): assert len(cl) > self.lib_skyalm.ellmax, (len(cl), self.lib_skyalm.ellmax)
         assert len(cl_transf) > self.lib_datalm.ellmax, (len(cl_transf), self.lib_datalm.ellmax)
 
         self.dat_shape = self.lib_datalm.ell_mat.shape
@@ -88,7 +91,8 @@ class ffs_diagcov_alm(object):
         init_barrier()
         # print(lib_dir)
         # hash_check(pk.load(open(fn, 'rb')), self.hashdict())
-        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), keychain=[self.lib_dir], fn=fn)
+        with open(fn, 'rb') as f:
+            hash_check(pk.load(f), self.hashdict(), keychain=[self.lib_dir], fn=fn)
 
         self.barrier = pbs.barrier if _runtimebarriers else lambda: -1
         self.pbsrank = 0 if _runtimerankzero else pbs.rank
@@ -129,6 +133,9 @@ class ffs_diagcov_alm(object):
             h['cls_unl ' + key] = npy_hash(self.cls_unl[key])
         for key in self.cls_len.keys():
             h['cls_len ' + key] =  npy_hash(self.cls_len[key])
+        if self.cls_grad is not None:
+            for key in self.cls_grad.keys():
+                h['cls_grad ' + key] =  npy_hash(self.cls_grad[key])
         h['cl_transf'] =  npy_hash(self.cl_transf)
         return h
 
@@ -191,7 +198,6 @@ class ffs_diagcov_alm(object):
                                % (wNoise, {True: 'len', False: 'unl'}[use_cls_len],
                                   wCMB,  npy_hash(clpp_rec[lib_qlm.ellmin:lib_qlm.ellmax + 1]),
                                   lib_qlm.filt_hash()))
-        # print(fname)
         if (not os.path.exists(fname) or recache) and self.pbsrank == 0:
             def ik_q(a):
                 assert a in [0, 1], a
@@ -666,7 +672,7 @@ class ffs_diagcov_alm(object):
     def apply_condpseudiagcl(self, typ, alms, use_Pool=0):
         return self.apply_conddiagcl(typ, alms, use_Pool=use_Pool)
 
-    def get_qlms(self, typ, iblms, lib_qlm, use_cls_len=True, **kwargs):
+    def get_qlms(self, typ, iblms, lib_qlm, use_cls_len=True, use_cls_grad=False, **kwargs):
         r"""Unormalized quadratic estimates (potential and curl).
 
         Note:
@@ -680,11 +686,8 @@ class ffs_diagcov_alm(object):
             iblms: inverse-variance filtered CMB alm arrays
             lib_qlm: *ffs_alm* instance describing the lensing alm arrays
             use_cls_len: use lensed or unlensed cls in QE weights (numerator), defaults to lensed cls
+            use_cls_grad: use grad cls in QE weights (numerator), defaults to use_cls_len
 
-
-        Note Louis: 
-            cblms: Wiener filtered map ?
-            get_ikx and get_iky: 1j * kx or 1j * ky 
         """
         assert iblms.shape == self._skyalms_shape(typ), (iblms.shape, self._skyalms_shape(typ))
         assert lib_qlm.lsides == self.lsides, (self.lsides, lib_qlm.lsides)
@@ -692,6 +695,11 @@ class ffs_diagcov_alm(object):
         t = timer(_timed)
 
         weights_cls = self.cls_len if use_cls_len else self.cls_unl
+        weights_cls = self.cls_grad if use_cls_grad else weights_cls
+        if use_cls_grad: 
+            print("     [ffs_cov:]   Using cls_grad in QE weights")
+
+
         clms = np.zeros((len(typ), self.lib_skyalm.alm_size), dtype=complex)
         for _i in range(len(typ)):
             for _j in range(len(typ)):
@@ -719,11 +727,11 @@ class ffs_diagcov_alm(object):
         return np.array([2 * dphi, 2 * dOm])  # Factor 2 since gradient w.r.t. real and imag. parts.
 
     def  _get_qlm_resprlm(self, typ, lib_qlm,
-                          use_cls_len=True, cls_obs=None, cls_obs2=None, cls_filt=None, cls_weights=None, verbose=False):
+                          use_cls_len=True, use_cls_grad=False, cls_obs=None, cls_obs2=None, cls_filt=None, cls_weights=None, verbose=False):
         assert typ in typs, (typ, typs)
         t = timer(_timed)
         Fpp, FOO, FpO = self._get_qlm_curvature(typ, lib_qlm,
-                                                use_cls_len=use_cls_len, cls_obs=cls_obs, cls_filt=cls_filt, cls_weights=cls_weights, cls_obs2=cls_obs2)
+                                                use_cls_len=use_cls_len, use_cls_grad=use_cls_grad, cls_obs=cls_obs, cls_filt=cls_filt, cls_weights=cls_weights, cls_obs2=cls_obs2)
         if verbose:
             t.checkpoint("  get_qlm_resplm:: get curvature matrices")
 
@@ -738,7 +746,7 @@ class ffs_diagcov_alm(object):
         return Rpp, ROO
 
     def get_N0cls(self, typ, lib_qlm,
-                  use_cls_len=True, cls_obs=None, cls_obs2=None, cls_weights=None, cls_filt=None):
+                  use_cls_len=True, use_cls_grad=False, cls_obs=None, cls_obs2=None, cls_weights=None, cls_filt=None):
         r"""Lensing Gaussian bias :math:`N^{(0)}_L`
 
             Args:
@@ -747,8 +755,8 @@ class ffs_diagcov_alm(object):
                 cls_obs(dict, optional): empirical observed data spectra, for a realization-dependent estimate
                 cls_weights(dict, optional): CMB cls entering the QE weights (numerator)
                 cls_filt(dict, optional): CMB cls entering the inverse-variance filtering step (denominator of QE weights)
-                use_cls_len(optional): Uses lensed or unlensed CMB cls (when not superseeded byt the other keywords)
-
+                use_cls_len(optional): Uses lensed or unlensed CMB cls (when not superseeded byt the other keywords)    
+                use_cls_grad: Uses the grad Cls in the QE weights (default to use_cls_len)
             Returns:
                 Gradient and curl lensing mode noise :math:`N^{(0)}_L`
 
@@ -756,11 +764,14 @@ class ffs_diagcov_alm(object):
         """
         assert typ in typs, (typ, typs)
         if cls_obs is None and cls_obs2 is None and cls_weights is None and cls_filt is None:  # default behavior is cached
-            fname = self.lib_dir + '/%s_N0cls_%sCls.dat' % (typ, {True: 'len', False: 'unl'}[use_cls_len])
+            if use_cls_grad is False:
+                fname = self.lib_dir + '/%s_N0cls_%sCls.dat' % (typ, {True: 'len', False: 'unl'}[use_cls_len])
+            else:
+                fname = self.lib_dir + '/%s_N0cls_gradCls.dat'
             if not os.path.exists(fname):
                 if self.pbsrank == 0:
                     lib_full = ell_mat.ffs_alm_pyFFTW(self.lib_datalm.ell_mat, filt_func=lambda ell: ell > 0)
-                    Rpp, ROO = self._get_qlm_resprlm(typ, lib_full, use_cls_len=use_cls_len)
+                    Rpp, ROO = self._get_qlm_resprlm(typ, lib_full, use_cls_len=use_cls_len, use_cls_grad=use_cls_grad)
                     header = datetime.datetime.now().strftime("%I:%M%p on %B %d, %Y") + '\n' + __file__
                     np.savetxt(fname, np.array((2 * lib_full.alm2cl(np.sqrt(Rpp)), 2 * lib_full.alm2cl(np.sqrt(ROO)))).transpose(),fmt=['%.8e'] * 2, header=header)
                 self.barrier()
@@ -1018,7 +1029,7 @@ class ffs_diagcov_alm(object):
         return np.array([lib_qlm.bin_realpart_inell(r) for r in xylms_to_phiOmegalm(lib_qlm, Fxx.real * facunits, Fyy.real * facunits, Fxy.real * facunits)])
 
     def _get_qlm_curvature(self, typ, lib_qlm,
-                           cls_weights=None, cls_filt=None, cls_obs=None, cls_obs2=None, use_cls_len=True, verbose=False):
+                           cls_weights=None, cls_filt=None, cls_obs=None, cls_obs2=None, use_cls_len=True, use_cls_grad=False, verbose=False):
         """Fisher matrix for the displacement components phi and Omega (gradient and curl potentials)
 
 
@@ -1027,6 +1038,8 @@ class ffs_diagcov_alm(object):
         t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
 
         _cls_weights = cls_weights or (self.cls_len if use_cls_len else self.cls_unl)
+        _cls_weights = self.cls_len if use_cls_grad else _cls_weights 
+
         _cls_filt = cls_filt or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_obs = cls_obs or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_obs2 = cls_obs2 or (self.cls_len if use_cls_len else self.cls_unl)

@@ -109,7 +109,7 @@ class sims_cmb_len:
         pbsbarrier()
         self.lib_skyalm = lib_skyalm
         fields = get_fields(cls_unl)
-        if lib_pha is None and pbsrank == 0:
+        if lib_pha is None:# and pbsrank == 0:
             lib_pha = ffs_phas.ffs_lib_phas(os.path.join(lib_dir, 'phas'), len(fields), lib_skyalm, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
         else:  # Check that the lib_alms are compatible :
             assert lib_pha.lib_alm == lib_skyalm
