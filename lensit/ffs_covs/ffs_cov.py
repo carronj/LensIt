@@ -672,7 +672,7 @@ class ffs_diagcov_alm(object):
     def apply_condpseudiagcl(self, typ, alms, use_Pool=0):
         return self.apply_conddiagcl(typ, alms, use_Pool=use_Pool)
 
-    def get_qlms(self, typ, iblms, lib_qlm, use_cls_len=True, use_cls_grad=False, **kwargs):
+    def get_qlms(self, typ, iblms, lib_qlm, use_cls_len=True, use_cls_grad=False, iblms2=None, **kwargs):
         r"""Unormalized quadratic estimates (potential and curl).
 
         Note:
@@ -691,6 +691,9 @@ class ffs_diagcov_alm(object):
         """
         assert iblms.shape == self._skyalms_shape(typ), (iblms.shape, self._skyalms_shape(typ))
         assert lib_qlm.lsides == self.lsides, (self.lsides, lib_qlm.lsides)
+        
+        if iblms2 is not None:  
+            assert iblms2.shape == self._skyalms_shape(typ), (iblms.shape, self._skyalms_shape(typ))
 
         t = timer(_timed)
 
@@ -704,6 +707,11 @@ class ffs_diagcov_alm(object):
         for _i in range(len(typ)):
             for _j in range(len(typ)):
                 clms[_i] += pmat.get_unlPmat_ij(typ, self.lib_skyalm, weights_cls, _i, _j) * iblms[_j]
+        if iblms2 is not None:
+            clms2 = np.zeros((len(typ), self.lib_skyalm.alm_size), dtype=complex)
+            for _i in range(len(typ)):
+                for _j in range(len(typ)):
+                    clms2[_i] += pmat.get_unlPmat_ij(typ, self.lib_skyalm, weights_cls, _i, _j) * iblms2[_j]
 
         t.checkpoint("  get_qlms::mult with %s Pmat" % ({True: 'len', False: 'unl'}[use_cls_len]))
 
@@ -711,11 +719,18 @@ class ffs_diagcov_alm(object):
         _2qlm = lambda _m: lib_qlm.udgrade(self.lib_skyalm, self.lib_skyalm.map2alm(_m))
 
         # retdx = g_a^QD(n) = IVF * (grad WF) 
-        retdx = _2qlm(_map(iblms[0]) * _map(clms[0] * self.lib_skyalm.get_ikx()))
-        retdy = _2qlm(_map(iblms[0]) * _map(clms[0] * self.lib_skyalm.get_iky()))
-        for _i in range(1, len(typ)):
-            retdx += _2qlm(_map(iblms[_i]) * _map(clms[_i] * self.lib_skyalm.get_ikx()))
-            retdy += _2qlm(_map(iblms[_i]) * _map(clms[_i] * self.lib_skyalm.get_iky()))
+        if iblms2 is None: 
+            retdx = _2qlm(_map(iblms[0]) * _map(clms[0] * self.lib_skyalm.get_ikx()))
+            retdy = _2qlm(_map(iblms[0]) * _map(clms[0] * self.lib_skyalm.get_iky()))
+            for _i in range(1, len(typ)):
+                retdx += _2qlm(_map(iblms[_i]) * _map(clms[_i] * self.lib_skyalm.get_ikx()))
+                retdy += _2qlm(_map(iblms[_i]) * _map(clms[_i] * self.lib_skyalm.get_iky()))
+        else:
+            retdx = 0.5 * ( _2qlm(_map(iblms[0]) * _map(clms2[0] * self.lib_skyalm.get_ikx())) + _2qlm(_map(iblms2[0]) * _map(clms[0] * self.lib_skyalm.get_ikx())) )
+            retdy = 0.5 * ( _2qlm(_map(iblms[0]) * _map(clms2[0] * self.lib_skyalm.get_iky())) + _2qlm(_map(iblms2[0]) * _map(clms[0] * self.lib_skyalm.get_iky())) )
+            for _i in range(1, len(typ)):
+                retdx += 0.5 * (_2qlm(_map(iblms[_i]) * _map(clms2[_i] * self.lib_skyalm.get_ikx())) + _2qlm(_map(iblms2[_i]) * _map(clms[_i] * self.lib_skyalm.get_ikx())))
+                retdy += 0.5 * (_2qlm(_map(iblms[_i]) * _map(clms2[_i] * self.lib_skyalm.get_iky())) + _2qlm(_map(iblms2[_i]) * _map(clms[_i] * self.lib_skyalm.get_iky())))
 
         t.checkpoint("  get_qlms::cartesian gradients")
         # dphi = -1j L \cdot g_L
@@ -763,11 +778,13 @@ class ffs_diagcov_alm(object):
 
         """
         assert typ in typs, (typ, typs)
+        #!FIXME: It seems that the response is not computed with the grad Cls but with the default lensed Cls
         if cls_obs is None and cls_obs2 is None and cls_weights is None and cls_filt is None:  # default behavior is cached
             if use_cls_grad is False:
                 fname = self.lib_dir + '/%s_N0cls_%sCls.dat' % (typ, {True: 'len', False: 'unl'}[use_cls_len])
+
             else:
-                fname = self.lib_dir + '/%s_N0cls_gradCls.dat'
+                fname = self.lib_dir + '/%s_N0cls_gradCls.dat' % typ
             if not os.path.exists(fname):
                 if self.pbsrank == 0:
                     lib_full = ell_mat.ffs_alm_pyFFTW(self.lib_datalm.ell_mat, filt_func=lambda ell: ell > 0)
@@ -1038,8 +1055,8 @@ class ffs_diagcov_alm(object):
         t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
 
         _cls_weights = cls_weights or (self.cls_len if use_cls_len else self.cls_unl)
-        _cls_weights = self.cls_len if use_cls_grad else _cls_weights 
-
+        _cls_weights = self.cls_grad if use_cls_grad else _cls_weights 
+        print(_cls_weights['ee'][100])
         _cls_filt = cls_filt or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_obs = cls_obs or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_obs2 = cls_obs2 or (self.cls_len if use_cls_len else self.cls_unl)

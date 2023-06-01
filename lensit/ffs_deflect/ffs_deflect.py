@@ -8,6 +8,7 @@ from lensit.ffs_covs.ell_mat import ffs_alm
 try:
     import finufft
     HAS_FINUFFT = True
+    print('Using finufft')
 except ImportError:
     print("***could not import FINUFFT, falling back on fortran bicubic implementation")
     HAS_FINUFFT = False
