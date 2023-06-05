@@ -135,11 +135,14 @@ def get_lencmbs_lib(res=14, wrotation=False, cache_sims=True,
     skypha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms', 'skypha' + wrotation * '_wcurl')
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, wrotationCls=wrotation)
     nfield = len(ffs_cmbs.get_fields(cls_unl))
-    skypha = ffs_phas.ffs_lib_phas(skypha_libdir, nfield, lib_skyalm, nsims_max=nsims)
-    if not skypha.is_full() and pbs.rank == 0:
-        for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
-            skypha.get_sim(int(idx))
-    pbs.barrier()
+    if nsims is not None:
+        skypha = ffs_phas.ffs_lib_phas(skypha_libdir, nfield, lib_skyalm, nsims_max=nsims)
+        if not skypha.is_full() and pbs.rank == 0:
+            for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
+                skypha.get_sim(int(idx))
+        pbs.barrier()
+    else:
+        skypha = None
     sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'len_alms' + wrotation * '_wcurl')
     return ffs_cmbs.sims_cmb_len(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims)
 
@@ -174,14 +177,18 @@ def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cac
     nTpix = sN_uKamin / np.sqrt(vcell_amin2)
     nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
     # pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'LD%sHD%s' % (LDres, HDres), 'pixpha')
-    pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
-    pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+    if nsims is not None:
+        pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
+        pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+        if not pixpha.is_full() and pbs.rank == 0:
+            for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
+                pixpha.get_sim(idx)
+        pbs.barrier()
+        sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps' + wrotation * '_wcurl')
+    else:
+        pixpha = None
+        sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', 'all_sims','fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps' + wrotation * '_wcurl')
 
-    if not pixpha.is_full() and pbs.rank == 0:
-        for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
-            pixpha.get_sim(idx)
-    pbs.barrier()
-    sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps' + wrotation * '_wcurl')
     print('    [lensit.init.get_maps_lib:] sims_libdir: ' + sims_libdir)
     return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
                                       pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
