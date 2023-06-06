@@ -275,6 +275,7 @@ class ffs_displacement(object):
             plan.setpts(ys, xs)
             self._bwdnufftplan = plan
         m = lib_alm.alm2map(alm).reshape(sy * sx)
+        m = m.astype(np.complex128, copy=False)
         ret = self._bwdnufftplan.execute(m)
         return lib_alm_out.rfftmap2alm(ret[:ry, :rx])
 
