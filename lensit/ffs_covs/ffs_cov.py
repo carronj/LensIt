@@ -687,6 +687,7 @@ class ffs_diagcov_alm(object):
             lib_qlm: *ffs_alm* instance describing the lensing alm arrays
             use_cls_len: use lensed or unlensed cls in QE weights (numerator), defaults to lensed cls
             use_cls_grad: use grad cls in QE weights (numerator), defaults to use_cls_len
+            iblms2: second leg inverse variance filtered CMB maps (useful for RDN0 estimates)
 
         """
         assert iblms.shape == self._skyalms_shape(typ), (iblms.shape, self._skyalms_shape(typ))
