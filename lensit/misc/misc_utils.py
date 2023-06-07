@@ -302,6 +302,9 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
         bins_l: lower bin egdes
         bins_u: upper bin edges
         w: weight function 
+        return_err: returns the standard deviation in the bin
+        meanorsum: returns mean value in the bin or sum of values in the bin
+        error: either 'ste' for the standard error in the bin or 'std' for the standard deviation
         
     """
     assert error in ['ste', 'std']
@@ -326,7 +329,7 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
                 # Standard error (to get confidence interval on the unknown mean)
                 err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
             elif error=='std':
-                # Standard deviation (to get std of values inside the in)
+                # Standard deviation (to get std of values inside the bin)
                 err[i] = np.std(arr[nzell[ii]])
     if not return_err:
         return ret
