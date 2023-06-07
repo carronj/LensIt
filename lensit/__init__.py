@@ -46,15 +46,8 @@ def get_fidcls(ellmax_sky=LMAX_SKY, wrotationCls=False, cls_grad=False):
         cls_len[key] = cls_lenr[key][0:ellmax_sky + 1]
     
     if cls_grad:
-        cls_grad_d = np.loadtxt(os.path.join(_get_lensitdir()[1], 'inports', 'lensit1011_gradlensedCls.dat')).T
-        cls_grad = {}
-        ell = cls_grad_d[0]
-        ls = np.arange(ellmax_sky+1)
-        cls_grad['tt'] = spl(ell, cls_grad_d[1], k=2, s=0, ext='zeros')(ls)
-        cls_grad['ee'] = spl(ell, cls_grad_d[2], k=2, s=0, ext='zeros')(ls)
-        cls_grad['bb'] = spl(ell, cls_grad_d[3], k=2, s=0, ext='zeros')(ls)
-        cls_grad['te'] = spl(ell, cls_grad_d[4], k=2, s=0, ext='zeros')(ls)
-
+        cls_grad_d = np.loadtxt(os.path.join(_get_lensitdir()[1], 'fiducial_gradlensed_cls.dat')).T
+        cls_grad = {'tt':cls_grad_d[0][:ellmax_sky+1], 'ee': cls_grad_d[:ellmax_sky+1], 'bb':cls_grad_d[:ellmax_sky+1], 'te':cls_grad_d[:ellmax_sky+1]}
         return cls_unl, cls_len, cls_grad
 
     return cls_unl, cls_len
