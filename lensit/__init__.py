@@ -284,12 +284,6 @@ def get_config(exp):
         Beam_FWHM_amin = 7.
         ellmin = 10
         ellmax = 2048
-    elif exp == 'Planck_euclid':
-        sN_uKamin = 23.
-        sN_uKaminP = 42
-        Beam_FWHM_amin = 7.
-        ellmin = 2
-        ellmax = 2048
     elif exp == 'Planck_65':
         sN_uKamin = 35.
         Beam_FWHM_amin = 6.5
@@ -309,51 +303,6 @@ def get_config(exp):
         sN_uKamin = 1.5
         Beam_FWHM_amin = 3.
         ellmin = 20
-        ellmax = 3000
-    elif exp == 'S4_opti_0.98':
-        sN_uKamin = 0.98
-        Beam_FWHM_amin = 1.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'S4_opti_1.02':
-        sN_uKamin = 1.02
-        Beam_FWHM_amin = 1.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'S4_opti_1.5':
-        sN_uKamin = 1.5
-        Beam_FWHM_amin = 1.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'S4_opti_2':
-        sN_uKamin = 2.
-        Beam_FWHM_amin = 1.
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'S4_euclid':
-        sN_uKamin = 1.
-        Beam_FWHM_amin = 1.
-        ellmin = 2
-        ellmax = 3000
-    elif exp == 'S4_biased':
-        sN_uKamin = 4
-        Beam_FWHM_amin = 3.
-        ellmin = 2
-        ellmax = 3000
-    elif exp == 'S4_2':
-        sN_uKamin = 2.
-        Beam_FWHM_amin = 3.
-        ellmin = 2
-        ellmax = 3000
-    elif exp == 'S4_1.52':
-        sN_uKamin = 1.52
-        Beam_FWHM_amin = 3.
-        ellmin = 2
-        ellmax = 3000
-    elif exp == 'S4_1.49':
-        sN_uKamin = 1.49
-        Beam_FWHM_amin = 3.
-        ellmin = 2
         ellmax = 3000
     elif exp == 'S4_SPDP':
         sN_uKamin = 0.5 / np.sqrt(2.)
@@ -375,35 +324,10 @@ def get_config(exp):
         Beam_FWHM_amin = 3.
         ellmin = 10
         ellmax = 3000
-    elif exp == 'SO_opti0':
-        sN_uKamin = 5
-        Beam_FWHM_amin = 1.4
-        ellmin = 10
-        ellmax = 3000
-    elif exp == 'SO_opti':
-        sN_uKamin = 11.
-        Beam_FWHM_amin = 4.
-        ellmin = 10
-        ellmax = 3000
     elif exp == 'SO':
         sN_uKamin = 3.
         Beam_FWHM_amin = 3.
         ellmin = 10
-        ellmax = 3000
-    elif exp == 'SO_euclid3':
-        sN_uKamin = 10.
-        Beam_FWHM_amin = 4.
-        ellmin = 2
-        ellmax = 3000
-    elif exp == 'SO_euclid4':
-        sN_uKamin = 12.
-        Beam_FWHM_amin = 4.
-        ellmin = 2
-        ellmax = 3000
-    elif exp == 'SO_euclid2':
-        sN_uKamin = 8.
-        Beam_FWHM_amin = 4.5
-        ellmin = 2
         ellmax = 3000
     elif exp == 'SOb1':
         sN_uKamin = 3.
