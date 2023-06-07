@@ -10,11 +10,8 @@ from lensit.ffs_covs import ffs_cov, ell_mat
 from lensit.sims import ffs_phas, ffs_maps, ffs_cmbs
 from lensit.pbs import pbs
 from lensit.misc.misc_utils import enumerate_progress, camb_clfile, gauss_beam, cl_inverse, npy_hash
-from scipy.interpolate import UnivariateSpline as spl
-
 
 LMAX_SKY = 5120
-# LMAX_SKY = 6000
 
 def _get_lensitdir():
     assert 'LENSIT' in os.environ.keys(), 'Set LENSIT env. variable to somewhere safe to write'
@@ -28,6 +25,8 @@ def get_fidcls(ellmax_sky=LMAX_SKY, wrotationCls=False, cls_grad=False):
 
     Args:
         ellmax_sky: optionally reduces outputs spectra :math:`\ell_{\rm max}`
+        cls_grad: optionaly returns the grad-lensed spectra
+
     Returns:
         unlensed and lensed CMB spectra (dicts)
 
@@ -52,32 +51,6 @@ def get_fidcls(ellmax_sky=LMAX_SKY, wrotationCls=False, cls_grad=False):
 
     return cls_unl, cls_len
 
-
-
-def cls2dls(cls):
-    """Turns cls dict. into camb cl array format"""
-    keys = ['tt', 'ee', 'bb', 'te']
-    lmax = np.max([len(cl) for cl in cls.values()]) - 1
-    dls = np.zeros((lmax + 1, 4), dtype=float)
-    refac = np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float) / (2. * np.pi)
-    for i, k in enumerate(keys):
-        cl = cls.get(k, np.zeros(lmax + 1, dtype=float))
-        sli = slice(0, min(len(cl), lmax + 1))
-        dls[sli, i] = cl[sli] * refac[sli]
-    cldd = np.copy(cls.get('pp', None))
-    if cldd is not None:
-        cldd *= np.arange(len(cldd)) ** 2 * np.arange(1, len(cldd) + 1, dtype=float) ** 2 /  (2. * np.pi)
-    return dls, cldd
-
-def dls2cls(dls):
-    """Inverse operation to cls2dls"""
-    assert dls.shape[1] == 4
-    lmax = dls.shape[0] - 1
-    cls = {}
-    refac = 2. * np.pi * cl_inverse( np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float))
-    for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
-        cls[k] = dls[:, i] * refac
-    return cls
 
 def get_fidtenscls(ellmax_sky=LMAX_SKY):
     cls = {}

@@ -48,6 +48,33 @@ def camb_clfile(fname, lmax=None):
         cls['pe'][ell[idc]] = cols[7][idc] / wptpe(ell[idc])
     return cls
 
+
+def cls2dls(cls):
+    """Turns cls dict. into camb cl array format"""
+    keys = ['tt', 'ee', 'bb', 'te']
+    lmax = np.max([len(cl) for cl in cls.values()]) - 1
+    dls = np.zeros((lmax + 1, 4), dtype=float)
+    refac = np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float) / (2. * np.pi)
+    for i, k in enumerate(keys):
+        cl = cls.get(k, np.zeros(lmax + 1, dtype=float))
+        sli = slice(0, min(len(cl), lmax + 1))
+        dls[sli, i] = cl[sli] * refac[sli]
+    cldd = np.copy(cls.get('pp', None))
+    if cldd is not None:
+        cldd *= np.arange(len(cldd)) ** 2 * np.arange(1, len(cldd) + 1, dtype=float) ** 2 /  (2. * np.pi)
+    return dls, cldd
+
+def dls2cls(dls):
+    """Inverse operation to cls2dls"""
+    assert dls.shape[1] == 4
+    lmax = dls.shape[0] - 1
+    cls = {}
+    refac = 2. * np.pi * cl_inverse( np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float))
+    for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
+        cls[k] = dls[:, i] * refac
+    return cls
+
+
 def cls_hash(cls, lmax=None, astype=np.float32):
     if lmax is None:
         arr = np.concatenate([cls[k] for k in sorted(cls.keys())])
