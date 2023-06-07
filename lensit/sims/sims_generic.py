@@ -29,8 +29,6 @@ class rng_db:
     """
 
     def __init__(self, fname, idtype="INTEGER", pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
-        # print('rank' + str(pbsrank))
-        # print('barrier' + str(pbsbarrier()))
         if not os.path.exists(fname) and pbsrank == 0:
             con = sqlite3.connect(fname, detect_types=sqlite3.PARSE_DECLTYPES, timeout=3600)
             cur = con.cursor()
@@ -87,8 +85,6 @@ class sim_lib(object):
     """
 
     def __init__(self, lib_dir, get_state_func=np.random.get_state, nsims_max=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
-        # print('rank' + str(pbsrank))
-        # print('barrier' + str(pbsbarrier()))
         if not os.path.exists(lib_dir) and pbsrank == 0:
             os.makedirs(lib_dir)
         self.nmax = nsims_max
