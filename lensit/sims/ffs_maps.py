@@ -231,6 +231,19 @@ class lib_noisemap:
     def _loadUnoise(self):
         return np.load(self.nUpix)
 
+    def _build_sim_tmap_unl(self, idx):
+        tmap = self.lib_skyalm.almxfl(self.lencmbs.unlcmbs.get_sim_tlm(idx), self.cl_transf)
+        tmap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, tmap))
+        return tmap + self.get_noise_sim_tmap(idx)
+
+    def _build_sim_qumap_unl(self, idx):
+        qmap, umap = self.lencmbs.unlcmbs.get_sim_qulm(idx)
+        self.lib_skyalm.almxfl(qmap, self.cl_transf, inplace=True)
+        self.lib_skyalm.almxfl(umap, self.cl_transf, inplace=True)
+        qmap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, qmap))
+        umap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, umap))
+        return np.array([qmap + self.get_noise_sim_qmap(idx), umap + self.get_noise_sim_umap(idx)])
+
     def _build_sim_tmap(self, idx):
         tmap = self.lib_skyalm.almxfl(self.lencmbs.get_sim_tlm(idx), self.cl_transf)
         tmap = self.lib_datalm.alm2map(self.lib_datalm.udgrade(self.lencmbs.lib_skyalm, tmap))
@@ -252,6 +265,28 @@ class lib_noisemap:
 
     def get_noise_sim_umap(self, idx):
         return self._loadUnoise() * self.pix_pha.get_sim(idx, 2)
+
+    def get_sim_tmap_unl(self, idx):
+        fn = os.path.join(self.lib_dir,  'sim_tmap_unl_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
+            if pbs.rank == 0:
+                np.save(fn, self._build_sim_tmap_unl(idx))
+            pbs.barrier()
+        if self.cache_sims:
+            return np.load(fn)
+        else:
+            return self._build_sim_tmap_unl(idx)
+
+    def get_sim_qumap_unl(self, idx):
+        fn = os.path.join(self.lib_dir,  'sim_qumap_unl_%05d.npy'%idx)
+        if self.cache_sims and not os.path.exists(fn):
+            if pbs.rank == 0:
+                np.save(fn, np.array(self._build_sim_qumap_unl(idx)))
+            pbs.barrier()
+        if self.cache_sims:
+            return np.load(fn)
+        else:
+            return self._build_sim_qumap_unl(idx)
 
     def get_sim_tmap(self, idx):
         fn = os.path.join(self.lib_dir,  'sim_tmap_%05d.npy'%idx)
