@@ -510,7 +510,7 @@ class ffs_iterator(object):
         sk_fname = os.path.join(self.lib_dir, 'Hessian', 'rlm_sn_%s_%s.npy' % (k, key))
         step = 0.
         if not os.path.exists(sk_fname):
-            print("rank %s calculating descent direction" % self.PBSRANK)
+            print("rank %s calculating descent direction" % pbs.rank)
             t0 = time.time()
             incr = BFGS.get_mHkgk(self.lib_qlm.alm2rlm(gradn), k)
             norm_inc = self._calc_norm(self.lib_qlm.rlm2alm(incr)) / self._calc_norm(self.get_Plm(0, key))
@@ -737,7 +737,7 @@ class ffs_iterator_simMF(ffs_iterator):
         if self.nsims == 0: return None
         phas_pix = ffs_phas.pix_lib_phas(
             os.path.join(self.lib_dir,  '%s_sky_noise_iter%s' % (self.type, it * (not self.same_seeds))),
-            len(self.type), self.cov.lib_datalm.shape, nsims_max=self.nsims)
+            len(self.type), self.cov.lib_datalm.shape, nsims_max=self.nsims, pbsrank=self.PBSRANK)
         phas_cmb = None  # dont need it so far
         if self.PBSRANK == 0:
             for lib, lab in zip([phas_pix, phas_cmb], ['phas pix', 'phas_cmb']):

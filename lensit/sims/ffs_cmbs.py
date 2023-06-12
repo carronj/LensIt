@@ -25,6 +25,7 @@ def get_fields(cls):
 
 class sim_cmb_unl:
     def __init__(self, cls_unl, lib_pha):
+        self.cls_unl = cls_unl
         lib_alm = lib_pha.lib_alm
         fields = get_fields(cls_unl)
         Nf = len(fields)
@@ -102,25 +103,25 @@ class sim_cmb_unl:
         return self.lib_skyalm.EBlms2QUalms(np.array([self.get_sim_elm(idx), self.get_sim_blm(idx)]))
 
 class sims_cmb_len:
-    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False):
-        if not os.path.exists(lib_dir) and pbs.rank == 0:
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        if not os.path.exists(lib_dir) and pbsrank == 0:
             os.makedirs(lib_dir)
-        pbs.barrier()
+        pbsbarrier()
         self.lib_skyalm = lib_skyalm
         fields = get_fields(cls_unl)
-        if lib_pha is None and pbs.rank == 0:
-            lib_pha = ffs_phas.ffs_lib_phas(os.path.join(lib_dir, 'phas'), len(fields), lib_skyalm)
+        if lib_pha is None:# and pbsrank == 0:
+            lib_pha = ffs_phas.ffs_lib_phas(os.path.join(lib_dir, 'phas'), len(fields), lib_skyalm, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
         else:  # Check that the lib_alms are compatible :
             assert lib_pha.lib_alm == lib_skyalm
-        pbs.barrier()
+        pbsbarrier()
 
         self.unlcmbs = sim_cmb_unl(cls_unl, lib_pha)
         self.Pool = use_Pool
         self.cache_lens = cache_lens
         fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
-        if not os.path.exists(fn_hash) and pbs.rank == 0:
+        if not os.path.exists(fn_hash) and pbsrank == 0:
             pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
-        pbs.barrier()
+        pbsbarrier()
         sims_generic.hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
         self.lib_dir = lib_dir
         self.fields = fields
@@ -188,4 +189,46 @@ class sims_cmb_len:
             if not self.cache_lens: return np.array([Qlm, Ulm])
             np.save(fname, np.array([Qlm, Ulm]))
         return np.load(fname)
+
+
+class sim_cmb_unl_fixed_phi(sim_cmb_unl):
+    def __init__(self, cls_unl, lib_pha,  phimap=None):
+        super(sim_cmb_unl_fixed_phi, self).__init__(cls_unl, lib_pha)
+        self.phimap = phimap
+    
+    
+    def _get_sim_alm(self, idx, idf):
+        # print(self.phimap)
+        # We set the phi field to always return the same index (0) or phimap if phimap is not None
+        ret = np.zeros(self.lib_skyalm.alm_size, dtype=complex)
+        for i in range(len(self.fields)):
+            if idf == self.fields.index('p'):
+                # print('Get alm of {} for simu {} from simu idx 0'.format(idf, idx))
+                if self.phimap is not None:
+                    # print('phimap')
+                    ret = self.phimap
+                else:
+                    ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(0, idf=i), self.rmat[:, idf, i])
+            else:
+                # print('Get alm of {} for simu {}'.format(idf, idx))
+                ret += self.lib_skyalm.almxfl(self.lib_pha.get_sim(idx, idf=i), self.rmat[:, idf, i])
+
+        return ret
+    
+    
+    # def get_sim_plm(self, idx):
+    #     assert 'p' in self.fields, self.fields
+    #     return self._get_sim_alm(idx, self.fields.index('p'))
+
+
+class sim_cmb_len_fixed_phi(sims_cmb_len):
+    def __init__(self, lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, phimap=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        super(sim_cmb_len_fixed_phi, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=None, use_Pool=0, cache_lens=False, pbsrank=pbsrank, pbsbarrier=pbsbarrier)
+
+        # print(phimap)
+        self.unlcmbs = sim_cmb_unl_fixed_phi(cls_unl, lib_pha, phimap=phimap)
+        if phimap is not None:
+            print("    [sims.ffs_cmbs.sim_cmb_len_fixed_phi:] Created sim lib with given plm")
+        else:
+            print("    [sims.ffs_cmbs.sim_cmb_len_fixed_phi:] Created sim lib with plm from simu idx 0")
 

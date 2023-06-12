@@ -138,7 +138,7 @@ class lib_noisevmap:
             return self._build_sim_qumap(idx)
 
 class lib_noisemap:
-    def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, nTpix, nQpix, nUpix, pix_pha=None, cache_sims=True):
+    def __init__(self, lib_dir, lib_datalm, lib_lencmb, cl_transf, nTpix, nQpix, nUpix, pix_pha=None, cache_sims=True, nsims=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
         """
         Library for sims with pixel to pixel independent noise with specified noise variance maps.
         :param lib_dir:
@@ -150,6 +150,7 @@ class lib_noisemap:
         :param nUpix:  pixel noise rms noise in U
         :param pix_pha: random for phases for the noise maps
         :param cache_sims: does cache ims on disk if set
+        :param nsims: number of sims
         """
         self.lencmbs = lib_lencmb
         self.lib_datalm = lib_datalm
@@ -158,10 +159,11 @@ class lib_noisemap:
         self.cl_transf[:min(len(self.cl_transf), len(cl_transf))] = cl_transf[:min(len(self.cl_transf), len(cl_transf))]
         self.lib_dir = lib_dir
         self.cache_sims = cache_sims
-
-        if not os.path.exists(lib_dir) and pbs.rank == 0:
+        self.nsims = nsims
+        
+        if not os.path.exists(lib_dir) and pbsrank == 0:
             os.makedirs(lib_dir)
-        pbs.barrier()
+        pbsbarrier()
 
         if pix_pha is None:
             self.pix_pha = ffs_phas.pix_lib_phas(os.path.join(lib_dir, 'pix_pha'), 3, lib_datalm.shape)
@@ -172,9 +174,9 @@ class lib_noisemap:
 
         if not isinstance(nTpix, str):
             fnt = os.path.join(lib_dir, 'nTpix.npy')
-            if not os.path.exists(fnt) and pbs.rank == 0:
+            if not os.path.exists(fnt) and pbsrank == 0:
                 np.save(fnt, nTpix)
-            pbs.barrier()
+            pbsbarrier()
             self.nTpix = fnt
         else:
             assert os.path.exists(nTpix), nTpix
@@ -183,9 +185,9 @@ class lib_noisemap:
         if not isinstance(nQpix, str):
             fnq = os.path.join(lib_dir, 'nQpix.npy')
 
-            if not os.path.exists(fnq) and pbs.rank == 0:
+            if not os.path.exists(fnq) and pbsrank == 0:
                 np.save(fnq, nQpix)
-            pbs.barrier()
+            pbsbarrier()
             self.nQpix = fnq
         else:
             assert os.path.exists(nQpix), nQpix
@@ -193,9 +195,9 @@ class lib_noisemap:
 
         if not isinstance(nUpix, str):
             fnu = os.path.join(lib_dir, 'nUpix.npy')
-            if not os.path.exists(fnu) and pbs.rank == 0:
+            if not os.path.exists(fnu) and pbsrank == 0:
                 np.save(fnu, nUpix)
-            pbs.barrier()
+            pbsbarrier()
             self.nUpix = fnu
         else:
             assert os.path.exists(nUpix), nUpix
@@ -206,9 +208,9 @@ class lib_noisemap:
             assert _noise().size == 1 or _noise().shape == self.lib_datalm.shape, (_noise().size, self.lib_datalm.shape)
 
         fn_hash = os.path.join(lib_dir, 'sim_hash.pk')
-        if not os.path.exists(fn_hash) and pbs.rank == 0:
+        if not os.path.exists(fn_hash) and pbsrank == 0:
             pk.dump(self.hashdict(), open(fn_hash, 'wb'), protocol=2)
-        pbs.barrier()
+        pbsbarrier()
         hash_check(self.hashdict(), pk.load(open(fn_hash, 'rb')))
 
     def hashdict(self):

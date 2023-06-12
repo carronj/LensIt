@@ -6,7 +6,7 @@ from __future__ import print_function
 import os
 import sys
 
-verbose = False
+verbose = True
 if 'SLURM_SUBMIT_DIR' in os.environ.keys():
     try:
         from mpi4py import MPI
@@ -15,7 +15,7 @@ if 'SLURM_SUBMIT_DIR' in os.environ.keys():
         barrier = MPI.COMM_WORLD.Barrier
         finalize = MPI.Finalize
         if verbose:
-            print('pbs.py : setup OK, rank %s in %s' % (rank, size))
+            print('pbs.py : SLURM setup OK, rank %s in %s' % (rank, size))
     except:
         if verbose: sys.stderr.write('pbs.py: unable to setup mpi4py\n')
 elif 'NERSC_HOST' not in os.environ.keys():
@@ -25,6 +25,8 @@ elif 'NERSC_HOST' not in os.environ.keys():
         size = MPI.COMM_WORLD.Get_size()
         barrier = MPI.COMM_WORLD.Barrier
         finalize = MPI.Finalize
+        if verbose: print('pbs.py : LOCAL setup OK, rank %s in %s' % (rank, size))
+
     except:
         rank = 0
         size = 1

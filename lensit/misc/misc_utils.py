@@ -48,6 +48,33 @@ def camb_clfile(fname, lmax=None):
         cls['pe'][ell[idc]] = cols[7][idc] / wptpe(ell[idc])
     return cls
 
+
+def cls2dls(cls):
+    """Turns cls dict. into camb cl array format"""
+    keys = ['tt', 'ee', 'bb', 'te']
+    lmax = np.max([len(cl) for cl in cls.values()]) - 1
+    dls = np.zeros((lmax + 1, 4), dtype=float)
+    refac = np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float) / (2. * np.pi)
+    for i, k in enumerate(keys):
+        cl = cls.get(k, np.zeros(lmax + 1, dtype=float))
+        sli = slice(0, min(len(cl), lmax + 1))
+        dls[sli, i] = cl[sli] * refac[sli]
+    cldd = np.copy(cls.get('pp', None))
+    if cldd is not None:
+        cldd *= np.arange(len(cldd)) ** 2 * np.arange(1, len(cldd) + 1, dtype=float) ** 2 /  (2. * np.pi)
+    return dls, cldd
+
+def dls2cls(dls):
+    """Inverse operation to cls2dls"""
+    assert dls.shape[1] == 4
+    lmax = dls.shape[0] - 1
+    cls = {}
+    refac = 2. * np.pi * cl_inverse( np.arange(lmax + 1) * np.arange(1, lmax + 2, dtype=float))
+    for i, k in enumerate(['tt', 'ee', 'bb', 'te']):
+        cls[k] = dls[:, i] * refac
+    return cls
+
+
 def cls_hash(cls, lmax=None, astype=np.float32):
     if lmax is None:
         arr = np.concatenate([cls[k] for k in sorted(cls.keys())])
@@ -267,10 +294,20 @@ class stats:
         return newstats
 
 
-def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean'):
+def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=float), return_err=False, meanorsum='mean', error='ste'):
     """Bins a cl array according to bin edges and multipole to consider
-
+    Args:
+        Cl: cl array
+        nzell: multipoles to include in the binning 
+        bins_l: lower bin egdes
+        bins_u: upper bin edges
+        w: weight function 
+        return_err: returns the standard deviation in the bin
+        meanorsum: returns mean value in the bin or sum of values in the bin
+        error: either 'ste' for the standard error in the bin or 'std' for the standard deviation
+        
     """
+    assert error in ['ste', 'std']
     assert meanorsum in ['mean', 'sum']
     if meanorsum == 'sum': assert not return_err, 'not implemented'
     sumfunc = np.mean if meanorsum == 'mean' else np.sum
@@ -288,7 +325,12 @@ def binned(Cl, nzell, bins_l, bins_u, w=lambda ell: np.ones(len(ell), dtype=floa
         if (bins_u[i] < arr.size) and (len(arr[bins_l[i]:bins_u[i] + 1]) >= 1):
             ii = np.where((nzell >= bins_l[i]) & (nzell <= bins_u[i]))
             ret[i] = sumfunc(arr[nzell[ii]])
-            err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
+            if error=='ste':
+                # Standard error (to get confidence interval on the unknown mean)
+                err[i] = np.std(arr[nzell[ii]]) / np.sqrt(max(1, len(ii[0])))
+            elif error=='std':
+                # Standard deviation (to get std of values inside the bin)
+                err[i] = np.std(arr[nzell[ii]])
     if not return_err:
         return ret
     return ret, err
