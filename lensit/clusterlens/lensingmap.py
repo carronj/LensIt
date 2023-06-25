@@ -85,9 +85,9 @@ class cluster_maps(object):
         self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3], 'pp':cpp_fid}
         
         # Set the high ell to zero escept for the lensing potential cpp_fid
-        for cl in self.cls_unl.values():
-            cl[6000:] = 0
-        self.cls_unl['pp'][6000:] = cpp_fid[6000:]
+        for key, cl in zip(self.cls_unl.keys(), self.cls_unl.values()):
+            if key != 'pp':
+                cl[6000:] = 0
 
         
         # Generate the CMB random phases
