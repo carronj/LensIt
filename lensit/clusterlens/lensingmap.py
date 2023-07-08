@@ -84,7 +84,7 @@ class cluster_maps(object):
         #    self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3], 'pp':cpp_fid}
         self.cls_unl = {'tt':camb_cls[0], 'ee':camb_cls[1], 'bb':camb_cls[2], 'te':camb_cls[3], 'pp':cpp_fid}
         
-        # Set the high ell to zero escept for the lensing potential cpp_fid
+        # Set the high ell to zero except for the lensing potential cpp_fid
         for key, cl in zip(self.cls_unl.keys(), self.cls_unl.values()):
             if key != 'pp':
                 cl[6000:] = 0
