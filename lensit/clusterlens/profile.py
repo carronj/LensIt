@@ -286,8 +286,8 @@ class profile(object):
         # Center of the cluster
         #x0 = shape[0]/2
         #y0 = shape[1]/2       
-        x0 = 0
-        y0 = 0
+        x0 = 0.
+        y0 = 0.
 
         #X, Y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
         if shape[0] % 2 == 0 and shape[1] % 2 == 0:
