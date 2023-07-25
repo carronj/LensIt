@@ -663,8 +663,9 @@ class ffs_diagcov_alm(object):
         if ellmax_gradleg is not None:
             fl = np.ones(self.lib_skyalm.ellmax+1)
             fl[ellmax_gradleg+1:] = 0
-            for _i in range(len(typ)):
-                lib_qlm.almxfl(clms[_i], fl, inplace=True)
+            print("Using grad_cut for T")
+            if 'T' in typ:
+                lib_qlm.almxfl(clms[0], fl, inplace=True)
 
         t.checkpoint("  get_qlms::mult with %s Pmat" % ({True: 'len', False: 'unl'}[use_cls_len]))
 

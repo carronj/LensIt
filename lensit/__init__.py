@@ -127,7 +127,7 @@ def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cac
     len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, wrotation=wrotation)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
-    lib_datalm = ffs_covs.ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
+    lib_datalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
                                                  num_threads=num_threads)
     fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
     vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
@@ -249,6 +249,21 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin=10
         ellmax=3000
+    elif exp == 'S4_sayan':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin=100
+        ellmax=4000
+    elif exp == 'S4_no_noise':
+        sN_uKamin = 0.
+        Beam_FWHM_amin = 1.
+        ellmin=100
+        ellmax=4000
+    elif exp == 'CMB_HD':
+        sN_uKamin = 0.5
+        Beam_FWHM_amin = 0.5
+        ellmin=100
+        ellmax=4000
     elif exp == 'Planck45':
         sN_uKamin = 45.
         Beam_FWHM_amin = 5

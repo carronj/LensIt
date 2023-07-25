@@ -88,8 +88,8 @@ class cluster_maps(object):
         for key, cl in zip(self.cls_unl.keys(), self.cls_unl.values()):
             if key != 'pp':
                 cl[6000:] = 0
-
-        
+                
+                
         # Generate the CMB random phases
         skypha_libdir = opj(self.libdir,  'len_alms', 'skypha')
         skypha = ffs_phas.ffs_lib_phas(skypha_libdir, nfields, self.lib_skyalm, nsims_max=nsims)
