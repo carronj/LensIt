@@ -92,10 +92,22 @@ def pp_to_kk(ls):
     """
     return ls ** 2 * (ls+1) ** 2 * 0.25 
 
+def p_to_k(ls):
+    """ Converts lensing potential el into lensing convergence el.
+    :math:`C_\ell^{\kappa \kappa} = (\ell (\ell +1))^2 /4 C_\ell^{\phi \phi}`
+    
+    """
+    return ls * (ls+1.) * 0.5 
+
 def kk_to_pp(ls):
     """Converts lensing convergence power spectrum into lensing potential power spectrum.
     """
     return cl_inverse(pp_to_kk(ls))
+
+def k_to_p(ls):
+    """Converts lensing convergence el into lensing potential el.
+    """
+    return cl_inverse(p_to_k(ls))
 
 class timer:
     def __init__(self, verbose, prefix='', suffix=''):
