@@ -4,7 +4,7 @@ from lensit.clusterlens.profile import  profile
 import numpy as np
 from lensit import ell_mat, pbs
 from lensit.sims import ffs_phas, ffs_cmbs, ffs_maps
-from lensit.misc.misc_utils import enumerate_progress, gauss_beam
+from lensit.misc.misc_utils import enumerate_progress, gauss_beam, pp_to_kk, p_to_k
 from lensit.ffs_deflect import ffs_deflect
 import lensit as li
 from os.path import join as opj
@@ -39,7 +39,7 @@ class cluster_maps(object):
             lpix_amin: physical size (in arcmin) of the pixels
             nsims: number of CMB maps to simulate
             cosmo: Instantiated camb.results.CAMBdata object 
-            profparams: dict containing the parameters defining the profile 
+            profparams: dict containing the parameters defining the profile M200, z, xmaxn
             profilename: string defining the density profile of the cluster (e.g. nfw)
             ellmax_sky: maximum multipole of CMB spectra used to generate the CMB maps 
     """
@@ -50,8 +50,12 @@ class cluster_maps(object):
         if profilename == 'nfw':
             self.M200 = profparams['M200c']
             self.z = profparams['z']
+            self.xmaxn = profparams['xmaxn']
         self.npix = npix
         self.lpix_amin = lpix_amin
+        lbox_amin = npix*lpix_amin
+        lbox_rad = (lbox_amin/60)*(np.pi/180)
+        self.lbox_rad = lbox_rad
         shape = (self.npix, self.npix)
         lpix_rad = self.lpix_amin * np.pi / 180 / 60
         lsides = (lpix_rad*self.npix, lpix_rad*self.npix)
@@ -99,6 +103,8 @@ class cluster_maps(object):
         pbs.barrier()
 
         self.haloprofile = profile(self.cosmo, profilename)
+        self.xmax = self.xmaxn * self.haloprofile.get_concentration(self.M200, self.z)
+        self.kappa0 = self.haloprofile.get_kappa0(self.M200, self.z, self.xmax)
 
         lencmbs_libdir = opj(self.libdir, 'len_alms')
 
@@ -111,9 +117,9 @@ class cluster_maps(object):
         if self.key == 'lss':
             self.len_cmbs = sims_cmb_len(lencmbs_libdir, self.lib_skyalm, self.cls_unl, lib_pha=skypha)
         elif self.key == 'cluster':
-            self.len_cmbs = sim_cmb_len_cluster(lencmbs_libdir, self.lib_skyalm, self.cls_unl, self.M200, self.z, self.haloprofile, lib_pha=skypha)
+            self.len_cmbs = sim_cmb_len_cluster(lencmbs_libdir, self.lib_skyalm, self.cls_unl, self.M200, self.z, self.xmaxn, self.haloprofile, lib_pha=skypha)
         elif self.key == 'lss_plus_cluster':
-            self.len_cmbs = sim_cmb_len_lss_plus_cluster(lencmbs_libdir, self.lib_skyalm, self.cls_unl, self.M200, self.z, self.haloprofile, lib_pha=skypha)
+            self.len_cmbs = sim_cmb_len_lss_plus_cluster(lencmbs_libdir, self.lib_skyalm, self.cls_unl, self.M200, self.z, self.xmaxn, self.haloprofile, lib_pha=skypha)
         else:
             assert 0
             
@@ -222,6 +228,29 @@ class cluster_maps(object):
             convergence map: numpy array of shape self.lib_skyalm.shape
         """
         return self.haloprofile.kappa_map(M200, z, self.lib_skyalm.shape, self.lib_skyalm.lsides, xmax)
+    
+    def get_kappa0_from_sim(self, lmin, lmax, phi_obs_lm, NL):
+        """ Get the kappa_0 estimate from one simulation
+        Args: 
+            lmin, lmax: the lrange for the sum in the numerator and denominator of the estimator
+            phi_obs_lm: phi (lensing potential) estimate of a single simulation/observation
+            NL: reconstruction niose of the phi estimate
+        Returns:
+            kappa_0 estiamte for the single phi simulation/observation
+            
+        P.S. the arguments is taken as the phi (not kappa) of the observation and accordingly the noise
+        """
+        ell = np.where(self.lib_skyalm.get_Nell()[:lmax+1] > 1)[0]
+        ell = ell[ell >= lmin]
+        #kappa_l = kappa_ell_lensit(ell)*lbox_rad
+        kappa_l = self.haloprofile.analitic_kappa_ft(self.M200, self.z, self.xmax, ell)
+        num_l = self.lib_skyalm.get_Nell()[ell]
+        phi_obs_el = self.lib_skyalm.bin_realpart_inell(phi_obs_lm) #the average 
+        denom_int = (num_l)*(kappa_l/self.lbox_rad/self.kappa0)**2 / (NL[ell]*pp_to_kk(ell))
+        num_int = (num_l)*(kappa_l/self.lbox_rad/self.kappa0) * phi_obs_el[ell]*p_to_k(ell) / (NL[ell]*pp_to_kk(ell)) ## since the observed quantity is phi and we need kappa
+        denom1 = np.sum(denom_int)
+        numer1 = np.sum(num_int)
+        return numer1/denom1     
 
 verbose = False
 
@@ -237,11 +266,11 @@ def get_fields(cls):
 
 
 class sim_cmb_len_cluster(ffs_cmbs.sims_cmb_len):
-    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_unl:dict, M200:float, z:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
+    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_unl:dict, M200:float, z:float, xmaxn:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
         super(sim_cmb_len_cluster, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=lib_pha, use_Pool=0, cache_lens=False)
 
         self.conc_par = haloprofile.get_concentration(M200,z)
-        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax= 3 * self.conc_par)
+        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax= xmaxn * self.conc_par)
         #self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
         #self.kappa_map = 1e2*haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax=self.conc_par)
         self.defl_map = haloprofile.kmap2deflmap(self.kappa_map, lib_skyalm.shape, lib_skyalm.lsides) 
@@ -253,14 +282,14 @@ class sim_cmb_len_cluster(ffs_cmbs.sims_cmb_len):
         return ffs_deflect.ffs_displacement(self.defl_map[0], self.defl_map[1], self.lib_skyalm.lsides)
     
 class sim_cmb_len_lss_plus_cluster:
-    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_unl:dict, M200:float, z:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
+    def __init__(self, lib_dir:str, lib_skyalm:ell_mat.ffs_alm, cls_unl:dict, M200:float, z:float, xmaxn:float, haloprofile:profile, lib_pha=None, use_Pool=0, cache_lens=False):
         #super(sim_cmb_len_lss_plus_cluster, self).__init__(lib_dir, lib_skyalm, cls_unl, lib_pha=lib_pha, use_Pool=0, cache_lens=False)
 
         self.M200 = M200
         self.z = z
         self.haloprofile = haloprofile
         self.conc_par = self.haloprofile.get_concentration(M200,z)
-        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax= 3 * self.conc_par)
+        self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides, xmax= xmaxn * self.conc_par)
         #self.kappa_map = haloprofile.kappa_map(M200, z, lib_skyalm.shape, lib_skyalm.lsides)
         self.defl_map = self.haloprofile.kmap2deflmap(self.kappa_map, lib_skyalm.shape, lib_skyalm.lsides) 
         
