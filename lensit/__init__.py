@@ -78,8 +78,9 @@ def get_ellmat(LD_res, HD_res):
     return ell_mat.ell_mat(lib_dir, shape, lsides)
 
 
-def get_lencmbs_lib(res=14, wrotation=False, cache_sims=True,
-                    nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky=LMAX_SKY):
+def get_lencmbs_lib(res:int=14, wrotation=False, cache_sims=True,
+                    nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky=LMAX_SKY,
+                    skypha:ffs_phas.ffs_lib_phas or None =None):
     r"""Default lensed CMB simulation library
 
     Lensing is always performed at resolution of :math:`0.75` arcmin
@@ -90,6 +91,7 @@ def get_lencmbs_lib(res=14, wrotation=False, cache_sims=True,
         cache_sims: saves the lensed CMBs when produced for the first time
         nsims: number of simulations in the library, if None will generate simulations when requested
         num_threads: number of threads used by the pyFFTW fft-engine.
+        skypha: custom phases for cmb skies
     Note:
         All simulations random phases will be generated at the very first call if not performed previously; this might take some time
 
@@ -102,13 +104,11 @@ def get_lencmbs_lib(res=14, wrotation=False, cache_sims=True,
     cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, wrotationCls=wrotation)
     nfield = len(ffs_cmbs.get_fields(cls_unl))
     if nsims is not None:
-        skypha = ffs_phas.ffs_lib_phas(skypha_libdir, nfield, lib_skyalm, nsims_max=nsims)
+        if skypha is None:
+            skypha = ffs_phas.ffs_lib_phas(skypha_libdir, nfield, lib_skyalm, nsims_max=nsims)
         if not skypha.is_full() and pbs.rank == 0:
             for i, idx in enumerate_progress(np.arange(nsims, dtype=int), label='Generating CMB phases'):
-                print(i)
-                skypha.get_sim(int(idx))
-    else:
-        skypha = None
+                skypha.get_sim(int(idx), phas_only=True)
 
     pbs.barrier()
 
@@ -118,7 +118,8 @@ def get_lencmbs_lib(res=14, wrotation=False, cache_sims=True,
 
 
 def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cache_maps=False,
-                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky=LMAX_SKY):
+                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky=LMAX_SKY,
+                 skypha:ffs_phas.ffs_lib_phas or None =None, pixpha:ffs_phas.pix_lib_phas or None =None):
     r"""Default CMB data maps simulation library
 
     Args:
@@ -130,13 +131,16 @@ def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cac
         cache_maps: saves the data maps when produced for the first time (defaults to False)
         nsims: number of simulations in the library, if None will generate simulations when requested
         num_threads: number of threads used by the pyFFTW fft-engine.
+        skypha(optional): custom phases for cmb skies
+        pixpha(optional): custom phases for noise maps
+
     Note:
         All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
 
     """
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
     print('    [lensit.init.get_maps_lib:] beam FWHM {} amin, noise T {} muK.amin'.format(Beam_FWHM_amin, sN_uKamin))
-    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, wrotation=wrotation, ellmax_sky=ellmax_sky)
+    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, wrotation=wrotation, ellmax_sky=ellmax_sky, skypha=skypha)
     lmax_sky = len_cmbs.lib_skyalm.ellmax
     cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
     lib_datalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
@@ -147,14 +151,14 @@ def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cac
     nPpix = sN_uKaminP / np.sqrt(vcell_amin2)
     # pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'LD%sHD%s' % (LDres, HDres), 'pixpha')
     if nsims is not None:
-        pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
-        pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+        if pixpha is None:
+            pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
+            pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
         if not pixpha.is_full() and pbs.rank == 0:
             for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
                 pixpha.get_sim(idx)
         sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps' + wrotation * '_wcurl')
     else:
-        pixpha = None
         sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', 'all_sims','fsky%04d'%fsky, 'res%s'%LDres,'%s'%exp, 'maps' + wrotation * '_wcurl')
     pbs.barrier()
 
