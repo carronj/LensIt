@@ -28,14 +28,14 @@ class rng_db:
 
     """
 
-    def __init__(self, fname, idtype="INTEGER"):
-        if not os.path.exists(fname) and pbs.rank == 0:
+    def __init__(self, fname, idtype="INTEGER", pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        if not os.path.exists(fname) and pbsrank == 0:
             con = sqlite3.connect(fname, detect_types=sqlite3.PARSE_DECLTYPES, timeout=3600)
             cur = con.cursor()
             cur.execute("create table rngdb (id %s PRIMARY KEY, "
                         "type STRING, pos INTEGER, has_gauss INTEGER,cached_gaussian REAL, keys STRING)" % idtype)
             con.commit()
-        pbs.barrier()
+        pbsbarrier()
 
         self.con = sqlite3.connect(fname, timeout=3600., detect_types=sqlite3.PARSE_DECLTYPES)
 
@@ -84,18 +84,18 @@ class sim_lib(object):
     jcarron Nov. 2015.
     """
 
-    def __init__(self, lib_dir, get_state_func=np.random.get_state, nsims_max=None):
-        if not os.path.exists(lib_dir) and pbs.rank == 0:
+    def __init__(self, lib_dir, get_state_func=np.random.get_state, nsims_max=None, pbsrank=pbs.rank, pbsbarrier=pbs.barrier):
+        if not os.path.exists(lib_dir) and pbsrank == 0:
             os.makedirs(lib_dir)
         self.nmax = nsims_max
         fn = os.path.join(lib_dir, 'sim_hash.pk')
-        if pbs.rank == 0 and not os.path.exists(fn):
+        if pbsrank == 0 and not os.path.exists(fn):
             pk.dump(self.hashdict(), open(fn, 'wb'), protocol=2)
-        pbs.barrier()
+        pbsbarrier()
 
-        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'])
+        hash_check(pk.load(open(fn, 'rb')), self.hashdict(), ignore=['lib_dir'], fn=fn)
 
-        self._rng_db = rng_db(os.path.join(lib_dir, 'rngdb.db'), idtype='INTEGER')
+        self._rng_db = rng_db(os.path.join(lib_dir, 'rngdb.db'), idtype='INTEGER', pbsrank=pbsrank, pbsbarrier=pbsbarrier)
         self._get_rng_state = get_state_func
 
     def get_sim(self, idx, **kwargs):
@@ -215,7 +215,7 @@ class sim_lib_sum:
         return h
 
 
-def hash_check(hash1, hash2, ignore=None, keychain=None):
+def hash_check(hash1, hash2, ignore=None, keychain=None, fn=None):
     """ from Mr. DH """
     if ignore is None: ignore = []
     if keychain is None: keychain = []
@@ -232,6 +232,7 @@ def hash_check(hash1, hash2, ignore=None, keychain=None):
 
         def hashfail(msg=None):
             print("ERROR: HASHCHECK FAIL AT KEY = " + ':'.join(keychain + [key]))
+            print(f"File = {fn}")
             if msg is not None:
                 print("   ", msg)
             print("   ", "V1 = ", v1)
@@ -241,7 +242,7 @@ def hash_check(hash1, hash2, ignore=None, keychain=None):
         if type(v1) != type(v2):
             hashfail('UNEQUAL TYPES')
         elif type(v2) == dict:
-            hash_check(v1, v2, ignore=ignore, keychain=keychain + [key])
+            hash_check(v1, v2, ignore=ignore, keychain=keychain + [key], fn=fn)
         elif type(v1) == np.ndarray:
             if not np.allclose(v1, v2):
                 hashfail('UNEQUAL ARRAY')

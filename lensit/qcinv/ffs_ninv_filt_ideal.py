@@ -60,7 +60,7 @@ class ffs_ninv_filt(object):
 
     def apply_R(self, field, alm):
         """
-        Apply transfer function, T Q U skyalm to map.
+        Apply transfer function, T Q U skyalm to alm.
         B
         """
         assert field.lower() in ['t', 'q', 'u'], field
@@ -69,7 +69,7 @@ class ffs_ninv_filt(object):
 
     def apply_Rs(self, TQUtype, TEBlms):
         """
-        Apply transfer function, T E B skyalm to T Q U map.
+        Apply transfer function, T E B skyalm to T Q U alm.
         """
         assert len(TQUtype) == len(TEBlms),(len(TQUtype),len(TEBlms))
         return np.array([self.apply_R(f.lower(),alm) for f,alm in zip(TQUtype, ffs_specmat.TEB2TQUlms(TQUtype,self.lib_skyalm,TEBlms))])
