@@ -8,6 +8,7 @@ from lensit.ffs_covs.ell_mat import ffs_alm
 try:
     import finufft
     HAS_FINUFFT = True
+    print('Using finufft')
 except ImportError:
     print("***could not import FINUFFT, falling back on fortran bicubic implementation")
     HAS_FINUFFT = False
@@ -275,8 +276,7 @@ class ffs_displacement(object):
             plan.setpts(ys, xs)
             self._bwdnufftplan = plan
         m = lib_alm.alm2map(alm).reshape(sy * sx)
-        m = m.astype(np.complex128, copy=False)
-        ret = self._bwdnufftplan.execute(m)
+        ret = self._bwdnufftplan.execute(m.astype(np.complex128, casting='safe', copy=False))
         return lib_alm_out.rfftmap2alm(ret[:ry, :rx])
 
     def mult_wmagn(self, m, inplace=False):
@@ -543,7 +543,7 @@ class ffs_displacement(object):
         dy = dy[sl0, sl1]
 
         det = Minv_yy * Minv_xx - Minv_xy * Minv_yx
-        if not np.all(det > 0.): print("ffs_displ::Negative value in det k : something's weird, you'd better check that")
+        assert np.all(det > 0.), "ffs_displ::Negative value in det k : something's weird, you'd better check that"
         # Inverse magn. elements. (with a minus sign) We may need to spline these later for further NR iterations :
         Minv_xx /= det
         Minv_yy /= det
