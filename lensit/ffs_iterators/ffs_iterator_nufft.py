@@ -91,10 +91,10 @@ class ffs_iterator(object):
 
         def newton_step_length(it, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
-            if filt.Nlev_uKamin('t') > 2.1: return 1.0
+            if filt.Nlev_uKamin('t') > 2.1: return 0.5
             if filt.Nlev_uKamin('t') <= 2.1 and norm_incr >= 0.5:
-                return 0.5
-            return 0.5
+                return 0.1
+            return 0.1
 
         self.newton_step_length = newton_step_length
         self.soltn0 = soltn0
