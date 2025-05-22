@@ -1,0 +1,45 @@
+[build-system]
+requires = [
+    "scikit-build-core",
+    "cmake>=3.18",
+    "ninja",
+    "numpy"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "lensit"
+version = "0.0.0"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pyfftw",
+    "finufft",
+    "six"
+]
+authors = [
+    {name = "Julien Carron", email="to.jcarron@gmail.com"}
+]
+description = "CMB lensing flat-sky quadratic and iterative estimation tools"
+readme = "README.md"
+license = "MIT-0"
+license-files = ["LICENSE.txt"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+extra = ["mpi4py"]
+
+[project.urls]
+Documentation = "https://lensit.readthedocs.io/"
+Repository = "https://github.com/carronj/LensIt"
+Issues = "https://github.com/carronj/LensIt/issues"
+
+
+[tool.scikit-build]
+wheel.packages = ["lensit"]
