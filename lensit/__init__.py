@@ -116,6 +116,58 @@ def get_lencmbs_lib(res:int=14, wrotation=False, cache_sims=True,
     return ffs_cmbs.sims_cmb_len(sims_libdir, lib_skyalm, cls_unl, lib_pha=skypha, cache_lens=cache_sims)
 
 
+def get_maps_lib_nlev(Nlev_T_muKamin, Nlev_P_muKamin, Beam_FWHM_amin, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cache_maps=False,
+                 nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky=LMAX_SKY,
+                 skypha:ffs_phas.ffs_lib_phas or None =None, pixpha:ffs_phas.pix_lib_phas or None =None):
+    r"""Default CMB data maps simulation library
+
+    Args:
+        Nlev_T_muKamin: temperature noise level in :math:`\mu K.amin`
+        Nlev_P_muKamin: polarization noise level in :math:`\mu K.amin`
+        Beam_FWHM_amin: beam full-width half-maximum in arcminutes
+        LDres: the data is generated on a square patch with :math:` 2^{\rm LDres}` pixels on a side
+        HDres: The physical size of the path is :math:`\sim 0.74 \cdot 2^{\rm HDres}` arcmin
+        wrotation: includes lensing curl mode in deflection fields
+        cache_lenalms: saves the lensed CMBs when produced for the first time (defaults to True)
+        cache_maps: saves the data maps when produced for the first time (defaults to False)
+        nsims: number of simulations in the library, if None will generate simulations when requested
+        num_threads: number of threads used by the pyFFTW fft-engine.
+        skypha(optional): custom phases for cmb skies
+        pixpha(optional): custom phases for noise maps
+
+    Note:
+        All simulations random phases (CMB sky and noise) will be generated at the very first call if not performed previously; this might take some time
+
+    """
+    # sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
+    print('    [lensit.init.get_maps_lib:] beam FWHM {} amin, noise T {} muK.amin'.format(Beam_FWHM_amin, Nlev_T_muKamin))
+    len_cmbs = get_lencmbs_lib(res=HDres, cache_sims=cache_lenalms, nsims=nsims, wrotation=wrotation, ellmax_sky=ellmax_sky, skypha=skypha)
+    lmax_sky = len_cmbs.lib_skyalm.ellmax
+    cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=lmax_sky)
+    lib_datalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LDres, HDres), filt_func=lambda ell: ell <= lmax_sky,
+                                                 num_threads=num_threads)
+    fsky = int(np.round(np.prod(len_cmbs.lib_skyalm.ell_mat.lsides) / 4. / np.pi * 1000.))
+    vcell_amin2 = np.prod(lib_datalm.ell_mat.lsides) / np.prod(lib_datalm.ell_mat.shape) * (180 * 60. / np.pi) ** 2
+    nTpix = Nlev_T_muKamin / np.sqrt(vcell_amin2)
+    nPpix = Nlev_P_muKamin / np.sqrt(vcell_amin2)
+    # pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'LD%sHD%s' % (LDres, HDres), 'pixpha')
+    if nsims is not None:
+        if pixpha is None:
+            pixpha_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims' % nsims, 'fsky%04d' % fsky, 'res%s' % LDres, 'pixpha')
+            pixpha = ffs_phas.pix_lib_phas(pixpha_libdir, 3, lib_datalm.ell_mat.shape, nsims_max=nsims)
+        if not pixpha.is_full() and pbs.rank == 0:
+            for _i, idx in enumerate_progress(np.arange(nsims), label='Generating Noise phases'):
+                pixpha.get_sim(idx)
+        sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', '%s_sims'%nsims,'fsky%04d'%fsky, 'res%s'%LDres, 'nlevt%s_nlevp%s_beam%s'%(Nlev_T_muKamin, Nlev_P_muKamin, Beam_FWHM_amin), 'maps' + wrotation * '_wcurl')
+    else:
+        sims_libdir = os.path.join(_get_lensitdir()[0], 'temp', 'all_sims','fsky%04d'%fsky, 'res%s'%LDres, 'nlevt%s_nlevp%s_beam%s'%(Nlev_T_muKamin, Nlev_P_muKamin, Beam_FWHM_amin), 'maps' + wrotation * '_wcurl')
+    pbs.barrier()
+
+    print('    [lensit.init.get_maps_lib:] sims_libdir: ' + sims_libdir)
+    return ffs_maps.lib_noisemap(sims_libdir, lib_datalm, len_cmbs, cl_transf, nTpix, nPpix, nPpix,
+                                      pix_pha=pixpha, cache_sims=cache_maps, nsims=nsims)
+
+
 
 def get_maps_lib(exp, LDres,  HDres=14, wrotation=False, cache_lenalms=True, cache_maps=False,
                  nsims=120, num_threads=int(os.environ.get('OMP_NUM_THREADS', 1)), ellmax_sky=LMAX_SKY,
@@ -244,7 +296,8 @@ def get_maps_lib_fixed_phi(exp, LDres=10, HDres=11, cache_lenalms=True, cache_ma
 
 
 
-def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1)),  ellmax_sky=LMAX_SKY, use_cls_grad = False):
+def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM_THREADS', 1)),  
+               ellmax_sky=LMAX_SKY, use_cls_grad = False, cls_fid=None, lib_dir=None):
     r"""Default *ffs_cov.ffs_diagcov_alm* instances.
 
 
@@ -256,11 +309,17 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
     """
     # ellmax_sky = LMAX_SKY
     sN_uKamin, sN_uKaminP, Beam_FWHM_amin, ellmin, ellmax = get_config(exp)
-    if use_cls_grad:
-        cls_unl, cls_len, cls_grad = get_fidcls(ellmax_sky=ellmax_sky, cls_grad=use_cls_grad)
-    else:
-        cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, cls_grad=use_cls_grad)
+    if cls_fid is not None:
+        cls_unl, cls_len = cls_fid
         cls_grad = None
+
+    else:
+        if use_cls_grad:
+            cls_unl, cls_len, cls_grad = get_fidcls(ellmax_sky=ellmax_sky, cls_grad=use_cls_grad)
+        else:
+            cls_unl, cls_len = get_fidcls(ellmax_sky=ellmax_sky, cls_grad=use_cls_grad)
+        cls_grad = None
+        
     cls_noise = {'t': (sN_uKamin * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
                  'q':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1),
                  'u':(sN_uKaminP * np.pi / 180. / 60.) ** 2 * np.ones(ellmax_sky + 1)}  # simple flat noise Cls
@@ -269,8 +328,8 @@ def get_isocov(exp, LD_res, HD_res=14, pyFFTWthreads=int(os.environ.get('OMP_NUM
                         filt_func=lambda ell: (ell >= ellmin) & (ell <= ellmax), num_threads=pyFFTWthreads)
     lib_skyalm = ell_mat.ffs_alm_pyFFTW(get_ellmat(LD_res, HD_res=HD_res),
                         filt_func=lambda ell: (ell <= ellmax_sky), num_threads=pyFFTWthreads)
-
-    lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp, 'LD%sHD%s' % (LD_res, HD_res), 'Lmaxsky%s' % ellmax_sky)
+    if lib_dir is None:
+        lib_dir = os.path.join(_get_lensitdir()[0], 'temp', 'Covs', '%s' % exp + '_customfidcls'*(cls_fid is not None), 'LD%sHD%s' % (LD_res, HD_res), 'Lmaxsky%s' % ellmax_sky)
     if use_cls_grad: 
         lib_dir = os.path.join(lib_dir, "Cls_grad_in_QE")
         print(lib_dir)
@@ -303,6 +362,11 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 3000
+    elif exp == 'S4_opti_4000':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 4000
     elif exp == 'Peloton17':
         sN_uKamin = 1.5
         Beam_FWHM_amin = 3.
@@ -318,6 +382,11 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 6000
+    elif exp == 'S4_opti_7000':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin = 10
+        ellmax = 7000
     elif exp == 'S5':
         sN_uKamin = 1.5 / 4.
         Beam_FWHM_amin = 3.
