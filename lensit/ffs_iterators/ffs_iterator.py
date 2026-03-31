@@ -88,10 +88,10 @@ class ffs_iterator(object):
 
         def newton_step_length(it, norm_incr):  # FIXME
             # Just trying if half the step is better for S4 QU
-            if filt.Nlev_uKamin('t') > 2.1: return 1.0
+            if filt.Nlev_uKamin('t') > 2.1: return 0.5
             if filt.Nlev_uKamin('t') <= 2.1 and norm_incr >= 0.5:
-                return 0.5
-            return 0.5
+                return 0.1
+            return 0.1
 
         self.newton_step_length = newton_step_length
         self.soltn0 = soltn0
@@ -662,9 +662,15 @@ class ffs_iterator_pertMF(ffs_iterator):
         #             'u': (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_sky_ivf + 1)}
         lmax_ivf = filt.lib_datalm.ellmax
         iso_libdat = filt.lib_datalm
-        cls_noise = {'t': (filt.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1),
-                     'q': (filt.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1),
-                     'u': (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1)}
+        cl_t = (filt.Nlev_uKamin('t') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1)
+        cl_q = (filt.Nlev_uKamin('q') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1)
+        cl_u = (filt.Nlev_uKamin('u') / 60. / 180. * np.pi) ** 2 * np.ones(lmax_ivf + 1)        
+        #cl_t[3000:] = 1e9
+        #cl_q[3000:] = 1e9
+        #cl_u[3000:] = 1e9
+        cls_noise = {'t': cl_t,
+                     'q': cl_q,
+                     'u': cl_u}
         self.isocov = ffs_cov.ffs_diagcov_alm(os.path.join(lib_dir, 'isocov'),
                                               iso_libdat, filt.cls, filt.cls, filt.cl_transf, cls_noise,
                                               lib_skyalm=filt.lib_skyalm, init_rank=init_rank,
