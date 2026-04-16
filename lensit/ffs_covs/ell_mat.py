@@ -46,7 +46,8 @@ class ell_mat:
         pbs.barrier()
 
         if self.cache > 0:
-            hash_check(pk.load(open(fn_hash, 'rb')), self.hash_dict())
+            with open(fn_hash, 'rb') as f:
+                hash_check(pk.load(f), self.hash_dict())
 
         if pbs.rank == 0 and self.cache > 0 and not os.path.exists(os.path.join(self.lib_dir, 'ellmat.npy')):
                 print('ell_mat:caching ells in ' + os.path.join(self.lib_dir, 'ellmat.npy'))

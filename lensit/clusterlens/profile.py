@@ -41,7 +41,7 @@ class profile(object):
     def get_rs(self, M200, z, const_c=None):
         return self.get_r200(M200, z) / self.get_concentration(M200, z, const_c)
     
-    def get_thetas_amin(M200,z, const_c=None):
+    def get_thetas_amin(self, M200, z, const_c=None):
         return self.r_to_theta(z, self.get_rs(M200, z, const_c))
 
     def get_r200(self, M200, z):
@@ -94,7 +94,6 @@ class profile(object):
             f = self.fx(x)
         else:
             f = self.gx(x, xmax)
-        c = self.get_concentration(M200, z)
         sigma = 2*rhos*rs*f
         return sigma
 
