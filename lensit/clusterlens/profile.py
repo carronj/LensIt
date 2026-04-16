@@ -70,11 +70,13 @@ class profile(object):
         Dang_LS = self.cosmo.angular_diameter_distance2(z, self.zcmb)
         return const.c_Mpcs**2 /(4*np.pi*const.G_Mpc3_pMsol_ps2) *  Dang_OS/Dang_OL/Dang_LS
     
-    def get_kappa0(self, M200, z):
+    def get_kappa0(self, M200, z, xmax=None):
         """Return the value of the lensing convergence profile for x = 1, i.e. R = rs"""
         rs = self.get_rs(M200, z)
-        rhos = self.get_rho_s(M200, z)
-        return 2*rhos*rs/3 / self.sigma_crit(z)
+        if xmax is not None:
+            assert xmax>1, 'xmax should be larger than 1 (i.e. truncation should be larger than the scale radius rs)'
+        return self.kappa(M200, z, rs, xmax=xmax)
+    
 
     def sigma_nfw(self, M200, z, R, xmax=None):
         """Analytic expression for the surface mass desinty of a NFW profile 
