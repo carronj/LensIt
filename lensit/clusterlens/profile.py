@@ -51,7 +51,7 @@ class profile(object):
 
     def rho_crit(self, z):
         """The critical density of the universe at redshift z
-        in units of :math:`M_{\odot} / {\\rm Mpc}^3
+        in units of :math:`M_{\\odot} / {\\rm Mpc}^3
         """
         return const.rhocrit * (self.cosmo.hubble_parameter(z))**2
 
@@ -75,7 +75,7 @@ class profile(object):
         rs = self.get_rs(M200, z)
         if xmax is not None:
             assert xmax>1, 'xmax should be larger than 1 (i.e. truncation should be larger than the scale radius rs)'
-        return self.kappa(M200, z, rs, xmax=xmax)
+        return self.kappa(M200, z, rs, xmax=xmax)[0]
     
 
     def sigma_nfw(self, M200, z, R, xmax=None):
@@ -170,7 +170,8 @@ class profile(object):
     def analitic_kappa_ft(self, M200, z, xmax, ell, const_c=None):
         """Analytic Fourier transform of the convergence fiels for a NFW profile
             from Oguri&Takada 2010, Eq.28
-            Oguri and Takada assumes a truncation at r_vir, si c=r_vir/rs, but we can use any truncation radius xmax=r_trunc/rs"""
+            Oguri and Takada assumes a truncation at r_vir, so c=r_vir/rs, 
+            but we can use any truncation radius xmax=r_trunc/rs"""
         c = self.get_concentration(M200, z, const_c)
         mu_nfw = np.log(1. + c) - c / (1. + c)
         rs = self.get_rs(M200, z)
@@ -260,7 +261,7 @@ class profile(object):
                 xmax: cutoff scale in factors of rs
                 nsub: linear sub-pixel resolution used to average kappa over the
                     central pixel (which is otherwise divergent since theta=0)
-                perioridc: if 'corner', the center of the cluster is in the corner of the map (for periodicity), 
+                center: if 'corner', the center of the cluster is in the corner of the map (for periodicity),
                     if 'center' the center of the cluster is in the center of the map
             Returns:
                 kappa_map: numpy array defining the convergence field
@@ -270,38 +271,32 @@ class profile(object):
 
 
         if center == 'corner':
-            x0 = 0.
-            y0 = 0.
+            # Center of the cluster in the corner of the patch, for periodicity
+            x0 = 0
+            y0 = 0
 
             if shape[0] % 2 == 0 and shape[1] % 2 == 0:
                 X, Y =  np.meshgrid(np.concatenate((np.arange(0,shape[0]//2), np.arange(-shape[0]//2,0))), np.concatenate((np.arange(0,shape[1]//2), np.arange(-shape[1]//2,0))))
             else:
                 assert 0, "pixel size is not right"
 
-            theta_amin = self.pix_to_theta(X, Y, (dtheta_x,dtheta_y),  (x0, y0))
-            kappa = self.kappa_theta(M200, z, theta_amin, xmax=xmax)
-
-            # Average kappa over the central pixel to avoid the theta=0 divergence.
-            # Cell-centred subsamples keep every offset away from the singular point.
-            sub = (np.arange(nsub) + 0.5) / nsub - 0.5
-            sX, sY = np.meshgrid(sub, sub)
-            sub_theta = np.sqrt((sX * dtheta_x)**2 + (sY * dtheta_y)**2)
-            kappa[0, 0] = np.mean(self.kappa_theta(M200, z, sub_theta.ravel(), xmax=xmax))
-        
         elif center =='center':
-            # Center of the cluster
+            # Center of the cluster in the center of the patch (periodic if truncated 
+            # profile, almost periordic in any case since kappa is small at the edges 
+            # of the patch)
             x0 = shape[0]//2
             y0 = shape[1]//2
             X, Y = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]))
-            theta_amin = self.pix_to_theta(X, Y, (dtheta_x,dtheta_y),  (x0, y0))
-            kappa = self.kappa_theta(M200, z, theta_amin, xmax=xmax)
+        
+        theta_amin = self.pix_to_theta(X, Y, (dtheta_x,dtheta_y),  (x0, y0))
+        kappa = self.kappa_theta(M200, z, theta_amin, xmax=xmax)
 
-            # Average kappa over the central pixel to avoid the theta=0 divergence.
-            # Cell-centred subsamples keep every offset away from the singular point.
-            sub = (np.arange(nsub) + 0.5) / nsub - 0.5
-            sX, sY = np.meshgrid(sub, sub)
-            sub_theta = np.sqrt((sX * dtheta_x)**2 + (sY * dtheta_y)**2)
-            kappa[x0, y0] = np.mean(self.kappa_theta(M200, z, sub_theta.ravel(), xmax=xmax))
+        # Average kappa over the central pixel to avoid the theta=0 divergence.
+        # Cell-centred subsamples keep every offset away from the singular point.
+        sub = (np.arange(nsub) + 0.5) / nsub - 0.5
+        sX, sY = np.meshgrid(sub, sub)
+        sub_theta = np.sqrt((sX * dtheta_x)**2 + (sY * dtheta_y)**2)
+        kappa[y0, x0] = np.mean(self.kappa_theta(M200, z, sub_theta.ravel(), xmax=xmax))
         return kappa
 
 
