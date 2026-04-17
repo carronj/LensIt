@@ -720,7 +720,7 @@ class ffs_diagcov_alm(object):
             fl[ellmax_gradleg+1:] = 0
             print("Using grad_cut for T")
             if 'T' in typ:
-                lib_qlm.almxfl(clms[0], fl, inplace=True)
+                self.lib_skyalm.almxfl(clms[0], fl, inplace=True)
 
         t.checkpoint("  get_qlms::mult with %s Pmat" % ({True: 'len', False: 'unl'}[use_cls_len]))
 

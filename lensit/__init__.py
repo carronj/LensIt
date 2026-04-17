@@ -367,6 +367,11 @@ def get_config(exp):
         Beam_FWHM_amin = 1.
         ellmin = 10
         ellmax = 4000
+    elif exp == 'S4_sayan':
+        sN_uKamin = 1.
+        Beam_FWHM_amin = 1.
+        ellmin=100
+        ellmax=4000
     elif exp == 'Peloton17':
         sN_uKamin = 1.5
         Beam_FWHM_amin = 3.
