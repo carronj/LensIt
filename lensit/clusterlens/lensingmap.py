@@ -1,13 +1,12 @@
 from lensit.clusterlens.profile import profile
 import numpy as np
 from lensit import ell_mat, pbs
-from lensit.sims import ffs_phas, ffs_cmbs, ffs_maps, sims_generic
-from lensit.misc.misc_utils import enumerate_progress, gauss_beam, pp_to_kk
+from lensit.sims import ffs_phas, ffs_cmbs, ffs_maps
+from lensit.misc.misc_utils import enumerate_progress, gauss_beam, cl_inverse
 from lensit.ffs_deflect import ffs_deflect
 import lensit as li
 from os.path import join as opj
 import os
-import pickle as pk
 from camb import CAMBdata
 
 
@@ -21,7 +20,7 @@ def get_cluster_libdir(cambinifile, profilename, key, npix, lpix_amin, ellmax_sk
 
 class cluster_maps(object):
     def __init__(self, libdir:str, key:str, npix:int, lpix_amin:float, nsims:int, cosmo:CAMBdata,
-                 profparams:dict, profilename='nfw', ellmax_sky=6000, ellmax_data=3000, ellmin_data=10,
+                 profparams:dict, profilename='nfw', ellmax_sky=6000,
                  cmb_exp='5muKamin_1amin', cache_maps=False):
         """Library for flat-sky CMB simulations lensed by a galaxy cluster.
 
@@ -35,8 +34,6 @@ class cluster_maps(object):
             profparams: dict with keys 'M200c', 'z', 'xmaxn' (truncation in units of r_200)
             profilename: density profile of the cluster (e.g. 'nfw')
             ellmax_sky: maximum multipole of CMB spectra used to generate the CMB maps
-            ellmax_data: maximum multipole of the data maps
-            ellmin_data: minimum multipole of the data maps
         """
         assert key in ['lss', 'cluster', 'lss_plus_cluster'], key
         self.libdir = libdir
@@ -88,18 +85,6 @@ class cluster_maps(object):
         self.xmax = self.xmaxn * self.haloprofile.get_concentration(self.M200, self.z)
         self.kappa0 = self.haloprofile.get_kappa0(self.M200, self.z, self.xmax)
 
-        # Build template from the kappa map 
-        kappa_map = self.get_kappa_map(self.M200, self.z, self.xmax)
-        kappa_lm = self.lib_skyalm.map2alm(kappa_map)
-
-        # Convert kappa -> phi template: kappa = ell*(ell+1)/2 * phi
-        ell_mode = self.lib_skyalm.reduced_ellmat().astype(float)
-        ptok = ell_mode * (ell_mode + 1.) * 0.5
-        ptok[ptok == 0] = 1.0
-        self.phi_template_lm = kappa_lm / ptok
-
-        # Normalize by kappa0 so the matched filtering estimator returns kappa0
-        self.phi_template_lm /= self.kappa0
 
         lencmbs_libdir = opj(self.libdir, 'len_alms')
 
@@ -116,8 +101,8 @@ class cluster_maps(object):
                                                          self.M200, self.z, self.xmaxn, self.haloprofile, lib_pha=skypha)
 
         # Set the lmax of the data maps
-        self.ellmax_data = ellmax_data
-        self.ellmin_data = ellmin_data
+        self.ellmax_data = ellmax
+        self.ellmin_data = ellmin
         self.cl_transf = gauss_beam(Beam_FWHM_amin / 60. * np.pi / 180., lmax=self.ellmax_data)
 
         # The resolution of the data map could be lower than the resolution of the sky map (=the true map)
@@ -222,7 +207,7 @@ class cluster_maps(object):
         """
         return self.haloprofile.kappa_map(M200, z, self.lib_skyalm.shape, self.lib_skyalm.lsides, xmax)
 
-    def get_kappa0_from_sim(self, lmin, lmax, phi_obs_lm, NL):
+    def get_kappa0_from_sim(self, lmin, lmax, phi_obs_lm, phi_template_lm, NL, lib_qlm):
         """Matched-filter kappa_0 estimate from a reconstructed phi map.
 
         Uses the actual kappa map (with correct center-convention phases) as
@@ -237,15 +222,15 @@ class cluster_maps(object):
             kappa_0 estimate (scalar)
         """
 
-        ell_mode = self.lib_skyalm.reduced_ellmat().astype(float)
+        ell_mode = lib_qlm.reduced_ellmat().astype(float)
         # Apply ell cuts and inverse-noise weighting per mode
         mask = (ell_mode >= lmin) & (ell_mode <= lmax) & (ell_mode > 0)
-        NL_mode = NL[ell_mode.astype(int)]
-        weight = np.where(mask, 1.0 / NL_mode, 0.0)
+        iNL_mode = cl_inverse(NL)[ell_mode.astype(int)]
+        weight = np.where(mask, iNL_mode, 0.0)
 
         # Matched filter: complex cross-correlation
-        denom = np.sum(weight * np.abs(self.phi_template_lm) ** 2)
-        numer = np.sum(weight * np.real(np.conj(self.phi_template_lm) * phi_obs_lm))
+        denom = np.sum(weight * np.abs(phi_template_lm) ** 2)
+        numer = np.sum(weight * np.real(np.conj(phi_template_lm) * phi_obs_lm))
         return numer / denom
 
 

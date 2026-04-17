@@ -120,7 +120,7 @@ class profile(object):
         g = np.zeros_like(x)
         xp = np.where(np.logical_and(x>1, x<xmax))
         xo = np.where(np.abs(x-1.) < 10**(-tol))       
-        xm = np.where(x<1)
+        xm = np.where(np.logical_and(x<1, x>0))
         g[xp] = (np.sqrt(xmax**2 - x[xp]**2)/(1+xmax) - 1/np.sqrt(x[xp]**2 - 1) * np.arccos((x[xp]**2 + xmax) / (x[xp] * (1+xmax))) )/(x[xp]**2-1)
         g[xm] = (np.sqrt(xmax**2 - x[xm]**2)/(1+xmax) - 1/np.sqrt(1-x[xm]**2) * np.arccosh((x[xm]**2 + xmax) / (x[xm] * (1+xmax))) )/(x[xm]**2-1)
         g[xo] = np.sqrt(xmax**2 - 1)/(3*(1+xmax)) * (1+ 1/ (1+xmax))
@@ -180,11 +180,16 @@ class profile(object):
         chi = self.cosmo.comoving_radial_distance(z)
         k = ell / chi
         x = ((1. + z) * k * rs)
-        Six, Cix = sici(x)
-        Sixpc, Cixpc = sici(x * (1. + xmax))
-        Sidiff = Sixpc - Six
-        Cidiff = Cixpc - Cix
-        u0 = np.sin(x) * Sidiff + np.cos(x) * Cidiff - np.sin(x * xmax) / (x * (1. + xmax))
+        x = np.asarray(x, dtype=float)
+        u0 = np.empty_like(x, dtype=float)
+        nz = x != 0
+        if np.any(nz):
+            Six, Cix = sici(x[nz])
+            Sixpc, Cixpc = sici(x[nz] * (1. + xmax))
+            Sidiff = Sixpc - Six
+            Cidiff = Cixpc - Cix
+            u0[nz] = np.sin(x[nz]) * Sidiff + np.cos(x[nz]) * Cidiff - np.sin(x[nz] * xmax) / (x[nz] * (1. + xmax))
+        u0[~nz] = np.log(1. + xmax) - xmax / (1. + xmax)
         ufft = 1. / mu_nfw * u0
 
         kappaft = M200 * ufft * (1+z)**2 /chi**2 / self.sigma_crit(z)
@@ -319,10 +324,11 @@ class profile(object):
         ky[int(shape[0] / 2):] *= -1.
         kx = (2. * np.pi) / lsides[1] * Freq(np.arange(rs[1]), shape[1])
         KX, KY = np.meshgrid(kx, ky)
-        dx_lm = 2 * rfft_kappa * 1.j * KX / (KX**2+KY**2)
-        dy_lm = 2 * rfft_kappa * 1.j * KY / (KX**2+KY**2)
-        dx_lm[0, 0] = 0  ## 0 or rfft_kappa[0, 0]
-        dy_lm[0, 0] = 0
+        k2 = KX**2 + KY**2
+        dx_lm = np.zeros_like(rfft_kappa, dtype=complex)
+        dy_lm = np.zeros_like(rfft_kappa, dtype=complex)
+        np.divide(2 * rfft_kappa * 1.j * KX, k2, out=dx_lm, where=k2 != 0)
+        np.divide(2 * rfft_kappa * 1.j * KY, k2, out=dy_lm, where=k2 != 0)
 
         dx = np.fft.irfft2(dx_lm, shape)
         dy = np.fft.irfft2(dy_lm, shape)
