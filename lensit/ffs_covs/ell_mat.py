@@ -382,7 +382,7 @@ class ffs_alm(object):
             return False
         if not np.all(self.ell_mat.shape == lib_alm.ell_mat.shape):
             return False
-        ellmax = max(self.ellmax, lib_alm.ellmax)
+        ellmax = int(max(self.ellmax, lib_alm.ellmax))
         if not np.all(self.filt_func(np.arange(ellmax + 1)) == lib_alm.filt_func(np.arange(ellmax + 1))):
             return False
         kxf = self.kxfilt_func if self.kxfilt_func is not None else lambda kx : np.ones_like(kx, dtype = bool)
@@ -406,7 +406,7 @@ class ffs_alm(object):
         if not self.alm_size == lib_alm.alm_size:
             return False
 
-        ellmax = max(self.ellmax, lib_alm.ellmax)
+        ellmax = int(max(self.ellmax, lib_alm.ellmax))
         if not np.all(self.filt_func(np.arange(ellmax + 1)) == lib_alm.filt_func(np.arange(ellmax + 1))):
             return False
         kxf = self.kxfilt_func if self.kxfilt_func is not None else lambda kx: np.ones_like(kx, dtype=bool)
