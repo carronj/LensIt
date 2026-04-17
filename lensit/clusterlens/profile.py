@@ -14,6 +14,8 @@ class profile(object):
                 cosmo: an instantiated camb.CAMBdata object
                 pname: String, could use different halo profile (for now only NFW)
         """
+        # TODO: everything is defined in terms of M200c, but we might want to use M500c (~0.7 M200c), or M200m (~1.4 M200c)
+        # In that case we should update the concentration mass relation accordingly
         
         self.pname = pname
         self.cosmo = cosmo
