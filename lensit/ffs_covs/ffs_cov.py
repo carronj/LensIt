@@ -672,7 +672,7 @@ class ffs_diagcov_alm(object):
     def apply_condpseudiagcl(self, typ, alms, use_Pool=0):
         return self.apply_conddiagcl(typ, alms, use_Pool=use_Pool)
 
-    def get_qlms(self, typ, iblms, lib_qlm, use_cls_len=True, use_cls_grad=False, iblms2=None, **kwargs):
+    def get_qlms(self, typ, iblms, lib_qlm, use_cls_len=True, use_cls_grad=False, iblms2=None,  ellmax_gradleg=None, **kwargs):
         r"""Unormalized quadratic estimates (potential and curl).
 
         Note:
@@ -688,6 +688,7 @@ class ffs_diagcov_alm(object):
             use_cls_len: use lensed or unlensed cls in QE weights (numerator), defaults to lensed cls
             use_cls_grad: use grad cls in QE weights (numerator), defaults to use_cls_len
             iblms2: second leg inverse variance filtered CMB maps (useful for RDN0 estimates)
+            ellmax_gradleg: cut scales above this value on the gradient leg (used for unbiased cluster lensing reconstruction)
 
         """
         assert iblms.shape == self._skyalms_shape(typ), (iblms.shape, self._skyalms_shape(typ))
@@ -713,6 +714,13 @@ class ffs_diagcov_alm(object):
             for _i in range(len(typ)):
                 for _j in range(len(typ)):
                     clms2[_i] += pmat.get_unlPmat_ij(typ, self.lib_skyalm, weights_cls, _i, _j) * iblms2[_j]
+
+        if ellmax_gradleg is not None:
+            fl = np.ones(self.lib_skyalm.ellmax+1)
+            fl[ellmax_gradleg+1:] = 0
+            print("Using grad_cut for T")
+            if 'T' in typ:
+                lib_qlm.almxfl(clms[0], fl, inplace=True)
 
         t.checkpoint("  get_qlms::mult with %s Pmat" % ({True: 'len', False: 'unl'}[use_cls_len]))
 
