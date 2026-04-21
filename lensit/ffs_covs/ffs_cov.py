@@ -869,7 +869,7 @@ class ffs_diagcov_alm(object):
         Rpp, ROO = self._get_qlm_resprlm(typ, lib_qlm, use_cls_len=use_cls_len, cls_obs=cls_obs)
         return lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO))
 
-    def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True, verbose=False):
+    def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True, verbose=False, ellmax_gradleg=None):
         r"""Lensing quadratic estimator gradient and curl response functions.
 
             Args:
@@ -889,6 +889,12 @@ class ffs_diagcov_alm(object):
         if not cls_weights is None: t.checkpoint('Using custom Cls weights')
         if not cls_filt is None: t.checkpoint('Using custom Cls filt')
         if not cls_cmb is None: t.checkpoint('Using custom Cls cmb')
+
+        if ellmax_gradleg is not None:
+            print('Response using ellmax_gradleg on Cls weights')
+            _cls_weights = {k: v.copy() for k, v in _cls_weights.items()}
+            for v in _cls_weights.values():
+                v[ellmax_gradleg + 1:] = 0.
 
         Pinv_obs1 = pmat.get_Pmat(typ, self.lib_datalm, _cls_filt,
                              cls_noise=self.cls_noise, cl_transf=self.cl_transf, inverse=True)
