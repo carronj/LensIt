@@ -869,7 +869,7 @@ class ffs_diagcov_alm(object):
         Rpp, ROO = self._get_qlm_resprlm(typ, lib_qlm, use_cls_len=use_cls_len, cls_obs=cls_obs)
         return lib_qlm.alm2Pk_minimal(np.sqrt(2 * Rpp)), lib_qlm.alm2Pk_minimal(np.sqrt(2 * ROO))
 
-    def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True, verbose=False, ellmax_gradleg=None):
+    def get_response(self, typ, lib_qlm, cls_weights=None, cls_filt=None, cls_cmb=None, use_cls_len=True, use_cls_grad=False, verbose=False, ellmax_gradleg=None):
         r"""Lensing quadratic estimator gradient and curl response functions.
 
             Args:
@@ -884,6 +884,8 @@ class ffs_diagcov_alm(object):
         t = timer(_timed, prefix=__name__, suffix=' curvpOlm')
 
         _cls_weights = cls_weights or (self.cls_len if use_cls_len else self.cls_unl)
+        _cls_weights = self.cls_grad if use_cls_grad else _cls_weights 
+        
         _cls_filt = cls_filt or (self.cls_len if use_cls_len else self.cls_unl)
         _cls_cmb = cls_cmb or (self.cls_len if use_cls_len else self.cls_unl)
         if not cls_weights is None: t.checkpoint('Using custom Cls weights')
